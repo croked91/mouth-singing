@@ -55,10 +55,11 @@
 - [x] structlog JSON логирование
 - [x] backend/Dockerfile (Python 3.12, ffmpeg, curl)
 - [x] .env.example, .gitignore
-- [ ] Smoke-тест
+- [x] Smoke-тест (Docker Compose)
 - [ ] Согласование с пользователем
 - [ ] Коммит
 
 ### Хронология:
 - **2026-02-23**: python-developer создал скелет. Исправлен build-backend (setuptools.build_meta). Добавлен package-data для init.sql. QDrant init сделан graceful (degraded mode без QDrant).
 - **2026-02-23**: Локальная проверка: backend стартует, SQLite инициализируется с 6 таблицами + FTS5, health endpoint возвращает корректный статус.
+- **2026-02-23**: Docker Compose: исправлен healthcheck QDrant (curl/wget отсутствуют в образе → bash /dev/tcp). Оба контейнера healthy, GET /health → `{"status":"ok","sqlite":"ok","qdrant":"ok"}`.
