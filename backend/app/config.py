@@ -26,5 +26,5 @@ class Settings(BaseSettings):
     model_config = {"env_prefix": ""}
 
 
-# Module-level singleton — imported by other modules as `from app.config import settings`.
+# Module-level singleton used by other modules.
 settings = Settings()

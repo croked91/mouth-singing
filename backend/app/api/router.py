@@ -1,14 +1,21 @@
 """Assembles the v1 API router.
 
-All feature routers (tracks, sessions, queue, etc.) will be included here
-as they are built in subsequent phases. The health router is mounted
-separately at the root level in main.py so it has no /api/v1 prefix.
+Feature routers are included here with their URL prefixes and tags.
+The health router is mounted separately at the root level in main.py
+so it has no /api/v1 prefix.
 """
 
 from fastapi import APIRouter
 
+from app.api.v1 import queue, sessions
+
 v1_router = APIRouter()
 
-# Feature routers will be added here in later phases, e.g.:
-# from app.api.v1 import tracks, sessions, queue, recommendations
-# v1_router.include_router(tracks.router, prefix="/tracks", tags=["tracks"])
+v1_router.include_router(sessions.router, prefix="/sessions", tags=["sessions"])
+
+# Queue routes use two different URL shapes:
+#   /sessions/{session_id}/queue  (GET — read queue state)
+#   /queue/...                    (POST/DELETE — mutate entries)
+# Both live in the same router module; we mount without a prefix so that
+# the paths declared in queue.py are used as-is.
+v1_router.include_router(queue.router, tags=["queue"])

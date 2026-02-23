@@ -10,19 +10,19 @@ open to all origins — there is no public internet exposure.
 """
 
 import asyncio
-from contextlib import asynccontextmanager
 from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams, PayloadSchemaType
+from qdrant_client.models import Distance, PayloadSchemaType, VectorParams
 
+from app.api.router import v1_router
 from app.config import settings
 from app.db import init_db
 from app.logging_config import configure_logging
-from app.api.router import v1_router
 
 logger = structlog.get_logger(__name__)
 

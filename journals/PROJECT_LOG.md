@@ -98,10 +98,27 @@
 - [x] test_qdrant_repo.py (13 тестов, upsert/search/delete/batch)
 - [x] Баг-фиксы по результатам тестирования (2 бага)
 - [x] 119/119 тестов пройдены
-- [ ] Коммит
+- [x] Коммит (cf1f02c)
 
 ### Хронология:
 - **2026-02-23**: polyglot-test-engineer написал 122 теста (111 pass, 11 xfail). Выявлено 2 бага:
   - Bug #1: отсутствующий _job_from_row() в SQLiteRepository
   - Bug #2: QDrant client.search() удалён в qdrant-client 1.7+, нужен query_points()
 - **2026-02-23**: Оба бага исправлены. xfail-тесты переведены в обычные. 119/119 pass, 0 fail.
+
+## Фаза 5: Сессии, участники, очередь
+
+### Задачи фазы:
+- [x] SessionService (create, get, terminate, add_participant)
+- [x] QueueService (add, remove, skip, start, finish)
+- [x] Генератор никнеймов (50×50=2500 комбинаций, русскоязычные)
+- [x] API-роутеры sessions и queue (10 эндпоинтов)
+- [x] Admin-авторизация (X-Admin-Secret)
+- [x] Интеграционные тесты API (41 тест)
+- [x] 160/160 тестов пройдены (119 старых + 41 новых)
+- [ ] Согласование с пользователем
+- [ ] Коммит
+
+### Хронология:
+- **2026-02-23**: python-developer создал SessionService, QueueService, генератор никнеймов, роутеры sessions и queue. Lint clean, app starts.
+- **2026-02-23**: polyglot-test-engineer написал 41 интеграционный тест (17 sessions, 24 queue). Lifespan bypass pattern для in-memory тестирования. 160/160 pass.
