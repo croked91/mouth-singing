@@ -26,7 +26,7 @@
 | 5 | Сессии, участники, очередь | [phase-05.md](phases/phase-05.md) | Завершена |
 | 6 | Каталог треков и поиск | [phase-06.md](phases/phase-06.md) | Завершена |
 | 7a | Audio Worker — JobService + UVR | [phase-07a.md](phases/phase-07a.md) | Завершена |
-| 7b | Sonoix + VideoGenerator + SSE | [phase-07b.md](phases/phase-07b.md) | Ожидает |
+| 7b | Sonoix + VideoGenerator + SSE | [phase-07b.md](phases/phase-07b.md) | Завершена |
 | 8a | Извлечение фичей и эмбеддингов | [phase-08a.md](phases/phase-08a.md) | Ожидает |
 | 8b | Рекомендательная система | [phase-08b.md](phases/phase-08b.md) | Ожидает |
 | 9 | Фронтенд — скаффолдинг, тема, Landing + Sessions | [phase-09.md](phases/phase-09.md) | Ожидает |

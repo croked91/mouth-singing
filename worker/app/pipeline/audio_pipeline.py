@@ -1,8 +1,11 @@
 """Audio processing pipeline.
 
-Orchestrates the full audio processing pipeline for a single job. In Phase 7a,
-only Step 1 (UVR vocal/instrumental separation) is implemented. Steps 2-6 are
-stub comments with TODO markers for Phase 7b and Phase 8a.
+Orchestrates the full audio processing pipeline for a single job.  Steps
+implemented per phase:
+  - Phase 7a: Step 1 — UVR vocal/instrumental separation.
+  - Phase 7b: Step 2 — Soniox transcription + syllabification.
+              Step 3 — VideoGenerator MP4 generation.
+  - Phase 8a: Steps 4-6 — feature extraction, lyric embedding, QDrant sync.
 """
 
 from __future__ import annotations
@@ -15,8 +18,11 @@ from karaoke_shared.models.job import Job
 from karaoke_shared.models.track import TrackUpdate
 from karaoke_shared.repositories.sqlite_repository import SQLiteRepository
 from karaoke_shared.services.job_service import JobService
+from karaoke_shared.utils.syllabifier import Syllabifier
 
+from app.pipeline.sonoix_client import SonoixClient
 from app.pipeline.uvr_separator import UVRSeparator
+from app.pipeline.video_generator import VideoGenerator
 
 logger = structlog.get_logger(__name__)
 
@@ -24,14 +30,21 @@ logger = structlog.get_logger(__name__)
 class AudioPipeline:
     """Orchestrates the full audio processing pipeline.
 
-    Each public method is a pipeline stage. In Phase 7a only Step 1 (UVR
-    separation) is wired up; later steps exist as comments so the overall
-    structure is clear.
+    Each pipeline step is implemented as a discrete block within
+    :meth:`process`.  Dependencies are injected so that each component can be
+    tested or swapped independently.
+
+    ``sonoix`` and ``video_gen`` are optional: when ``None`` the corresponding
+    pipeline steps (transcription and video generation) are skipped.  This
+    allows unit tests that only exercise the UVR step to construct the pipeline
+    without providing Soniox or FFmpeg dependencies.
 
     Args:
         job_service: Service for updating job state throughout processing.
         uvr: The vocal/instrumental separator.
         repo: Repository for reading track data and persisting updates.
+        sonoix: Soniox Speech-to-Text client for transcription.
+        video_gen: VideoGenerator for creating the karaoke MP4 clip.
     """
 
     def __init__(
@@ -39,16 +52,21 @@ class AudioPipeline:
         job_service: JobService,
         uvr: UVRSeparator,
         repo: SQLiteRepository,
+        sonoix: SonoixClient | None = None,
+        video_gen: VideoGenerator | None = None,
     ) -> None:
         self.job_service = job_service
         self.uvr = uvr
         self.repo = repo
+        self.sonoix = sonoix
+        self.video_gen = video_gen
+        self._syllabifier = Syllabifier()
 
     async def process(self, job: Job) -> None:
         """Run the full pipeline for a single job.
 
         Fetches the associated track, runs each implemented pipeline step,
-        and marks the job completed or failed. Any unhandled exception causes
+        and marks the job completed or failed.  Any unhandled exception causes
         the job to be handed back to the retry machinery via ``mark_failed``.
 
         Args:
@@ -77,7 +95,6 @@ class AudioPipeline:
 
             await self.job_service.mark_step(job.id, "separating", 100)
 
-            # Persist the instrumental path on the track record.
             await self.repo.update_track(
                 job.track_id,
                 TrackUpdate(instrumental_path=instrumental_path, status="processing"),
@@ -91,16 +108,67 @@ class AudioPipeline:
             )
 
             # ------------------------------------------------------------------
-            # Step 2: Sonoix transcription (stub — Phase 7b)
-            # TODO: transcription = await SonoixClient.transcribe(vocals_path)
+            # Step 2: Soniox transcription + syllabification (Phase 7b)
             # ------------------------------------------------------------------
+            syllable_timings = []
+            transcription = None
+
+            if self.sonoix is not None:
+                await self.job_service.mark_step(job.id, "transcribing", 0)
+
+                transcription = await self.sonoix.transcribe(vocals_path)
+                syllable_timings = self._syllabifier.syllabify(transcription.tokens)
+
+                await self.job_service.mark_step(job.id, "transcribing", 100)
+
+                await self.repo.update_track(
+                    job.track_id,
+                    TrackUpdate(
+                        lyrics_text=transcription.full_text,
+                        syllable_timings=syllable_timings,
+                        language=transcription.language,
+                        status="processing",
+                    ),
+                )
+
+                logger.info(
+                    "step_completed",
+                    job_id=job.id,
+                    step="transcribing",
+                    token_count=len(transcription.tokens),
+                    syllable_count=len(syllable_timings),
+                    language=transcription.language,
+                )
 
             # ------------------------------------------------------------------
-            # Step 3: Video generation (stub — Phase 7b)
-            # TODO: clip_path = await VideoGenerator.generate(
-            #     instrumental_path, transcription, track.artist, track.title
-            # )
+            # Step 3: Video generation (Phase 7b)
             # ------------------------------------------------------------------
+            clip_path: str | None = None
+
+            if self.video_gen is not None and transcription is not None:
+                await self.job_service.mark_step(job.id, "generating_video", 0)
+
+                clip_path = await self.video_gen.generate(
+                    instrumental_path=instrumental_path,
+                    syllable_timings=syllable_timings,
+                    artist=track.artist,
+                    title=track.title,
+                    track_id=job.track_id,
+                )
+
+                await self.job_service.mark_step(job.id, "generating_video", 100)
+
+                await self.repo.update_track(
+                    job.track_id,
+                    TrackUpdate(clip_path=clip_path, status="processing"),
+                )
+
+                logger.info(
+                    "step_completed",
+                    job_id=job.id,
+                    step="generating_video",
+                    clip_path=clip_path,
+                )
 
             # ------------------------------------------------------------------
             # Step 4: Feature extraction (stub — Phase 8a)
@@ -109,7 +177,7 @@ class AudioPipeline:
 
             # ------------------------------------------------------------------
             # Step 5: Lyric embedding (stub — Phase 8a)
-            # TODO: lyric_vector = await LyricEmbedder.embed(transcription.lyrics_text)
+            # TODO: lyric_vector = await LyricEmbedder.embed(transcription.full_text)
             # ------------------------------------------------------------------
 
             # ------------------------------------------------------------------
@@ -118,10 +186,18 @@ class AudioPipeline:
             # TODO: await repo.update_track(track_id, TrackUpdate(status="ready"))
             # ------------------------------------------------------------------
 
+            steps_completed = ["separating"]
+            if transcription is not None:
+                steps_completed.append("transcribing")
+            if clip_path is not None:
+                steps_completed.append("generating_video")
+
             result = {
                 "vocals_path": vocals_path,
                 "instrumental_path": instrumental_path,
-                "steps_completed": ["separating"],
+                "clip_path": clip_path,
+                "language": transcription.language if transcription is not None else None,
+                "steps_completed": steps_completed,
             }
             await self.job_service.mark_completed(job.id, result)
 

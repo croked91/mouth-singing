@@ -20,6 +20,11 @@ class WorkerSettings(BaseSettings):
     poll_interval_sec: float = 2.0
     log_level: str = "INFO"
 
+    # Soniox Speech-to-Text API settings.
+    sonoix_api_key: str = ""
+    sonoix_api_url: str = "https://api.soniox.com"
+    sonoix_timeout: float = 120.0
+
     model_config = {"env_prefix": ""}
 
 

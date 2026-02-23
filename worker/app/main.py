@@ -23,7 +23,9 @@ from karaoke_shared.services.job_service import JobService
 
 from app.config import settings
 from app.pipeline.audio_pipeline import AudioPipeline
+from app.pipeline.sonoix_client import SonoixClient
 from app.pipeline.uvr_separator import UVRSeparator
+from app.pipeline.video_generator import VideoGenerator
 
 logger = structlog.get_logger(__name__)
 
@@ -122,7 +124,21 @@ async def main() -> None:
         repo = SQLiteRepository(db)
         job_service = JobService(repo)
         uvr = UVRSeparator(settings.model_cache_dir, settings.media_root)
-        pipeline = AudioPipeline(job_service, uvr, repo)
+        sonoix: SonoixClient | None = None
+        video_gen: VideoGenerator | None = None
+
+        if settings.sonoix_api_key:
+            sonoix = SonoixClient(
+                api_key=settings.sonoix_api_key,
+                api_url=settings.sonoix_api_url,
+                timeout=settings.sonoix_timeout,
+            )
+            video_gen = VideoGenerator(settings.media_root)
+            logger.info("sonoix_enabled", api_url=settings.sonoix_api_url)
+        else:
+            logger.warning("sonoix_api_key_not_set", hint="transcription and video steps will be skipped")
+
+        pipeline = AudioPipeline(job_service, uvr, repo, sonoix, video_gen)
 
         poller = JobPoller(
             pipeline=pipeline,

@@ -11,6 +11,7 @@ dependencies = [
     "pydantic>=2.0",
     "aiosqlite>=0.20",
     "qdrant-client>=1.8",
+    "pyphen>=0.16",
 ]
 
 [tool.setuptools.packages.find]

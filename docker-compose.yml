@@ -54,6 +54,8 @@ services:
       WORKER_ID: worker-1
       POLL_INTERVAL_SEC: "2"
       LOG_LEVEL: INFO
+      SONOIX_API_KEY: ${SONOIX_API_KEY:-}
+      SONOIX_API_URL: ${SONOIX_API_URL:-https://api.soniox.com}
     volumes:
       - sqlite_data:/data/sqlite
       - media_data:/data/media
