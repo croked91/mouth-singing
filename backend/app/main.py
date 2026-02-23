@@ -100,6 +100,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     except Exception as exc:
         logger.warning("qdrant_init_failed", error=str(exc))
 
+    # 4. Sentence-transformer embedder for semantic search (optional).
+    #    If sentence-transformers is not installed or the model download fails,
+    #    we log a warning and continue — the search service falls back to FTS.
+    embedder = None
+    try:
+        from app.services.embedder import Embedder  # noqa: PLC0415
+
+        embedder = Embedder()
+        logger.info(
+            "embedder_loaded",
+            model="paraphrase-multilingual-MiniLM-L12-v2",
+        )
+    except Exception as exc:
+        logger.warning("embedder_not_available", error=str(exc))
+    app.state.embedder = embedder
+
     logger.info("karaoke_backend_ready")
 
     yield

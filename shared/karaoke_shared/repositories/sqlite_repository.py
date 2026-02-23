@@ -210,6 +210,34 @@ class SQLiteRepository:
         )
         await self.db.commit()
 
+    async def suggest_tracks(
+        self, query: str, limit: int = 10
+    ) -> list[dict[str, str]]:
+        """Prefix search on artist and title for autocomplete.
+
+        Returns a list of dicts with ``'artist'`` and ``'title'`` keys.
+        Only tracks with ``status='ready'`` are considered.
+
+        Args:
+            query: The prefix string to match (case-insensitive LIKE).
+            limit: Maximum number of results to return.
+
+        Returns:
+            A list of ``{'artist': str, 'title': str}`` dicts.
+        """
+        pattern = f"{query}%"
+        cursor = await self.db.execute(
+            """
+            SELECT DISTINCT artist, title FROM tracks
+            WHERE (artist LIKE ? OR title LIKE ?)
+              AND status = 'ready'
+            LIMIT ?
+            """,
+            (pattern, pattern, limit),
+        )
+        rows = await cursor.fetchall()
+        return [{"artist": row[0], "title": row[1]} for row in rows]
+
     def _track_from_row(self, row: aiosqlite.Row) -> Track:
         """Build a Track model from a DB row, deserializing JSON fields."""
         data = self._row_to_dict(row)

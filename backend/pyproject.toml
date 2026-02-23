@@ -15,6 +15,7 @@ dependencies = [
     "qdrant-client>=1.8",
     "structlog>=24.0",
     "httpx",
+    "python-multipart>=0.0.9",
     "karaoke-shared",
 ]
 
@@ -23,6 +24,9 @@ dev = [
     "pytest",
     "pytest-asyncio",
     "ruff",
+]
+semantic = [
+    "sentence-transformers>=3.0",
 ]
 
 [tool.setuptools.packages.find]

@@ -56,3 +56,13 @@ def get_qdrant_repo(request: Request) -> QDrantRepository:
     ``asyncio.to_thread()`` since the underlying client is synchronous.
     """
     return QDrantRepository(request.app.state.qdrant)
+
+
+def get_embedder(request: Request):
+    """Return the sentence-transformers Embedder, or ``None`` if not loaded.
+
+    The embedder is loaded once at startup and stored on ``app.state``. If it
+    was not loaded (missing dependency or failed download), this returns
+    ``None`` and the search service falls back to FTS-only mode.
+    """
+    return getattr(request.app.state, "embedder", None)
