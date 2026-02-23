@@ -1,0 +1,49 @@
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.8.0
+    container_name: karaoke_qdrant
+    restart: unless-stopped
+    volumes:
+      - qdrant_data:/qdrant/storage
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    environment:
+      QDRANT__SERVICE__HTTP_PORT: 6333
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: karaoke_backend
+    restart: unless-stopped
+    depends_on:
+      qdrant:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: /data/sqlite/karaoke.db
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: "6333"
+      MEDIA_ROOT: /data/media
+      ADMIN_SECRET: ${ADMIN_SECRET:-changeme}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - sqlite_data:/data/sqlite
+      - media_data:/data/media
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  qdrant_data:
+  sqlite_data:
+  media_data:
