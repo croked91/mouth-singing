@@ -26,6 +26,8 @@ class Job(BaseModel):
     locked_at: str | None = None
     result: dict | None = None  # deserialized from JSON
     error_message: str | None = None
+    current_step: str | None = None  # e.g. 'separating', 'transcribing', 'generating_video'
+    progress: int = 0  # 0-100
     created_at: str
     updated_at: str
 

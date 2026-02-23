@@ -117,6 +117,8 @@ CREATE TABLE IF NOT EXISTS job_queue (
     locked_at TEXT,
     result TEXT,  -- JSON
     error_message TEXT,
+    current_step TEXT,      -- e.g. 'separating', 'transcribing', 'generating_video'
+    progress INTEGER NOT NULL DEFAULT 0,  -- 0-100
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );

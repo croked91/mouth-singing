@@ -50,11 +50,31 @@ async def init_db(db_path: str) -> aiosqlite.Connection:
     # WAL mode allows concurrent readers while a writer is active.
     await connection.execute("PRAGMA journal_mode=WAL")
     await connection.execute("PRAGMA foreign_keys=OFF")  # intentional per ADR-03
+    await connection.execute("PRAGMA busy_timeout=5000")  # wait up to 5s on writer contention
 
     schema_sql = _INIT_SQL_PATH.read_text(encoding="utf-8")
     await connection.executescript(schema_sql)
     await connection.commit()
 
+    # Apply lightweight migrations for columns added after Phase 4a.
+    # ALTER TABLE ... ADD COLUMN is a no-op if the column already exists
+    # (we catch the OperationalError and move on).
+    await _migrate(connection)
+
     logger.info("sqlite_schema_applied", path=str(path))
 
     return connection
+
+
+async def _migrate(conn: aiosqlite.Connection) -> None:
+    """Apply column-level migrations that cannot be expressed in CREATE TABLE IF NOT EXISTS."""
+    migrations = [
+        "ALTER TABLE job_queue ADD COLUMN current_step TEXT",
+        "ALTER TABLE job_queue ADD COLUMN progress INTEGER NOT NULL DEFAULT 0",
+    ]
+    for sql in migrations:
+        try:
+            await conn.execute(sql)
+        except Exception:
+            pass  # column already exists — safe to ignore
+    await conn.commit()

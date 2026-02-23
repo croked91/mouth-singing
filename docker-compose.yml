@@ -43,7 +43,28 @@ services:
       timeout: 5s
       retries: 5
 
+  worker:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    environment:
+      DATABASE_URL: /data/sqlite/karaoke.db
+      MEDIA_ROOT: /data/media
+      MODEL_CACHE_DIR: /data/models
+      WORKER_ID: worker-1
+      POLL_INTERVAL_SEC: "2"
+      LOG_LEVEL: INFO
+    volumes:
+      - sqlite_data:/data/sqlite
+      - media_data:/data/media
+      - models_data:/data/models
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   qdrant_data:
   sqlite_data:
   media_data:
+  models_data:

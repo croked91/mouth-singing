@@ -748,6 +748,14 @@ class SQLiteRepository:
         )
         await self.db.commit()
 
+    async def mark_step(self, job_id: str, step: str, progress: int) -> None:
+        """Update the current processing step and progress percentage."""
+        await self.db.execute(
+            "UPDATE job_queue SET current_step = ?, progress = ?, updated_at = ? WHERE id = ?",
+            (step, progress, _now_iso(), job_id),
+        )
+        await self.db.commit()
+
     def _job_from_row(self, row: aiosqlite.Row) -> Job:
         """Build a Job model from a DB row, deserializing the result JSON."""
         data = self._row_to_dict(row)
@@ -768,6 +776,8 @@ class SQLiteRepository:
             locked_at=data.get("locked_at"),
             result=result,
             error_message=data.get("error_message"),
+            current_step=data.get("current_step"),
+            progress=data.get("progress", 0),
             created_at=data["created_at"],
             updated_at=data["updated_at"],
         )
