@@ -719,3 +719,27 @@ class SQLiteRepository:
             (new_status, attempts, error, _now_iso(), job_id),
         )
         await self.db.commit()
+
+    def _job_from_row(self, row: aiosqlite.Row) -> Job:
+        """Build a Job model from a DB row, deserializing the result JSON."""
+        data = self._row_to_dict(row)
+
+        result: dict | None = None
+        raw_result = data.get("result")
+        if isinstance(raw_result, str):
+            result = json.loads(raw_result)
+
+        return Job(
+            id=data["id"],
+            track_id=data["track_id"],
+            priority=data.get("priority", 1),
+            status=data["status"],
+            attempts=data.get("attempts", 0),
+            max_attempts=data.get("max_attempts", 3),
+            locked_by=data.get("locked_by"),
+            locked_at=data.get("locked_at"),
+            result=result,
+            error_message=data.get("error_message"),
+            created_at=data["created_at"],
+            updated_at=data["updated_at"],
+        )

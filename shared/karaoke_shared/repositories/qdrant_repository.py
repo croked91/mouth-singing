@@ -85,16 +85,16 @@ class QDrantRepository:
             ]
             qdrant_filter = Filter(must=conditions)
 
-        results = self.client.search(
+        response = self.client.query_points(
             collection_name=collection,
-            query_vector=vector,
+            query=vector,
             query_filter=qdrant_filter,
             limit=limit,
         )
 
         return [
             (str(hit.id), hit.score, hit.payload or {})
-            for hit in results
+            for hit in response.points
         ]
 
     def delete(self, collection: str, point_id: str) -> None:

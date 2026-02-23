@@ -21,8 +21,8 @@
 | Фаза | Название | Файл | Статус |
 |---|---|---|---|
 | 3 | Скаффолдинг проекта и инфраструктура | [phase-03.md](phases/phase-03.md) | Завершена |
-| 4a | Pydantic-модели и репозитории | [phase-04a.md](phases/phase-04a.md) | В работе |
-| 4b | Unit-тесты слоя данных | [phase-04b.md](phases/phase-04b.md) | Ожидает |
+| 4a | Pydantic-модели и репозитории | [phase-04a.md](phases/phase-04a.md) | Завершена |
+| 4b | Unit-тесты слоя данных | [phase-04b.md](phases/phase-04b.md) | Завершена |
 | 5 | Сессии, участники, очередь | [phase-05.md](phases/phase-05.md) | Ожидает |
 | 6 | Каталог треков и поиск | [phase-06.md](phases/phase-06.md) | Ожидает |
 | 7a | Audio Worker — JobService + UVR | [phase-07a.md](phases/phase-07a.md) | Ожидает |

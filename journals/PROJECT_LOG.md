@@ -73,8 +73,8 @@
 - [x] Обновление dependencies.py (get_sqlite_repo, get_qdrant_repo)
 - [x] Архитектурное ревью (PASS WITH NOTES, все замечания исправлены)
 - [x] Smoke-тест (CRUD, FTS, error handling)
-- [ ] Согласование с пользователем
-- [ ] Коммит
+- [x] Согласование с пользователем
+- [x] Коммит (4639b3f)
 
 ### Хронология:
 - **2026-02-23**: python-developer создал 6 файлов моделей и 2 репозитория. 17 реэкспортов в __init__.py. Все импорты работают.
@@ -88,3 +88,20 @@
   - Убран неиспользуемый _deserialize_json_fields
   - PointIdsList: import перенесён на уровень модуля
 - **2026-02-23**: Smoke-тест пройден: Session, Participant, Track CRUD работает, FTS с невалидным запросом не падает.
+
+## Фаза 4b: Unit-тесты слоя данных
+
+### Задачи фазы:
+- [x] conftest.py (in-memory SQLite + QDrant fixtures)
+- [x] test_models.py (59 тестов, все Pydantic-модели)
+- [x] test_sqlite_repo.py (47 тестов, CRUD для 6 таблиц)
+- [x] test_qdrant_repo.py (13 тестов, upsert/search/delete/batch)
+- [x] Баг-фиксы по результатам тестирования (2 бага)
+- [x] 119/119 тестов пройдены
+- [ ] Коммит
+
+### Хронология:
+- **2026-02-23**: polyglot-test-engineer написал 122 теста (111 pass, 11 xfail). Выявлено 2 бага:
+  - Bug #1: отсутствующий _job_from_row() в SQLiteRepository
+  - Bug #2: QDrant client.search() удалён в qdrant-client 1.7+, нужен query_points()
+- **2026-02-23**: Оба бага исправлены. xfail-тесты переведены в обычные. 119/119 pass, 0 fail.
