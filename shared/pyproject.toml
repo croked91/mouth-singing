@@ -9,6 +9,8 @@ description = "Shared models and interfaces for the karaoke application"
 requires-python = ">=3.10"
 dependencies = [
     "pydantic>=2.0",
+    "aiosqlite>=0.20",
+    "qdrant-client>=1.8",
 ]
 
 [tool.setuptools.packages.find]

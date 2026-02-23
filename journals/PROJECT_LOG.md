@@ -56,10 +56,35 @@
 - [x] backend/Dockerfile (Python 3.12, ffmpeg, curl)
 - [x] .env.example, .gitignore
 - [x] Smoke-тест (Docker Compose)
-- [ ] Согласование с пользователем
-- [ ] Коммит
+- [x] Согласование с пользователем
+- [x] Коммит (36c6f44)
 
 ### Хронология:
 - **2026-02-23**: python-developer создал скелет. Исправлен build-backend (setuptools.build_meta). Добавлен package-data для init.sql. QDrant init сделан graceful (degraded mode без QDrant).
 - **2026-02-23**: Локальная проверка: backend стартует, SQLite инициализируется с 6 таблицами + FTS5, health endpoint возвращает корректный статус.
 - **2026-02-23**: Docker Compose: исправлен healthcheck QDrant (curl/wget отсутствуют в образе → bash /dev/tcp). Оба контейнера healthy, GET /health → `{"status":"ok","sqlite":"ok","qdrant":"ok"}`.
+
+## Фаза 4a: Pydantic-модели и репозитории
+
+### Задачи фазы:
+- [x] Pydantic-модели (6 файлов: session, track, queue, job, recommendation, play_history)
+- [x] SQLiteRepository (25 async методов, CRUD для 6 таблиц)
+- [x] QDrantRepository (upsert, search, delete, batch_upsert)
+- [x] Обновление dependencies.py (get_sqlite_repo, get_qdrant_repo)
+- [x] Архитектурное ревью (PASS WITH NOTES, все замечания исправлены)
+- [x] Smoke-тест (CRUD, FTS, error handling)
+- [ ] Согласование с пользователем
+- [ ] Коммит
+
+### Хронология:
+- **2026-02-23**: python-developer создал 6 файлов моделей и 2 репозитория. 17 реэкспортов в __init__.py. Все импорты работают.
+- **2026-02-23**: software-architect провёл ревью. Вердикт: PASS WITH NOTES. Исправлено:
+  - Race condition в create_queue_entry → атомарный INSERT с subquery
+  - get_db/get_sqlite_repo: убраны ложные AsyncGenerator → plain функции
+  - assert → RuntimeError (6 мест)
+  - row_factory убран из конструктора (уже ставится в init_db)
+  - fail_job: очистка locked_by/locked_at при retry
+  - search_fts: try/except для невалидного FTS5 синтаксиса
+  - Убран неиспользуемый _deserialize_json_fields
+  - PointIdsList: import перенесён на уровень модуля
+- **2026-02-23**: Smoke-тест пройден: Session, Participant, Track CRUD работает, FTS с невалидным запросом не падает.
