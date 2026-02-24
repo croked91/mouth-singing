@@ -29,7 +29,7 @@
 | 7b | Sonoix + VideoGenerator + SSE | [phase-07b.md](phases/phase-07b.md) | Завершена |
 | 8a | Извлечение фичей и эмбеддингов | [phase-08a.md](phases/phase-08a.md) | Завершена |
 | 8b | Рекомендательная система | [phase-08b.md](phases/phase-08b.md) | Завершена |
-| 9 | Фронтенд — скаффолдинг, тема, Landing + Sessions | [phase-09.md](phases/phase-09.md) | Ожидает |
+| 9 | Фронтенд — скаффолдинг, тема, Landing + Sessions | [phase-09.md](phases/phase-09.md) | Завершена |
 | 10a | Фронтенд — QueuePage + рекомендации | [phase-10a.md](phases/phase-10a.md) | Ожидает |
 | 10b | Фронтенд — Поиск + Загрузка | [phase-10b.md](phases/phase-10b.md) | Ожидает |
 | 11 | Фронтенд — Караоке-плеер | [phase-11.md](phases/phase-11.md) | Ожидает |

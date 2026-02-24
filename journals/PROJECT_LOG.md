@@ -1,7 +1,7 @@
 # Журнал проекта: Караоке-приложение
 
 ## Статус проекта
-**Текущая фаза:** 8b — Рекомендательная система (завершена)
+**Текущая фаза:** 9 — Фронтенд скаффолдинг, тема, Landing + Sessions (завершена)
 **Дата начала:** 2026-02-22
 **Последний коммит:** (реструктуризация v2/)
 **Структура:** Реализация в `v2/`, документация в корне
@@ -269,3 +269,32 @@
 - **2026-02-24**: API endpoint GET /recommendations возвращает strategy + tracks с similarity_score.
 - **2026-02-24**: QueueService.finish_playing интегрирован: при наличии qdrant_repo вызывает update_portrait и record_transition. При ошибке — логирует и продолжает.
 - **2026-02-24**: polyglot-test-engineer написал 57 тестов. Все 509 pass.
+- **2026-02-24**: Фаза 8b принята. Коммит 1c5246f.
+
+## Фаза 9: Фронтенд — скаффолдинг, тема, Landing + Sessions
+**Коммит:** (pending)
+
+### Задачи фазы:
+- [x] Vite + React 18 + TypeScript + MUI 5 скаффолдинг
+- [x] Тёмная тема по дизайн-системе (glassmorphism, градиенты, glow-эффекты)
+- [x] Zustand stores (session, queue, player)
+- [x] API client (axios, типизированные методы для всех эндпоинтов)
+- [x] SSE service (EventSource обёртка)
+- [x] Роутинг (react-router-dom v6): /, /session/:id, /session/:id/queue, /session/:id/play/:entryId, /admin
+- [x] CosmicBackground (градиенты, glow blobs, мерцающие звёзды, SVG noise)
+- [x] WelcomePage: логотип, заголовок, кнопка «Начать сессию», feature pills, ссылка «Админ»
+- [x] SessionPage: добавление участников, генерация никнеймов, gradient аватары, кнопка «Поехали!»
+- [x] Placeholder страницы (QueuePage, PlayerPage, AdminPage)
+- [x] Dockerfile (multi-stage node → nginx) + nginx.conf (proxy /api, SPA fallback)
+- [x] `npm run build` — success, `tsc --noEmit` — 0 errors
+- [x] `docker build` — success
+- [x] E2E проверка: WelcomePage → создание сессии → SessionPage → добавление участников (всё через реальный API)
+- [ ] Коммит
+
+### Хронология:
+- **2026-02-24**: frontend-web-client создал React-приложение. Vite 7 + React 18 + TS + MUI 5 + Zustand + react-router-dom v6 + axios.
+- **2026-02-24**: Тёмная тема реализована по 00_design_system.md: glassmorphism карточки, gradient кнопки, фокус-glow на TextField, cosmic background с 55 мерцающими звёздами.
+- **2026-02-24**: WelcomePage: полноэкранный лендинг с gradient CTA → POST /sessions → навигация к SessionPage.
+- **2026-02-24**: SessionPage: glassmorphism карточка, chips участников с cycling gradient аватарами, генерация никнеймов через API, empty state с dashed border.
+- **2026-02-24**: E2E flow проверен через Playwright: создание сессии, генерация «ДушевныйПингвин», добавление «Маша» вручную — всё работает с реальным бэкендом.
+- **2026-02-24**: Docker build проходит (multi-stage node:20-alpine → nginx:alpine).
