@@ -36,4 +36,4 @@
 | 12 | Фронтенд — Админка и UX polish | [phase-12.md](phases/phase-12.md) | Завершена |
 | 13 | Bootstrap CLI | [phase-13.md](phases/phase-13.md) | Завершена |
 | 14 | Docker Compose + Nginx + Deploy | [phase-14.md](phases/phase-14.md) | Завершена |
-| 15 | E2E тестирование и hardening | [phase-15.md](phases/phase-15.md) | Ожидает |
+| 15 | E2E тестирование и hardening | [phase-15.md](phases/phase-15.md) | Завершена |

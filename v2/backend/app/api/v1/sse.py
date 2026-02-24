@@ -61,7 +61,7 @@ async def job_status_stream(
                 track = await repo.get_track(job.track_id)
                 clip_url: str | None = None
                 if track and track.clip_path:
-                    clip_url = f"/media/clips/{job.track_id}.mp4"
+                    clip_url = f"/api/v1/tracks/{job.track_id}/stream"
 
                 payload = json.dumps(
                     {

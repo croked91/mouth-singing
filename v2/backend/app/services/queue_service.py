@@ -58,7 +58,7 @@ class QueueService:
         history) and creates a fresh entry at the end with the same participant
         and track. Returns the new entry, or ``None`` if *entry_id* was not found.
         """
-        old_entry = await self.repo._get_queue_entry(entry_id)
+        old_entry = await self.repo.get_queue_entry(entry_id)
         if old_entry is None:
             return None
 
@@ -96,7 +96,7 @@ class QueueService:
             The next QueueEntry, or ``None`` if the queue is now empty or
             *entry_id* was not found.
         """
-        entry = await self.repo._get_queue_entry(entry_id)
+        entry = await self.repo.get_queue_entry(entry_id)
         if entry is None:
             return None
 

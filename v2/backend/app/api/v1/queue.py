@@ -203,7 +203,7 @@ async def start_playing(
     repo: SQLiteRepository = Depends(get_sqlite_repo),
 ) -> StartPlayingResponse:
     """Mark a queue entry as playing and return the track data needed by the player."""
-    entry = await repo._get_queue_entry(entry_id)
+    entry = await repo.get_queue_entry(entry_id)
     if entry is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -245,7 +245,7 @@ async def finish_playing(
     the next song without polling.
     """
     # Verify the entry exists before handing off to the service.
-    entry = await repo._get_queue_entry(entry_id)
+    entry = await repo.get_queue_entry(entry_id)
     if entry is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -279,7 +279,7 @@ async def remove_from_queue(
 
     Used when a participant changes their mind before their turn starts.
     """
-    entry = await repo._get_queue_entry(entry_id)
+    entry = await repo.get_queue_entry(entry_id)
     if entry is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

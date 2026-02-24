@@ -35,7 +35,7 @@ logger = structlog.get_logger(__name__)
 
 # Collection names used in QDrant.
 _AUDIO_COLLECTION = "audio_features"
-_LYRIC_COLLECTION = "lyric_embeddings"
+_LYRIC_COLLECTION = "lyrics_embeddings"
 
 # Number of QDrant points to upsert in a single call.
 _QDRANT_BATCH_SIZE = 100

@@ -678,8 +678,10 @@ class TestRecordTransition:
 
         qdrant_repo.upsert.assert_called_once()
 
-    async def test_transition_point_id_is_from_to_pair(self):
-        """The transition point_id is formatted as '{from_id}_{to_id}'."""
+    async def test_transition_point_id_is_deterministic_uuid(self):
+        """The transition point_id is a deterministic UUID v5 based on the from→to pair."""
+        from uuid import NAMESPACE_URL, uuid5
+
         participant_id = "p-1"
         prev_id = _uid()
         curr_id = _uid()
@@ -694,7 +696,7 @@ class TestRecordTransition:
         await service.record_transition(participant_id, curr_id)
 
         _, point_id, _, payload = qdrant_repo.upsert.call_args.args
-        expected_id = f"{prev_id}_{curr_id}"
+        expected_id = str(uuid5(NAMESPACE_URL, f"{prev_id}_{curr_id}"))
         assert point_id == expected_id
 
     async def test_transition_payload_contains_from_to_tracks(self):
@@ -1084,7 +1086,7 @@ class TestQueueServiceFinishPlayingIntegration:
         from app.services.queue_service import QueueService
 
         repo = AsyncMock()
-        repo._get_queue_entry.return_value = entry
+        repo.get_queue_entry.return_value = entry
         repo.update_queue_entry_status.return_value = None
         repo.create_play_history.return_value = MagicMock()
         repo.increment_play_count.return_value = None
@@ -1182,7 +1184,7 @@ class TestQueueServiceFinishPlayingIntegration:
         from app.services.queue_service import QueueService
 
         repo = AsyncMock()
-        repo._get_queue_entry.return_value = None
+        repo.get_queue_entry.return_value = None
 
         service = QueueService(repo=repo, qdrant_repo=None)
         result = await service.finish_playing("nonexistent-entry-id")

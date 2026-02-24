@@ -150,7 +150,9 @@ async def terminate_session(
     Requires the ``X-Admin-Secret`` header to match the configured
     ``admin_secret`` value.
     """
-    if x_admin_secret != settings.admin_secret:
+    import hmac
+
+    if not hmac.compare_digest(x_admin_secret or "", settings.admin_secret):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Invalid or missing admin secret.",

@@ -225,11 +225,12 @@ class SQLiteRepository:
         Returns:
             A list of ``{'artist': str, 'title': str}`` dicts.
         """
-        pattern = f"{query}%"
+        escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"{escaped}%"
         cursor = await self.db.execute(
             """
             SELECT DISTINCT artist, title FROM tracks
-            WHERE (artist LIKE ? OR title LIKE ?)
+            WHERE (artist LIKE ? ESCAPE '\\' OR title LIKE ? ESCAPE '\\')
               AND status = 'ready'
             LIMIT ?
             """,
@@ -453,7 +454,7 @@ class SQLiteRepository:
         )
         await self.db.commit()
 
-        entry = await self._get_queue_entry(data.id)
+        entry = await self.get_queue_entry(data.id)
         if entry is None:
             raise RuntimeError(f"QueueEntry {data.id} not found after insert")
         return entry
@@ -530,7 +531,7 @@ class SQLiteRepository:
             return None
         return self._queue_entry_from_row(row)
 
-    async def _get_queue_entry(self, entry_id: str) -> QueueEntry | None:
+    async def get_queue_entry(self, entry_id: str) -> QueueEntry | None:
         """Fetch a single queue entry by primary key."""
         cursor = await self.db.execute(
             "SELECT * FROM queue_entries WHERE id = ?", (entry_id,)

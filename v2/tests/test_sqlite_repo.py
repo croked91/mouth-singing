@@ -537,7 +537,7 @@ class TestQueueEntries:
         await sqlite_repo.delete_queue_entry(entry.id)
 
         # The internal getter should return None
-        result = await sqlite_repo._get_queue_entry(entry.id)
+        result = await sqlite_repo.get_queue_entry(entry.id)
         assert result is None
 
     async def test_get_current_entry_playing_has_priority(

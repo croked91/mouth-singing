@@ -1,7 +1,7 @@
 # Журнал проекта: Караоке-приложение
 
 ## Статус проекта
-**Текущая фаза:** 14 — Docker Compose + Nginx + Deploy (завершена)
+**Текущая фаза:** 15 — E2E тестирование и hardening (завершена)
 **Дата начала:** 2026-02-22
 **Последний коммит:** (реструктуризация v2/)
 **Структура:** Реализация в `v2/`, документация в корне
@@ -454,3 +454,32 @@
 - **2026-02-24**: nginx.conf обновлён: client_max_body_size 50M, /health passthrough.
 - **2026-02-24**: docker-compose.override.yml: dev ports (6333, 8000, 3000), DEBUG logging.
 - **2026-02-24**: .env.example: полный набор переменных с комментариями.
+- **2026-02-24**: Фаза 14 принята. Коммит 0f44b8e.
+
+## Фаза 15: E2E тестирование и hardening
+**Коммит:** (pending)
+
+### Задачи фазы:
+- [x] E2E сценарные тесты (31 новый тест в test_e2e_scenarios.py)
+- [x] Полный user journey: создание сессии → участники → поиск → очередь → старт → финиш → skip → рекомендации → admin terminate
+- [x] Edge cases (26 тестов): невалидные файлы, пустой каталог, double-finish, double-start, 404/403/409 ошибки
+- [x] Стресс-тест (5 тестов): 5 участников, 20 треков, round-robin, play-through, skip rotation
+- [x] Архитектурное ревью (software-architect): PASS на всех 6 чекпоинтах
+- [x] Критический баг #1 исправлен: bootstrap QDrant collection name `lyric_embeddings` → `lyrics_embeddings`
+- [x] Критический баг #2 исправлен: transition point_id `f"{from}_{to}"` → `uuid5(NAMESPACE_URL, f"{from}_{to}")` (QDrant требует валидный UUID)
+- [x] Предупреждение #3 исправлено: SSE clip_url `/media/clips/` → `/api/v1/tracks/{id}/stream`
+- [x] Предупреждение #4 исправлено: `_get_queue_entry()` → `get_queue_entry()` (публичный API)
+- [x] Предупреждение #5 исправлено: LIKE wildcard injection в suggest_tracks (escape `%` и `_`)
+- [x] Предупреждение #7 исправлено: timing-safe admin secret comparison (`hmac.compare_digest`)
+- [x] 540/540 тестов пройдены (509 старых + 31 новых)
+- [x] Frontend build — success, tsc --noEmit — 0 errors
+- [x] Docker compose config — valid
+- [ ] Коммит
+
+### Хронология:
+- **2026-02-24**: polyglot-test-engineer написал 31 E2E тест: 1 полный journey, 26 edge cases, 5 стресс-тестов. Все pass.
+- **2026-02-24**: software-architect провёл финальное ревью. Чеклист: code duplication PASS, resource leaks PASS, error handling PASS, ADR compliance PASS, security PASS, Docker PASS. Найдено 2 критических бага и 5 предупреждений.
+- **2026-02-24**: Критический баг #1: имя QDrant-коллекции в bootstrap (`lyric_embeddings` без 's') не совпадало с backend/worker (`lyrics_embeddings`). Семантический поиск по каталогу не работал бы. Исправлено.
+- **2026-02-24**: Критический баг #2: transition_id формата `uuid_uuid` не является валидным UUID — QDrant отклоняет в продакшене (in-memory клиент в тестах допускает). Collaborative filtering был бы мёртв. Исправлено через uuid5.
+- **2026-02-24**: Исправлены предупреждения: SSE clip_url, публичный get_queue_entry, LIKE wildcard escape, timing-safe admin secret comparison.
+- **2026-02-24**: Все 540 тестов pass. Frontend build clean. Docker compose config valid.

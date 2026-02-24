@@ -15,6 +15,7 @@ All vector searches run against the ``audio_features`` QDrant collection
 from __future__ import annotations
 
 import asyncio
+from uuid import NAMESPACE_URL, uuid5
 
 import structlog
 from karaoke_shared.models.recommendation import RecommendationStrategy
@@ -275,8 +276,9 @@ class RecommendationService:
         if current_vector is None:
             return
 
-        # Use a deterministic point ID based on the from→to pair.
-        transition_id = f"{previous_track_id}_{current_track_id}"
+        # Use a deterministic UUID v5 based on the from→to pair.
+        # QDrant requires string IDs to be valid UUIDs.
+        transition_id = str(uuid5(NAMESPACE_URL, f"{previous_track_id}_{current_track_id}"))
 
         try:
             await asyncio.to_thread(
