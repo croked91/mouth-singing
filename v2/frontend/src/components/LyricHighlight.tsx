@@ -22,28 +22,9 @@ const LINE_GAP_THRESHOLD_SEC = 1.0;
 const MIN_LINE_CHARS_FOR_PUNCT_BREAK = 20;
 const MAX_LINE_CHARS = 55;
 
-const STYLE_PREV_LINE = {
-  fontWeight: 500,
-  fontSize: '36px',
-  color: 'rgba(6,182,212,0.5)',
-  filter: 'blur(1px)',
-  lineHeight: 1.3,
-  transition: 'opacity 0.3s ease',
-  userSelect: 'none' as const,
-  whiteSpace: 'pre-wrap' as const,
-} as const;
-
-const STYLE_NEXT_LINE = {
-  fontWeight: 500,
-  fontSize: '36px',
-  color: 'rgba(255,255,255,0.45)',
-  lineHeight: 1.3,
-  transition: 'opacity 0.3s ease',
-  userSelect: 'none' as const,
-  whiteSpace: 'pre-wrap' as const,
-} as const;
-
 const ACTIVE_LINE_FONT_SIZE = '72px';
+const STYLE_TRANSITION = 'opacity 0.5s ease, filter 0.5s ease';
+
 
 // ─── Helper: group syllables into lines ───────────────────────────────────────
 
@@ -327,6 +308,16 @@ export const LyricHighlight: React.FC<LyricHighlightProps> = ({
     }
   });
 
+  // Ref for scrolling to the active line
+  const lineRefs = useRef<(HTMLDivElement | null)[]>([]);
+
+  useEffect(() => {
+    const el = lineRefs.current[activeLineIndex];
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [activeLineIndex]);
+
   if (lines.length === 0) {
     return (
       <Box
@@ -352,80 +343,69 @@ export const LyricHighlight: React.FC<LyricHighlightProps> = ({
     );
   }
 
-  const prevLine = activeLineIndex > 0 ? lines[activeLineIndex - 1] : null;
-  const activeLine = lines[activeLineIndex] ?? null;
-  const nextLine =
-    activeLineIndex < lines.length - 1 ? lines[activeLineIndex + 1] : null;
-
   return (
     <Box
       sx={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
         flex: 1,
         height: '100%',
-        gap: '40px',
-        px: '120px',
         overflow: 'hidden',
+        px: '120px',
       }}
     >
-      {/* Previous line */}
-      <Box
-        sx={{
-          minHeight: '52px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          opacity: prevLine ? 1 : 0,
-          transition: 'opacity 0.4s ease',
-        }}
-      >
-        {prevLine && (
-          <Box component="span" sx={STYLE_PREV_LINE}>
-            {prevLine.syllables.map((s) => s.syllable).join('')}
-          </Box>
-        )}
-      </Box>
+      {/* Top spacer so the first line can be centered */}
+      <Box sx={{ height: '45%' }} />
 
-      {/* Active line */}
-      <Box
-        sx={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          width: '100%',
-          minHeight: '120px',
-        }}
-      >
-        {activeLine && (
-          <ActiveLine
-            key={activeLineIndex}
-            line={activeLine}
-            getCurrentTime={getCurrentTime}
-            isPlaying={isPlaying}
-          />
-        )}
-      </Box>
+      {lines.map((line, i) => {
+        const dist = i - activeLineIndex;
+        const isActive = dist === 0;
+        const isPrev = dist === -1;
+        const isNext = dist === 1;
 
-      {/* Next line */}
-      <Box
-        sx={{
-          minHeight: '52px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          opacity: nextLine ? 1 : 0,
-          transition: 'opacity 0.4s ease',
-        }}
-      >
-        {nextLine && (
-          <Box component="span" sx={STYLE_NEXT_LINE}>
-            {nextLine.syllables.map((s) => s.syllable).join('')}
+        return (
+          <Box
+            key={i}
+            ref={(el: HTMLDivElement | null) => { lineRefs.current[i] = el; }}
+            sx={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              py: isActive ? '16px' : '12px',
+              transition: STYLE_TRANSITION,
+              opacity: isActive ? 1 : (isPrev || isNext) ? 1 : 0,
+              filter: isPrev ? 'blur(1px)' : 'none',
+            }}
+          >
+            {isActive ? (
+              <ActiveLine
+                line={line}
+                getCurrentTime={getCurrentTime}
+                isPlaying={isPlaying}
+              />
+            ) : (isPrev || isNext) ? (
+              <Box
+                component="span"
+                sx={{
+                  fontWeight: 500,
+                  fontSize: '36px',
+                  color: isPrev ? 'rgba(6,182,212,0.5)' : 'rgba(255,255,255,0.45)',
+                  lineHeight: 1.3,
+                  userSelect: 'none',
+                  whiteSpace: 'pre-wrap',
+                  textAlign: 'center',
+                }}
+              >
+                {line.syllables.map((s) => s.syllable).join('')}
+              </Box>
+            ) : (
+              <Box sx={{ height: '48px' }} />
+            )}
           </Box>
-        )}
-      </Box>
+        );
+      })}
+
+      {/* Bottom spacer so the last line can be centered */}
+      <Box sx={{ height: '45%' }} />
     </Box>
   );
 };
