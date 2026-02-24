@@ -30,6 +30,7 @@ from karaoke_shared.models import (
     QueueEntryCreate,
     RecommendationResponse,
     RecommendationStrategy,
+    RecommendedTrackItem,
     Session,
     SessionCreate,
     SyllableTiming,
@@ -585,23 +586,20 @@ class TestRecommendationStrategy:
 
 class TestRecommendationResponse:
     def test_construction(self):
-        from datetime import timezone
-
-        now = datetime.now(timezone.utc).isoformat()
-        track = Track(
+        item = RecommendedTrackItem(
             id=str(uuid.uuid4()),
             artist="A",
             title="T",
-            source="catalog",
-            created_at=now,
-            updated_at=now,
+            duration_sec=200,
+            similarity_score=0.85,
         )
         resp = RecommendationResponse(
-            tracks=[track],
+            tracks=[item],
             strategy=RecommendationStrategy.POPULAR,
         )
         assert len(resp.tracks) == 1
         assert resp.strategy == RecommendationStrategy.POPULAR
+        assert resp.tracks[0].similarity_score == 0.85
 
     def test_empty_tracks_list(self):
         resp = RecommendationResponse(

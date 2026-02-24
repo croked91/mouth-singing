@@ -1,7 +1,7 @@
 # Журнал проекта: Караоке-приложение
 
 ## Статус проекта
-**Текущая фаза:** 8a — Извлечение фичей и эмбеддингов (ожидает начала)
+**Текущая фаза:** 8b — Рекомендательная система (завершена)
 **Дата начала:** 2026-02-22
 **Последний коммит:** (реструктуризация v2/)
 **Структура:** Реализация в `v2/`, документация в корне
@@ -234,11 +234,38 @@
 - [x] shared/pyproject.toml: optional deps [ml] (librosa, numpy, sentence-transformers), structlog в основные
 - [x] Тесты: 66 новых (20 FeatureExtractor + 26 LyricEmbedder + 20 AudioPipeline phase 8a)
 - [x] 452/452 тестов пройдены (386 старых + 66 новых)
-- [ ] Согласование с пользователем
-- [ ] Коммит
+- [x] Согласование с пользователем
+- [x] Коммит (cd654f2)
 
 ### Хронология:
 - **2026-02-24**: ml-sota-expert создал FeatureExtractor (45-d, MFCC+Chroma+SpectralContrast+Tonnetz+scalars, L2-norm) и LyricEmbedder (384-d, chunking по 256 токенов, mean pooling).
 - **2026-02-24**: Интеграция в AudioPipeline: шаги 4+5 через asyncio.gather, шаг 6 QDrant upsert для audio_features и lyrics_embeddings, обновление qdrant_synced=1.
 - **2026-02-24**: Worker main.py: lazy loading с graceful degradation (если librosa/sentence-transformers недоступны — шаги пропускаются).
 - **2026-02-24**: polyglot-test-engineer написал 66 тестов. Все 452 pass.
+- **2026-02-24**: Фаза 8a принята. Коммит cd654f2.
+
+## Фаза 8b: Рекомендательная система
+**Коммит:** (pending)
+
+### Задачи фазы:
+- [x] RecommendationService с 4 стратегиями (popular, last, last_two_avg, session_avg)
+- [x] Автоматический выбор стратегии по количеству исполненных треков
+- [x] KNN-поиск по audio_features коллекции QDrant с фильтрацией played tracks
+- [x] Portrait vector обновление при finish_playing (скользящее среднее)
+- [x] Граф переходов (transitions collection в QDrant)
+- [x] QDrantRepository.retrieve — получение вектора по ID точки
+- [x] RecommendedTrackItem модель (id, artist, title, duration_sec, similarity_score)
+- [x] API: GET /recommendations?participant_id=X&session_id=Y&limit=10
+- [x] Интеграция в QueueService.finish_playing (portrait + transitions при наличии qdrant_repo)
+- [x] Тесты: 57 новых (стратегии, fallbacks, portrait update, transitions, API, integration)
+- [x] 509/509 тестов пройдены (452 старых + 57 новых)
+- [ ] Согласование с пользователем
+- [ ] Коммит
+
+### Хронология:
+- **2026-02-24**: RecommendationService реализован с 4 стратегиями. Автоматический выбор: 0→popular, 1→last, 2→last_two_avg, 3+→session_avg. Fallback на popular при отсутствии вектора.
+- **2026-02-24**: Portrait vector обновляется при finish_playing: running average (old*(n-1)+current)/n. Transition граф записывается в QDrant transitions collection.
+- **2026-02-24**: QDrantRepository расширен методом retrieve (получение вектора по point ID).
+- **2026-02-24**: API endpoint GET /recommendations возвращает strategy + tracks с similarity_score.
+- **2026-02-24**: QueueService.finish_playing интегрирован: при наличии qdrant_repo вызывает update_portrait и record_transition. При ошибке — логирует и продолжает.
+- **2026-02-24**: polyglot-test-engineer написал 57 тестов. Все 509 pass.

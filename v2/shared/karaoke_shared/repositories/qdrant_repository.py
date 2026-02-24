@@ -97,6 +97,26 @@ class QDrantRepository:
             for hit in response.points
         ]
 
+    def retrieve(self, collection: str, point_id: str) -> list[float] | None:
+        """Retrieve the vector for a single point by ID.
+
+        Args:
+            collection: Collection to look up.
+            point_id: UUID string identifying the point.
+
+        Returns:
+            The vector as a list of floats, or ``None`` if the point does
+            not exist.
+        """
+        result = self.client.retrieve(
+            collection_name=collection,
+            ids=[point_id],
+            with_vectors=True,
+        )
+        if not result:
+            return None
+        return list(result[0].vector)
+
     def delete(self, collection: str, point_id: str) -> None:
         """Remove a single point from a collection.
 

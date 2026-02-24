@@ -13,10 +13,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from karaoke_shared.models.queue import QueueEntry
 from karaoke_shared.models.session import Participant
 from karaoke_shared.models.track import SyllableTiming, Track
+from karaoke_shared.repositories.qdrant_repository import QDrantRepository
 from karaoke_shared.repositories.sqlite_repository import SQLiteRepository
 from pydantic import BaseModel
 
-from app.dependencies import get_sqlite_repo
+from app.dependencies import get_qdrant_repo, get_sqlite_repo
 from app.services.queue_service import QueueService
 
 router = APIRouter()
@@ -230,12 +231,15 @@ async def start_playing(
 async def finish_playing(
     entry_id: str,
     repo: SQLiteRepository = Depends(get_sqlite_repo),
+    qdrant_repo: QDrantRepository = Depends(get_qdrant_repo),
 ) -> FinishPlayingResponse:
     """Mark a queue entry as done and advance to the next entry.
 
     Side effects:
     - Records play history.
     - Increments track play_count and participant tracks_played counters.
+    - Updates participant portrait vector (recommendation system).
+    - Records track transition for collaborative filtering.
 
     Returns the next participant and entry ID so the frontend can prepare
     the next song without polling.
@@ -248,7 +252,7 @@ async def finish_playing(
             detail=f"Queue entry '{entry_id}' not found.",
         )
 
-    service = QueueService(repo)
+    service = QueueService(repo, qdrant_repo=qdrant_repo)
     next_entry = await service.finish_playing(entry_id)
 
     if next_entry is None:

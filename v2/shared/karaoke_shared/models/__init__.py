@@ -11,6 +11,7 @@ from karaoke_shared.models.queue import QueueEntry, QueueEntryCreate
 from karaoke_shared.models.recommendation import (
     RecommendationResponse,
     RecommendationStrategy,
+    RecommendedTrackItem,
 )
 from karaoke_shared.models.session import (
     Participant,
@@ -39,6 +40,7 @@ __all__ = [
     # recommendation
     "RecommendationResponse",
     "RecommendationStrategy",
+    "RecommendedTrackItem",
     # session
     "Participant",
     "ParticipantCreate",
