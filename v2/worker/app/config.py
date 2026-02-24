@@ -20,6 +20,10 @@ class WorkerSettings(BaseSettings):
     poll_interval_sec: float = 2.0
     log_level: str = "INFO"
 
+    # QDrant vector database settings (for feature/embedding sync).
+    qdrant_host: str = "qdrant"
+    qdrant_port: int = 6333
+
     # Soniox Speech-to-Text API settings.
     sonoix_api_key: str = ""
     sonoix_api_url: str = "https://api.soniox.com"

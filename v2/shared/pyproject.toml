@@ -12,6 +12,14 @@ dependencies = [
     "aiosqlite>=0.20",
     "qdrant-client>=1.8",
     "pyphen>=0.16",
+    "structlog>=24.0",
+]
+
+[project.optional-dependencies]
+ml = [
+    "librosa>=0.10",
+    "numpy>=1.24",
+    "sentence-transformers>=2.2",
 ]
 
 [tool.setuptools.packages.find]

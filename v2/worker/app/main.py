@@ -138,13 +138,58 @@ async def main() -> None:
         else:
             logger.warning("sonoix_api_key_not_set", hint="transcription and video steps will be skipped")
 
+        # ML components — optional, loaded lazily
+        feature_extractor = None
+        lyric_embedder = None
+        qdrant_repo = None
+
+        try:
+            from karaoke_shared.ml.feature_extractor import FeatureExtractor
+
+            feature_extractor = FeatureExtractor()
+            logger.info("feature_extractor_loaded")
+        except Exception:
+            logger.warning("feature_extractor_unavailable", hint="librosa may not be installed")
+
+        try:
+            from karaoke_shared.ml.lyric_embedder import LyricEmbedder
+
+            lyric_embedder = LyricEmbedder(cache_dir=settings.model_cache_dir)
+            logger.info("lyric_embedder_loaded")
+        except Exception:
+            logger.warning("lyric_embedder_unavailable", hint="sentence-transformers may not be installed")
+
+        if feature_extractor is not None or lyric_embedder is not None:
+            try:
+                from qdrant_client import QdrantClient
+
+                from karaoke_shared.repositories.qdrant_repository import QDrantRepository
+
+                qdrant_client = QdrantClient(
+                    host=settings.qdrant_host,
+                    port=settings.qdrant_port,
+                )
+                qdrant_repo = QDrantRepository(qdrant_client)
+                logger.info("qdrant_connected", host=settings.qdrant_host, port=settings.qdrant_port)
+            except Exception:
+                logger.warning("qdrant_unavailable", hint="vectors will not be synced")
+
         # Reset jobs left in "running" state from a previous crash so
         # they become eligible for retry.
         reset_count = await repo.reset_stale_running_jobs(settings.worker_id)
         if reset_count:
             logger.info("stale_jobs_reset", count=reset_count)
 
-        pipeline = AudioPipeline(job_service, uvr, repo, sonoix, video_gen)
+        pipeline = AudioPipeline(
+            job_service,
+            uvr,
+            repo,
+            sonoix,
+            video_gen,
+            feature_extractor=feature_extractor,
+            lyric_embedder=lyric_embedder,
+            qdrant_repo=qdrant_repo,
+        )
 
         poller = JobPoller(
             pipeline=pipeline,

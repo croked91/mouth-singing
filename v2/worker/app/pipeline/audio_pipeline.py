@@ -5,7 +5,9 @@ implemented per phase:
   - Phase 7a: Step 1 — UVR vocal/instrumental separation.
   - Phase 7b: Step 2 — Soniox transcription + syllabification.
               Step 3 — VideoGenerator MP4 generation.
-  - Phase 8a: Steps 4-6 — feature extraction, lyric embedding, QDrant sync.
+  - Phase 8a: Step 4 — FeatureExtractor (librosa, 45-d).
+              Step 5 — LyricEmbedder (sentence-transformers, 384-d).
+              Step 6 — QDrant sync (audio_features + lyrics_embeddings).
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ import structlog
 
 from karaoke_shared.models.job import Job
 from karaoke_shared.models.track import TrackUpdate
+from karaoke_shared.repositories.qdrant_repository import QDrantRepository
 from karaoke_shared.repositories.sqlite_repository import SQLiteRepository
 from karaoke_shared.services.job_service import JobService
 from karaoke_shared.utils.syllabifier import Syllabifier
@@ -34,10 +37,10 @@ class AudioPipeline:
     :meth:`process`.  Dependencies are injected so that each component can be
     tested or swapped independently.
 
-    ``sonoix`` and ``video_gen`` are optional: when ``None`` the corresponding
-    pipeline steps (transcription and video generation) are skipped.  This
-    allows unit tests that only exercise the UVR step to construct the pipeline
-    without providing Soniox or FFmpeg dependencies.
+    ``sonoix``, ``video_gen``, ``feature_extractor``, ``lyric_embedder``, and
+    ``qdrant_repo`` are optional: when ``None`` the corresponding pipeline
+    steps are skipped.  This allows unit tests to construct the pipeline
+    without providing all dependencies.
 
     Args:
         job_service: Service for updating job state throughout processing.
@@ -45,6 +48,9 @@ class AudioPipeline:
         repo: Repository for reading track data and persisting updates.
         sonoix: Soniox Speech-to-Text client for transcription.
         video_gen: VideoGenerator for creating the karaoke MP4 clip.
+        feature_extractor: Extracts 45-d audio feature vector from instrumental.
+        lyric_embedder: Embeds lyrics into 384-d vector.
+        qdrant_repo: QDrant repository for upserting vectors.
     """
 
     def __init__(
@@ -54,12 +60,18 @@ class AudioPipeline:
         repo: SQLiteRepository,
         sonoix: SonoixClient | None = None,
         video_gen: VideoGenerator | None = None,
+        feature_extractor: object | None = None,
+        lyric_embedder: object | None = None,
+        qdrant_repo: QDrantRepository | None = None,
     ) -> None:
         self.job_service = job_service
         self.uvr = uvr
         self.repo = repo
         self.sonoix = sonoix
         self.video_gen = video_gen
+        self.feature_extractor = feature_extractor
+        self.lyric_embedder = lyric_embedder
+        self.qdrant_repo = qdrant_repo
         self._syllabifier = Syllabifier()
 
     async def process(self, job: Job) -> None:
@@ -171,31 +183,120 @@ class AudioPipeline:
                 )
 
             # ------------------------------------------------------------------
-            # Step 4: Feature extraction (stub — Phase 8a)
-            # TODO: feature_vector = await FeatureExtractor.extract(instrumental_path)
+            # Steps 4+5: Feature extraction & lyric embedding (Phase 8a)
+            # Run in parallel via asyncio.gather.
             # ------------------------------------------------------------------
+            feature_vector: list[float] | None = None
+            lyric_vector: list[float] | None = None
+
+            tasks = []
+
+            if self.feature_extractor is not None:
+                await self.job_service.mark_step(job.id, "extracting_features", 0)
+
+                async def _extract_features() -> list[float]:
+                    vec = await asyncio.to_thread(
+                        self.feature_extractor.extract, instrumental_path
+                    )
+                    await self.job_service.mark_step(job.id, "extracting_features", 100)
+                    return vec
+
+                tasks.append(_extract_features())
+
+            if self.lyric_embedder is not None and transcription is not None:
+                await self.job_service.mark_step(job.id, "embedding_lyrics", 0)
+
+                async def _embed_lyrics() -> list[float]:
+                    vec = await asyncio.to_thread(
+                        self.lyric_embedder.embed, transcription.full_text
+                    )
+                    await self.job_service.mark_step(job.id, "embedding_lyrics", 100)
+                    return vec
+
+                tasks.append(_embed_lyrics())
+
+            if tasks:
+                results_list = await asyncio.gather(*tasks)
+                idx = 0
+                if self.feature_extractor is not None:
+                    feature_vector = results_list[idx]
+                    idx += 1
+                if self.lyric_embedder is not None and transcription is not None:
+                    lyric_vector = results_list[idx]
+
+                logger.info(
+                    "step_completed",
+                    job_id=job.id,
+                    step="feature_extraction_and_embedding",
+                    has_audio_features=feature_vector is not None,
+                    has_lyric_embedding=lyric_vector is not None,
+                )
 
             # ------------------------------------------------------------------
-            # Step 5: Lyric embedding (stub — Phase 8a)
-            # TODO: lyric_vector = await LyricEmbedder.embed(transcription.full_text)
+            # Step 6: QDrant sync (Phase 8a)
             # ------------------------------------------------------------------
+            qdrant_synced = False
+
+            if self.qdrant_repo is not None:
+                await self.job_service.mark_step(job.id, "syncing_qdrant", 0)
+
+                payload = {
+                    "track_id": job.track_id,
+                    "artist": track.artist,
+                    "title": track.title,
+                    "status": "ready",
+                }
+
+                if feature_vector is not None:
+                    await asyncio.to_thread(
+                        self.qdrant_repo.upsert,
+                        "audio_features",
+                        job.track_id,
+                        feature_vector,
+                        payload,
+                    )
+
+                if lyric_vector is not None:
+                    await asyncio.to_thread(
+                        self.qdrant_repo.upsert,
+                        "lyrics_embeddings",
+                        job.track_id,
+                        lyric_vector,
+                        payload,
+                    )
+
+                qdrant_synced = feature_vector is not None or lyric_vector is not None
+
+                await self.job_service.mark_step(job.id, "syncing_qdrant", 100)
+
+                logger.info(
+                    "step_completed",
+                    job_id=job.id,
+                    step="syncing_qdrant",
+                    audio_features=feature_vector is not None,
+                    lyrics_embeddings=lyric_vector is not None,
+                )
 
             # ------------------------------------------------------------------
-            # Step 6: QDrant sync + SQLite status update (stub — Phase 8a)
-            # TODO: await QDrantRepository.upsert(track_id, feature_vector, lyric_vector)
-            # TODO: await repo.update_track(track_id, TrackUpdate(status="ready"))
+            # Finalize
             # ------------------------------------------------------------------
-
             steps_completed = ["separating"]
             if transcription is not None:
                 steps_completed.append("transcribing")
             if clip_path is not None:
                 steps_completed.append("generating_video")
+            if feature_vector is not None:
+                steps_completed.append("extracting_features")
+            if lyric_vector is not None:
+                steps_completed.append("embedding_lyrics")
+            if qdrant_synced:
+                steps_completed.append("syncing_qdrant")
 
             # Mark the track as ready so it appears in search, popular, etc.
-            await self.repo.update_track(
-                job.track_id, TrackUpdate(status="ready"),
-            )
+            update = TrackUpdate(status="ready")
+            if qdrant_synced:
+                update.qdrant_synced = 1
+            await self.repo.update_track(job.track_id, update)
 
             result = {
                 "vocals_path": vocals_path,

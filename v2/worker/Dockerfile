@@ -9,9 +9,10 @@ WORKDIR /worker
 # Increase pip timeout to avoid download failures on slow connections.
 ENV PIP_DEFAULT_TIMEOUT=300
 
-# Install shared package first so Docker layer cache is reused on worker-only changes.
+# Install shared package with ML extras (librosa, sentence-transformers)
+# so the worker can extract features and embed lyrics.
 COPY shared/ /shared/
-RUN pip install --no-cache-dir /shared/
+RUN pip install --no-cache-dir "/shared/[ml]"
 
 # Install CPU-only PyTorch + torchvision first — audio-separator pulls
 # these as deps, and by default pip installs the CUDA variant (~3 GB).

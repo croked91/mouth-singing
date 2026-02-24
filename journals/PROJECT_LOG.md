@@ -219,3 +219,26 @@
 - **2026-02-24**: E2E: 386/386 тестов pass (3.02s), docker compose config valid, оба Docker-образа собираются.
 - **2026-02-24**: experiments/ удалена. Ссылки в master-promt.md обновлены.
 - **2026-02-24**: ADR-010 зафиксировано.
+
+## Фаза 8a: Извлечение фичей и эмбеддингов
+**Коммит:** (pending)
+
+### Задачи фазы:
+- [x] FeatureExtractor (librosa → 45-d L2-нормализованный вектор аудиофичей)
+- [x] LyricEmbedder (sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2 → 384-d вектор)
+- [x] Интеграция в AudioPipeline (шаги 4+5 параллельно через asyncio.gather, шаг 6 QDrant upsert)
+- [x] Worker main.py: lazy loading ML-компонентов + QDrant client
+- [x] Worker config: добавлены QDRANT_HOST, QDRANT_PORT
+- [x] docker-compose: QDRANT_HOST/PORT для worker
+- [x] Worker Dockerfile: karaoke-shared[ml] вместо karaoke-shared
+- [x] shared/pyproject.toml: optional deps [ml] (librosa, numpy, sentence-transformers), structlog в основные
+- [x] Тесты: 66 новых (20 FeatureExtractor + 26 LyricEmbedder + 20 AudioPipeline phase 8a)
+- [x] 452/452 тестов пройдены (386 старых + 66 новых)
+- [ ] Согласование с пользователем
+- [ ] Коммит
+
+### Хронология:
+- **2026-02-24**: ml-sota-expert создал FeatureExtractor (45-d, MFCC+Chroma+SpectralContrast+Tonnetz+scalars, L2-norm) и LyricEmbedder (384-d, chunking по 256 токенов, mean pooling).
+- **2026-02-24**: Интеграция в AudioPipeline: шаги 4+5 через asyncio.gather, шаг 6 QDrant upsert для audio_features и lyrics_embeddings, обновление qdrant_synced=1.
+- **2026-02-24**: Worker main.py: lazy loading с graceful degradation (если librosa/sentence-transformers недоступны — шаги пропускаются).
+- **2026-02-24**: polyglot-test-engineer написал 66 тестов. Все 452 pass.
