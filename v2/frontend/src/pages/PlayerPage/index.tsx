@@ -117,6 +117,18 @@ export const PlayerPage: React.FC = () => {
     const trackId = currentEntry.track.id;
     audio.src = `/api/v1/tracks/${trackId}/stream`;
     audio.load();
+
+    // Autoplay — browser allows it after recent user gesture ("ПЕТЬ" click).
+    // If blocked, silently ignore — user can press play manually.
+    const handleCanPlay = (): void => {
+      audio.removeEventListener('canplay', handleCanPlay);
+      audio.play().catch(() => {});
+    };
+    audio.addEventListener('canplay', handleCanPlay);
+
+    return () => {
+      audio.removeEventListener('canplay', handleCanPlay);
+    };
   }, [currentEntry]);
 
   // ── Audio event listeners ───────────────────────────────────────────────────

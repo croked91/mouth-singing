@@ -19,6 +19,8 @@ interface LyricHighlightProps {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const LINE_GAP_THRESHOLD_SEC = 1.0;
+const MIN_LINE_CHARS_FOR_PUNCT_BREAK = 20;
+const MAX_LINE_CHARS = 55;
 
 const STYLE_PREV_LINE = {
   fontWeight: 500,
@@ -48,29 +50,56 @@ const ACTIVE_LINE_FONT_SIZE = '72px';
 function groupIntoLines(syllables: SyllableTiming[]): LyricLine[] {
   if (syllables.length === 0) return [];
 
+  const pushLine = (group: SyllableTiming[]) => ({
+    syllables: group,
+    startTime: group[0].start,
+    endTime: group[group.length - 1].end,
+  });
+
+  const endsWithSentencePunct = (text: string): boolean =>
+    /[.!?]$/.test(text.trimEnd());
+
   const lines: LyricLine[] = [];
   let currentGroup: SyllableTiming[] = [syllables[0]];
+  let currentChars = syllables[0].syllable.length;
 
   for (let i = 1; i < syllables.length; i++) {
     const gap = syllables[i].start - syllables[i - 1].end;
+    const syllableText = syllables[i].syllable;
+    const syllableLen = syllableText.length;
+    const isWordBoundary = syllableText.startsWith(' ');
+    const prevText = syllables[i - 1].syllable;
+
+    // Always break on a natural pause
     if (gap > LINE_GAP_THRESHOLD_SEC) {
-      lines.push({
-        syllables: currentGroup,
-        startTime: currentGroup[0].start,
-        endTime: currentGroup[currentGroup.length - 1].end,
-      });
+      lines.push(pushLine(currentGroup));
       currentGroup = [syllables[i]];
-    } else {
-      currentGroup.push(syllables[i]);
+      currentChars = syllableLen;
+      continue;
     }
+
+    // Break after sentence punctuation (.!?) when line is long enough
+    if (currentChars >= MIN_LINE_CHARS_FOR_PUNCT_BREAK && endsWithSentencePunct(prevText)) {
+      lines.push(pushLine(currentGroup));
+      currentGroup = [syllables[i]];
+      currentChars = syllableLen;
+      continue;
+    }
+
+    // Fallback: break at word boundary when line is too long
+    if (currentChars + syllableLen > MAX_LINE_CHARS && isWordBoundary && currentChars > 0) {
+      lines.push(pushLine(currentGroup));
+      currentGroup = [syllables[i]];
+      currentChars = syllableLen;
+      continue;
+    }
+
+    currentGroup.push(syllables[i]);
+    currentChars += syllableLen;
   }
 
   if (currentGroup.length > 0) {
-    lines.push({
-      syllables: currentGroup,
-      startTime: currentGroup[0].start,
-      endTime: currentGroup[currentGroup.length - 1].end,
-    });
+    lines.push(pushLine(currentGroup));
   }
 
   return lines;
@@ -133,20 +162,16 @@ const ActiveLine: React.FC<ActiveLineProps> = ({ line, getCurrentTime, isPlaying
 
       if (syl.end <= currentTime) {
         // Sung
-        span.style.color = 'rgba(255,255,255,0.3)';
-        span.style.fontWeight = '800';
+        span.style.color = 'rgba(255,255,255,0.35)';
         span.style.textShadow = 'none';
       } else if (syl.start <= currentTime) {
         // Active
-        span.style.color = '#F0ABFC';
-        span.style.fontWeight = '900';
-        span.style.textShadow =
-          '0 0 20px rgba(240,171,252,0.9), 0 0 40px rgba(167,85,247,0.6), 0 0 80px rgba(124,58,237,0.4)';
+        span.style.color = '#C4B5FD';
+        span.style.textShadow = '0 0 16px rgba(196,181,253,0.5)';
       } else {
         // Upcoming
-        span.style.color = 'rgba(255,255,255,0.9)';
-        span.style.fontWeight = '800';
-        span.style.textShadow = '0 0 8px rgba(255,255,255,0.15)';
+        span.style.color = 'rgba(255,255,255,0.85)';
+        span.style.textShadow = 'none';
       }
     });
 
@@ -206,9 +231,7 @@ const ActiveLine: React.FC<ActiveLineProps> = ({ line, getCurrentTime, isPlaying
             component="span"
             data-syllable-idx={idx}
             sx={{
-              color: 'rgba(255,255,255,0.9)',
-              fontWeight: 800,
-              textShadow: '0 0 8px rgba(255,255,255,0.15)',
+              color: 'rgba(255,255,255,0.85)',
               transition: 'none',
               display: 'inline',
             }}

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Tooltip, Typography } from '@mui/material';
+import { Box, CircularProgress, Tooltip, Typography } from '@mui/material';
 import type { QueueEntryWithDetails } from '../types';
 
 const AVATAR_GRADIENTS = [
@@ -28,6 +28,7 @@ interface QueueItemProps {
 export const QueueItem: React.FC<QueueItemProps> = ({ entry, index }) => {
   const name = entry.participant?.display_name ?? '?';
   const trackTitle = entry.track?.title ?? '—';
+  const isProcessing = entry.track?.status === 'pending' || entry.track?.status === 'processing';
 
   return (
     <Tooltip title={`${name} — ${trackTitle}`} placement="top" arrow>
@@ -55,10 +56,29 @@ export const QueueItem: React.FC<QueueItemProps> = ({ entry, index }) => {
               fontWeight: 700,
               color: '#fff',
               boxShadow: '0 2px 12px rgba(0,0,0,0.35)',
+              opacity: isProcessing ? 0.6 : 1,
+              transition: 'opacity 0.3s ease',
             }}
           >
             {getInitials(name)}
           </Box>
+
+          {/* Processing overlay */}
+          {isProcessing && (
+            <Box
+              sx={{
+                position: 'absolute',
+                inset: 0,
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'rgba(0,0,0,0.4)',
+              }}
+            >
+              <CircularProgress size={22} sx={{ color: '#A78BFA' }} />
+            </Box>
+          )}
 
           {/* Position number badge */}
           <Box

@@ -70,6 +70,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({
   const [isDragOver, setIsDragOver] = useState(false);
   const [phase, setPhase] = useState<UploadPhase>({ kind: 'idle' });
   const [fileSizeError, setFileSizeError] = useState<string | null>(null);
+  const [addedToQueue, setAddedToQueue] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const unsubscribeRef = useRef<(() => void) | null>(null);
@@ -147,6 +148,12 @@ export const UploadTab: React.FC<UploadTabProps> = ({
 
     const { job_id, track_id } = uploadResponse;
 
+    // Auto-add to queue immediately (even while still processing)
+    if (selectedParticipantId) {
+      onTrackUploaded(track_id);
+      setAddedToQueue(true);
+    }
+
     unsubscribeRef.current?.();
 
     const unsubscribe = subscribeToJobStatus(
@@ -184,6 +191,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({
     setTitle('');
     setPhase({ kind: 'idle' });
     setFileSizeError(null);
+    setAddedToQueue(false);
   };
 
   const handleAddToQueue = (): void => {
@@ -275,6 +283,11 @@ export const UploadTab: React.FC<UploadTabProps> = ({
                 <Typography sx={{ fontSize: '13px', fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase' }}>
                   Создаём Karaoke
                 </Typography>
+                {addedToQueue && (
+                  <Typography sx={{ fontSize: '12px', color: '#10B981', fontWeight: 600 }}>
+                    Трек добавлен в очередь
+                  </Typography>
+                )}
                 <Typography sx={{ fontSize: '15px', fontWeight: 600, color: '#67E8F9', textAlign: 'center' }}>
                   {phase.step}
                 </Typography>
@@ -308,31 +321,37 @@ export const UploadTab: React.FC<UploadTabProps> = ({
                 <Typography sx={{ fontSize: '16px', fontWeight: 700, color: '#FFFFFF' }}>
                   Готово к исполнению!
                 </Typography>
-                <ButtonBase
-                  onClick={handleAddToQueue}
-                  disabled={!selectedParticipantId}
-                  sx={{
-                    px: 3,
-                    py: 1.25,
-                    borderRadius: '24px',
-                    background: 'linear-gradient(135deg, #06B6D4, #7C3AED)',
-                    color: '#FFFFFF',
-                    fontSize: '13px',
-                    fontWeight: 700,
-                    letterSpacing: '0.08em',
-                    textTransform: 'uppercase',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 0.75,
-                    boxShadow: '0 4px 20px rgba(6,182,212,0.35)',
-                    transition: 'opacity 0.2s ease',
-                    '&:hover': { opacity: 0.88 },
-                    '&:disabled': { opacity: 0.4, cursor: 'not-allowed' },
-                  }}
-                >
-                  <AddIcon sx={{ fontSize: 18 }} />
-                  ДОБАВИТЬ В ОЧЕРЕДЬ
-                </ButtonBase>
+                {addedToQueue ? (
+                  <Typography sx={{ fontSize: '13px', color: '#10B981', fontWeight: 600 }}>
+                    Трек уже в очереди
+                  </Typography>
+                ) : (
+                  <ButtonBase
+                    onClick={handleAddToQueue}
+                    disabled={!selectedParticipantId}
+                    sx={{
+                      px: 3,
+                      py: 1.25,
+                      borderRadius: '24px',
+                      background: 'linear-gradient(135deg, #06B6D4, #7C3AED)',
+                      color: '#FFFFFF',
+                      fontSize: '13px',
+                      fontWeight: 700,
+                      letterSpacing: '0.08em',
+                      textTransform: 'uppercase',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 0.75,
+                      boxShadow: '0 4px 20px rgba(6,182,212,0.35)',
+                      transition: 'opacity 0.2s ease',
+                      '&:hover': { opacity: 0.88 },
+                      '&:disabled': { opacity: 0.4, cursor: 'not-allowed' },
+                    }}
+                  >
+                    <AddIcon sx={{ fontSize: 18 }} />
+                    ДОБАВИТЬ В ОЧЕРЕДЬ
+                  </ButtonBase>
+                )}
                 <ButtonBase
                   onClick={handleReset}
                   sx={{

@@ -1,7 +1,7 @@
 """Russian nickname generator for karaoke participants.
 
 Generates funny, karaoke-friendly nicknames in the form
-"АдъективноеСуществительное" (adjective + noun, CamelCase).
+"Адъективное Существительное" (adjective + noun, space-separated).
 
 With ~50 adjectives and ~50 nouns there are 2500 unique combinations,
 which is more than enough for any single session.
@@ -39,7 +39,7 @@ _NOUNS: list[str] = [
 def generate_nickname(existing_names: set[str] | None = None) -> str:
     """Generate a funny Russian nickname unique within the given set.
 
-    Combines a random adjective and noun in CamelCase, e.g. "ЛихойПингвин".
+    Combines a random adjective and noun, e.g. "Лихой Пингвин".
     Tries up to 50 random combinations before falling back to adding a
     numeric suffix to guarantee uniqueness.
 
@@ -55,12 +55,12 @@ def generate_nickname(existing_names: set[str] | None = None) -> str:
 
     # Try random combos — 2500 possibilities, so 50 attempts is very safe.
     for _ in range(50):
-        name = random.choice(_ADJECTIVES) + random.choice(_NOUNS)
+        name = random.choice(_ADJECTIVES) + " " + random.choice(_NOUNS)
         if name not in existing_names:
             return name
 
     # Fallback: append an incrementing number until we find a free slot.
-    base = random.choice(_ADJECTIVES) + random.choice(_NOUNS)
+    base = random.choice(_ADJECTIVES) + " " + random.choice(_NOUNS)
     for suffix in range(2, 1000):
         name = f"{base}{suffix}"
         if name not in existing_names:

@@ -15,6 +15,7 @@ import {
 } from '@mui/material';
 import MicIcon from '@mui/icons-material/Mic';
 import LockIcon from '@mui/icons-material/Lock';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import QueueMusicIcon from '@mui/icons-material/QueueMusic';
 import SearchIcon from '@mui/icons-material/Search';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
@@ -350,6 +351,52 @@ export const QueuePage: React.FC = () => {
             >
               {currentEntry.track.artist}
             </Typography>
+          </Box>
+        )}
+
+        {/* Processing indicator */}
+        {currentEntry && currentEntry.track && currentEntry.track.status !== 'ready' && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <CircularProgress size={20} sx={{ color: '#A78BFA' }} />
+            <Typography sx={{ fontSize: '13px', color: 'rgba(255,255,255,0.5)' }}>
+              Трек обрабатывается...
+            </Typography>
+          </Box>
+        )}
+
+        {/* Play button */}
+        {currentEntry && currentEntry.track?.status === 'ready' && (
+          <Box
+            component="button"
+            onClick={() => {
+              navigate(`/session/${sessionId}/play/${currentEntry.id}`);
+            }}
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 1,
+              px: 4,
+              py: 1.5,
+              borderRadius: '16px',
+              background: 'linear-gradient(135deg, #7C3AED, #2563EB)',
+              border: 'none',
+              color: '#FFFFFF',
+              fontSize: '16px',
+              fontWeight: 700,
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              cursor: 'pointer',
+              boxShadow: '0 4px 24px rgba(124,58,237,0.4)',
+              transition: 'all 0.2s ease',
+              '&:hover': {
+                transform: 'scale(1.04)',
+                boxShadow: '0 6px 32px rgba(124,58,237,0.55)',
+              },
+            }}
+          >
+            <PlayArrowIcon sx={{ fontSize: 24 }} />
+            ПЕТЬ
           </Box>
         )}
       </Box>
