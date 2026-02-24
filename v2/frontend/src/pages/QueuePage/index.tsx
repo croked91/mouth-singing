@@ -143,9 +143,10 @@ export const QueuePage: React.FC = () => {
   // ── Handlers ────────────────────────────────────────────────────────────────
 
   const handleParticipantSelect = useCallback((id: string): void => {
+    if (id === selectedParticipantId) return;
     setSelectedParticipantId(id);
     setRecommendations(null);
-  }, []);
+  }, [selectedParticipantId]);
 
   const handleTrackSelect = useCallback(
     async (trackId: string): Promise<void> => {

@@ -120,6 +120,7 @@ export const PlayerPage: React.FC = () => {
   }, [currentEntry]);
 
   // ── Audio event listeners ───────────────────────────────────────────────────
+  // Re-run when isLoading changes so listeners attach after <audio> is mounted.
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -157,7 +158,7 @@ export const PlayerPage: React.FC = () => {
       audio.removeEventListener('ended', handleEnded);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isLoading]);
 
   // ── rAF loop: update time display and slider without React state ──────────────
 

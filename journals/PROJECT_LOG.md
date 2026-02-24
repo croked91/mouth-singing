@@ -457,7 +457,7 @@
 - **2026-02-24**: Фаза 14 принята. Коммит 0f44b8e.
 
 ## Фаза 15: E2E тестирование и hardening
-**Коммит:** (pending)
+**Коммит:** d586571 (unit/integration + hardening), pending (browser E2E fixes)
 
 ### Задачи фазы:
 - [x] E2E сценарные тесты (31 новый тест в test_e2e_scenarios.py)
@@ -474,7 +474,10 @@
 - [x] 540/540 тестов пройдены (509 старых + 31 новых)
 - [x] Frontend build — success, tsc --noEmit — 0 errors
 - [x] Docker compose config — valid
-- [ ] Коммит
+- [x] Browser E2E (Playwright MCP): полный прогон через Docker
+- [x] Баг Player: useEffect deps `[]` → `[isLoading]` — audio listeners не привязывались к `<audio>` элементу
+- [x] Баг QueuePage: re-click на выбранного участника сбрасывал рекомендации без перезагрузки
+- [x] Коммит
 
 ### Хронология:
 - **2026-02-24**: polyglot-test-engineer написал 31 E2E тест: 1 полный journey, 26 edge cases, 5 стресс-тестов. Все pass.
@@ -483,3 +486,6 @@
 - **2026-02-24**: Критический баг #2: transition_id формата `uuid_uuid` не является валидным UUID — QDrant отклоняет в продакшене (in-memory клиент в тестах допускает). Collaborative filtering был бы мёртв. Исправлено через uuid5.
 - **2026-02-24**: Исправлены предупреждения: SSE clip_url, публичный get_queue_entry, LIKE wildcard escape, timing-safe admin secret comparison.
 - **2026-02-24**: Все 540 тестов pass. Frontend build clean. Docker compose config valid.
+- **2026-02-24**: Browser E2E через Playwright MCP (Docker): Welcome → Session → Participants → Queue → Recommendations → Search → Upload (полный pipeline: UVR+Soniox+FFmpeg) → Player → Admin terminate. Все потоки работают.
+- **2026-02-24**: Найден и исправлен баг PlayerPage: audio event listeners (timeupdate, play, pause и т.д.) привязывались в useEffect с `[]` deps, но `<audio>` элемент рендерится только после isLoading=false. Таймер и слайдер не обновлялись. Fix: deps `[isLoading]`.
+- **2026-02-24**: Найден и исправлен баг QueuePage: handleParticipantSelect сбрасывал recommendations в null при re-click на того же участника, useEffect не перезапускался (тот же dependency value). Fix: `if (id === selectedParticipantId) return;`.

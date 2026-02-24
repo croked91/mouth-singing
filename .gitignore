@@ -11,3 +11,7 @@ build/
 .pytest_cache/
 .ruff_cache/
 node_modules/
+*.png
+*.mp3
+*.mp4
+sonoix-test-key.txt
