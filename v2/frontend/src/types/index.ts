@@ -110,3 +110,21 @@ export interface JobStatusEvent {
   clip_url?: string;
   error?: string;
 }
+
+export interface SyllableTiming {
+  syllable: string;
+  start: number;
+  end: number;
+}
+
+export interface StartPlayingResponse {
+  entry_id: string;
+  clip_url: string | null;
+  syllable_timings: SyllableTiming[] | null;
+  duration_sec: number | null;
+}
+
+export interface FinishPlayingResponse {
+  next_participant: Participant | null;
+  next_entry_id: string | null;
+}

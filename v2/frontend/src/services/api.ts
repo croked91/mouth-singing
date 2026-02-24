@@ -8,6 +8,8 @@ import type {
   RecommendationResponse,
   SearchResult,
   UploadResponse,
+  StartPlayingResponse,
+  FinishPlayingResponse,
 } from '../types';
 
 const apiClient = axios.create({
@@ -82,15 +84,15 @@ export const api = {
     return response.data;
   },
 
-  startPlaying: async (entryId: string): Promise<QueueEntry> => {
-    const response = await apiClient.post<QueueEntry>(
+  startPlaying: async (entryId: string): Promise<StartPlayingResponse> => {
+    const response = await apiClient.post<StartPlayingResponse>(
       `/queue/${entryId}/start`
     );
     return response.data;
   },
 
-  finishPlaying: async (entryId: string): Promise<QueueEntry> => {
-    const response = await apiClient.post<QueueEntry>(
+  finishPlaying: async (entryId: string): Promise<FinishPlayingResponse> => {
+    const response = await apiClient.post<FinishPlayingResponse>(
       `/queue/${entryId}/finish`
     );
     return response.data;

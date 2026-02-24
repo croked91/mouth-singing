@@ -1,7 +1,7 @@
 # Журнал проекта: Караоке-приложение
 
 ## Статус проекта
-**Текущая фаза:** 10b — Фронтенд Поиск + Загрузка (завершена)
+**Текущая фаза:** 11 — Фронтенд Караоке-плеер (завершена)
 **Дата начала:** 2026-02-22
 **Последний коммит:** (реструктуризация v2/)
 **Структура:** Реализация в `v2/`, документация в корне
@@ -346,4 +346,35 @@
 - **2026-02-24**: UploadTab: drag & drop зона с прогресс-оверлеем (4 фазы: idle→uploading→processing→done/error). SSE подписка на job progress. Step labels на русском.
 - **2026-02-24**: sseService.ts переписан: подписка на named events (status, completed, error) через addEventListener + fallback onmessage.
 - **2026-02-24**: API расширен: searchTracks (GET /tracks/search), suggestTracks (GET /tracks/search/suggest), uploadTrack (POST /tracks/upload, multipart/form-data).
+- **2026-02-24**: Сборка и TypeScript проверка пройдены.
+- **2026-02-24**: Фаза 10b принята. Коммит f25f53d.
+
+## Фаза 11: Фронтенд — Караоке-плеер
+**Коммит:** (pending)
+
+### Задачи фазы:
+- [x] PlayerPage: полноэкранный режим (position: fixed, inset: 0) с near-black фоном #050508
+- [x] Два анимированных gradient blob на краях (deep violet + deep navy, blur + drift animation)
+- [x] Top bar (64px): название трека · исполнитель + аватар певца + кнопка «ЗАВЕРШИТЬ» (красная pill)
+- [x] LyricHighlight — ключевой компонент послоговой подсветки:
+  - Группировка слогов в строки (порог 1.0с между слогами)
+  - 3 состояния: sung (dim white 0.3), active (neon pink #F0ABFC с triple glow), upcoming (white 0.9)
+  - ref-driven rAF loop — прямая DOM-мутация span.style для 60fps без React re-renders
+  - Progress bar под активной строкой (gradient #F0ABFC → #7C3AED с glow)
+  - Автоматическая ресинхронизация при перемотке (читает audio.currentTime каждый кадр)
+- [x] Bottom controls (80px): время · -15с · Play/Pause · +15с · Progress slider (gradient fill) · время · Volume
+- [x] При входе: POST /queue/{entry_id}/start → получение syllable_timings + clip_url + duration
+- [x] Audio: `<audio>` элемент с preload="auto", src = /api/v1/tracks/{track_id}/stream
+- [x] Finish flow: кнопка «ЗАВЕРШИТЬ» или event 'ended' → POST /queue/{entry_id}/finish → navigate to QueuePage
+- [x] Типы: SyllableTiming, StartPlayingResponse, FinishPlayingResponse
+- [x] API: startPlaying, finishPlaying (обновлённые return types)
+- [x] Handle null syllable_timings — «Субтитры недоступны»
+- [x] `npm run build` — success, `tsc --noEmit` — 0 errors
+- [ ] Коммит
+
+### Хронология:
+- **2026-02-24**: frontend-web-client реализовал караоке-плеер — самый сложный UI-компонент.
+- **2026-02-24**: LyricHighlight: ref-driven rAF loop с прямой DOM-мутацией (span.style.color, fontWeight, textShadow) для 60fps. Key-based ремонтирование ActiveLine при смене строки.
+- **2026-02-24**: PlayerPage: полноэкранный overlay, два анимированных blob, top info bar, bottom controls с MUI Slider (gradient track + glow).
+- **2026-02-24**: API types обновлены: startPlaying → StartPlayingResponse, finishPlaying → FinishPlayingResponse.
 - **2026-02-24**: Сборка и TypeScript проверка пройдены.

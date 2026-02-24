@@ -32,7 +32,7 @@
 | 9 | Фронтенд — скаффолдинг, тема, Landing + Sessions | [phase-09.md](phases/phase-09.md) | Завершена |
 | 10a | Фронтенд — QueuePage + рекомендации | [phase-10a.md](phases/phase-10a.md) | Завершена |
 | 10b | Фронтенд — Поиск + Загрузка | [phase-10b.md](phases/phase-10b.md) | Завершена |
-| 11 | Фронтенд — Караоке-плеер | [phase-11.md](phases/phase-11.md) | Ожидает |
+| 11 | Фронтенд — Караоке-плеер | [phase-11.md](phases/phase-11.md) | Завершена |
 | 12 | Фронтенд — Админка и UX polish | [phase-12.md](phases/phase-12.md) | Ожидает |
 | 13 | Bootstrap CLI | [phase-13.md](phases/phase-13.md) | Ожидает |
 | 14 | Docker Compose + Nginx + Deploy | [phase-14.md](phases/phase-14.md) | Ожидает |
