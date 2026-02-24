@@ -63,8 +63,6 @@ services:
       QDRANT_PORT: "6333"
       SONOIX_API_KEY: ${SONOIX_API_KEY:-}
       SONOIX_API_URL: ${SONOIX_API_URL:-https://api.soniox.com}
-      HTTP_PROXY: ${HTTP_PROXY:-}
-      HTTPS_PROXY: ${HTTPS_PROXY:-}
     volumes:
       - sqlite_data:/data/sqlite
       - media_data:/data/media

@@ -283,12 +283,12 @@ class VideoGenerator:
 
         process = await asyncio.create_subprocess_exec(
             *cmd,
-            stdout=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
         )
 
         try:
-            stdout, stderr = await asyncio.wait_for(
+            _, stderr = await asyncio.wait_for(
                 process.communicate(), timeout=600.0
             )
         except asyncio.TimeoutError:
@@ -301,7 +301,7 @@ class VideoGenerator:
             logger.error(
                 "ffmpeg_failed",
                 returncode=process.returncode,
-                stderr=stderr_text[-2000:],  # last 2000 chars to keep logs manageable
+                stderr=stderr_text[-2000:],
             )
             raise RuntimeError(
                 f"FFmpeg exited with code {process.returncode}: {stderr_text[-500:]}"

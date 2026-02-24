@@ -51,6 +51,7 @@ class UVRSeparator:
         self._separator = Separator(
             output_dir=self._output_dir,
             model_file_dir=self.model_cache_dir,
+            output_format="MP3",
         )
         self._separator.load_model(model_filename=self.MODEL_NAME)
 

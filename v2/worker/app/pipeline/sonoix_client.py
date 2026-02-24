@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 
 import httpx
 import structlog
@@ -80,15 +79,9 @@ class SonoixClient:
             RuntimeError: If the transcription job reports an error status.
             httpx.HTTPStatusError: If any API call returns a non-2xx status.
         """
-        # httpx picks up HTTP_PROXY / HTTPS_PROXY automatically from the
-        # environment when proxies=None.  We allow an explicit override via
-        # the HTTPS_PROXY env var for flexibility.
-        proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY")
-
         async with httpx.AsyncClient(
             headers={"Authorization": f"Bearer {self._api_key}"},
             timeout=self._timeout,
-            proxy=proxy,
         ) as client:
             file_id = await self._upload_file(client, audio_path)
             logger.info("sonoix_file_uploaded", file_id=file_id, audio_path=audio_path)
@@ -124,6 +117,12 @@ class SonoixClient:
 
     async def _upload_file(self, client: httpx.AsyncClient, audio_path: str) -> str:
         """Upload the audio file and return the Soniox file ID."""
+        import pathlib  # noqa: PLC0415
+
+        ext = pathlib.Path(audio_path).suffix.lower()
+        mime = "audio/mpeg" if ext == ".mp3" else "audio/wav"
+        filename = f"audio{ext}"
+
         with open(audio_path, "rb") as audio_file:
             file_bytes = audio_file.read()
 
@@ -132,7 +131,7 @@ class SonoixClient:
             client,
             "POST",
             url,
-            files={"file": ("audio.wav", file_bytes, "audio/wav")},
+            files={"file": (filename, file_bytes, mime)},
         )
         return response["id"]
 
@@ -219,12 +218,10 @@ class SonoixClient:
         Creates its own short-lived httpx client because the caller's
         ``async with`` client may already be closed by the time this task runs.
         """
-        proxy = os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY")
         try:
             async with httpx.AsyncClient(
                 headers={"Authorization": f"Bearer {self._api_key}"},
                 timeout=30.0,
-                proxy=proxy,
             ) as client:
                 try:
                     await client.delete(
