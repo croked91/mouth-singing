@@ -28,6 +28,7 @@ router = APIRouter()
 _MIME_BY_EXTENSION: dict[str, str] = {
     ".mp4": "video/mp4",
     ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
 }
 
 _DEFAULT_CHUNK_SIZE = 64 * 1024  # 64 KB per read

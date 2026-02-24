@@ -138,6 +138,12 @@ async def main() -> None:
         else:
             logger.warning("sonoix_api_key_not_set", hint="transcription and video steps will be skipped")
 
+        # Reset jobs left in "running" state from a previous crash so
+        # they become eligible for retry.
+        reset_count = await repo.reset_stale_running_jobs(settings.worker_id)
+        if reset_count:
+            logger.info("stale_jobs_reset", count=reset_count)
+
         pipeline = AudioPipeline(job_service, uvr, repo, sonoix, video_gen)
 
         poller = JobPoller(

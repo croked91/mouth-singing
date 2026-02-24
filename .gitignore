@@ -1,5 +1,7 @@
 data/
 .env
+.claude/
+.playwright-mcp/
 __pycache__/
 *.pyc
 .venv/

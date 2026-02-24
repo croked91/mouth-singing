@@ -192,6 +192,11 @@ class AudioPipeline:
             if clip_path is not None:
                 steps_completed.append("generating_video")
 
+            # Mark the track as ready so it appears in search, popular, etc.
+            await self.repo.update_track(
+                job.track_id, TrackUpdate(status="ready"),
+            )
+
             result = {
                 "vocals_path": vocals_path,
                 "instrumental_path": instrumental_path,

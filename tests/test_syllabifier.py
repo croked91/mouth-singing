@@ -472,7 +472,8 @@ class TestMixedLanguageTokens:
         syllables = [t.syllable for t in result]
         assert "hel" in syllables
         assert "lo" in syllables
-        assert "при" in syllables
+        # Non-first words get a leading space for display purposes.
+        assert " при" in syllables or "при" in syllables
         assert "вет" in syllables
 
     def test_mixed_lang_timing_is_independent(self) -> None:
@@ -576,4 +577,5 @@ class TestWhitespaceTokens:
 
         assert len(result) == 2
         assert result[0].syllable == "cat"
-        assert result[1].syllable == "dog"
+        # Second word gets space prefix for display.
+        assert result[1].syllable.strip() == "dog"

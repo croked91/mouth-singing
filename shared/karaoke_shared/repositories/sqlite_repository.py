@@ -748,6 +748,24 @@ class SQLiteRepository:
         )
         await self.db.commit()
 
+    async def reset_stale_running_jobs(self, worker_id: str) -> int:
+        """Reset jobs left in 'running' state by this worker back to 'pending'.
+
+        Called at startup to recover from a previous crash.  Only resets
+        jobs that have not yet exhausted their max_attempts.
+        """
+        cursor = await self.db.execute(
+            """
+            UPDATE job_queue
+            SET status = 'pending', locked_by = NULL, locked_at = NULL, updated_at = ?
+            WHERE status = 'running' AND locked_by = ?
+                AND attempts < max_attempts
+            """,
+            (_now_iso(), worker_id),
+        )
+        await self.db.commit()
+        return cursor.rowcount
+
     async def mark_step(self, job_id: str, step: str, progress: int) -> None:
         """Update the current processing step and progress percentage."""
         await self.db.execute(

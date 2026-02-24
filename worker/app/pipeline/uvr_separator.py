@@ -88,19 +88,24 @@ class UVRSeparator:
 
         logger.info("uvr_starting", mp3_path=mp3_path)
 
-        # Returns a list of absolute output file paths.
+        # The library may return just filenames or absolute paths depending
+        # on the version.  Normalise to absolute paths in the output directory.
         output_files: list[str] = separator.separate(mp3_path)
 
         vocals_path: str | None = None
         instrumental_path: str | None = None
 
         for path in output_files:
-            lower = path.lower()
+            if not pathlib.Path(path).is_absolute():
+                path = str(pathlib.Path(self._output_dir) / path)
+            # Classify based on the filename only — the parent directory
+            # may contain "instrumental" which would confuse detection.
+            basename_lower = pathlib.Path(path).name.lower()
             # Check "no_vocal" before "vocal" — "no_vocal" contains the
             # substring "vocal", so the order of checks matters.
-            if "no_vocal" in lower or "instrument" in lower:
+            if "no_vocal" in basename_lower or "instrument" in basename_lower:
                 instrumental_path = path
-            elif "vocal" in lower:
+            elif "vocal" in basename_lower:
                 vocals_path = path
 
         if not vocals_path or not instrumental_path:
