@@ -1,7 +1,7 @@
 # Журнал проекта: Караоке-приложение
 
 ## Статус проекта
-**Текущая фаза:** 10a — Фронтенд QueuePage + рекомендации (завершена)
+**Текущая фаза:** 10b — Фронтенд Поиск + Загрузка (завершена)
 **Дата начала:** 2026-02-22
 **Последний коммит:** (реструктуризация v2/)
 **Структура:** Реализация в `v2/`, документация в корне
@@ -323,3 +323,27 @@
 - **2026-02-24**: Типы исправлены: Session.status (string вместо boolean), Track.duration_sec, QueueEntry.order_position, RecommendedTrackItem с similarity_score.
 - **2026-02-24**: TrackCard, QueueItem, ParticipantSelector — переиспользуемые компоненты по дизайн-системе.
 - **2026-02-24**: E2E flow проверен через Playwright: Landing → создание сессии → добавление участника → QueuePage с табами и participant selector.
+- **2026-02-24**: Фаза 10a принята. Коммит c8d6a0e.
+
+## Фаза 10b: Фронтенд — Поиск + Загрузка
+**Коммит:** (pending)
+
+### Задачи фазы:
+- [x] SearchTab: поисковая строка с debounced suggestions (300ms), результаты с карточками, skeleton loading, empty state
+- [x] UploadTab: drag & drop зона (MP3/WAV/M4A до 50МБ), метаданные (artist, title), прогресс-оверлей
+- [x] SSE-интеграция для отслеживания прогресса обработки (named events: status/completed/error)
+- [x] Маппинг шагов в русские labels (separating→«Разделение вокала и музыки», transcribing→«Распознавание текста» и т.д.)
+- [x] Типы: TrackSearchItem, SearchResult, UploadResponse, JobStatusEvent
+- [x] API: searchTracks, suggestTracks, uploadTrack (multipart/form-data)
+- [x] sseService.ts переписан для named SSE events
+- [x] Tabs в QueuePage: SearchTab (таб 0) и UploadTab (таб 2) подключены
+- [x] `npm run build` — success, `tsc --noEmit` — 0 errors
+- [ ] Коммит
+
+### Хронология:
+- **2026-02-24**: frontend-web-client реализовал SearchTab и UploadTab.
+- **2026-02-24**: SearchTab: InputBase с debounce → suggestions dropdown (Paper с List) → SearchResultCard (index, album art placeholder, title/artist, duration, ВЫБРАТЬ кнопка). Empty state и initial state.
+- **2026-02-24**: UploadTab: drag & drop зона с прогресс-оверлеем (4 фазы: idle→uploading→processing→done/error). SSE подписка на job progress. Step labels на русском.
+- **2026-02-24**: sseService.ts переписан: подписка на named events (status, completed, error) через addEventListener + fallback onmessage.
+- **2026-02-24**: API расширен: searchTracks (GET /tracks/search), suggestTracks (GET /tracks/search/suggest), uploadTrack (POST /tracks/upload, multipart/form-data).
+- **2026-02-24**: Сборка и TypeScript проверка пройдены.

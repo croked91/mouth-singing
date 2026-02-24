@@ -6,6 +6,8 @@ import type {
   QueueResponse,
   QueueEntry,
   RecommendationResponse,
+  SearchResult,
+  UploadResponse,
 } from '../types';
 
 const apiClient = axios.create({
@@ -109,6 +111,31 @@ export const api = {
         },
       }
     );
+    return response.data;
+  },
+
+  searchTracks: async (query: string, limit?: number, offset?: number): Promise<SearchResult> => {
+    const response = await apiClient.get<SearchResult>('/tracks/search', {
+      params: { q: query, limit: limit ?? 20, offset: offset ?? 0 },
+    });
+    return response.data;
+  },
+
+  suggestTracks: async (query: string, limit?: number): Promise<string[]> => {
+    const response = await apiClient.get<string[]>('/tracks/search/suggest', {
+      params: { q: query, limit: limit ?? 10 },
+    });
+    return response.data;
+  },
+
+  uploadTrack: async (file: File, artist?: string, title?: string): Promise<UploadResponse> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (artist) formData.append('artist', artist);
+    if (title) formData.append('title', title);
+    const response = await apiClient.post<UploadResponse>('/tracks/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
     return response.data;
   },
 };

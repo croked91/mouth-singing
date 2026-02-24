@@ -24,6 +24,8 @@ import { CosmicBackground } from '../../components/CosmicBackground';
 import { TrackCard } from '../../components/TrackCard';
 import { QueueItem } from '../../components/QueueItem';
 import { ParticipantSelector } from '../../components/ParticipantSelector';
+import { SearchTab } from '../../components/SearchTab';
+import { UploadTab } from '../../components/UploadTab';
 import { useSessionStore } from '../../store/sessionStore';
 import { useQueueStore } from '../../store/queueStore';
 import { api } from '../../services/api';
@@ -545,23 +547,6 @@ export const QueuePage: React.FC = () => {
     );
   };
 
-  const renderPlaceholderTab = (text: string): React.ReactNode => (
-    <Box
-      sx={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        py: 8,
-        gap: 2,
-      }}
-    >
-      <Typography sx={{ color: 'rgba(255,255,255,0.35)', textAlign: 'center' }}>
-        {text}
-      </Typography>
-    </Box>
-  );
-
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
@@ -831,9 +816,21 @@ export const QueuePage: React.FC = () => {
 
             {/* Tab content */}
             <Box sx={{ flex: 1 }}>
-              {activeTab === 0 && renderPlaceholderTab('Поиск появится в следующем обновлении')}
+              {activeTab === 0 && sessionId && (
+                <SearchTab
+                  sessionId={sessionId}
+                  selectedParticipantId={selectedParticipantId}
+                  onTrackSelected={(trackId) => { void handleTrackSelect(trackId); }}
+                />
+              )}
               {activeTab === TAB_RECOMMENDATIONS && renderRecommendationsTab()}
-              {activeTab === 2 && renderPlaceholderTab('Загрузка появится в следующем обновлении')}
+              {activeTab === 2 && sessionId && (
+                <UploadTab
+                  sessionId={sessionId}
+                  selectedParticipantId={selectedParticipantId}
+                  onTrackUploaded={(trackId) => { void handleTrackSelect(trackId); }}
+                />
+              )}
             </Box>
           </Box>
         </Box>

@@ -79,3 +79,34 @@ export interface RecommendationResponse {
 export interface SessionWithParticipants extends Session {
   participants: Participant[];
 }
+
+export interface TrackSearchItem {
+  id: string;
+  artist: string;
+  title: string;
+  duration_sec: number | null;
+  language: string | null;
+  source: string;
+  clip_ready: boolean;
+}
+
+export interface SearchResult {
+  total: number;
+  items: TrackSearchItem[];
+}
+
+export interface UploadResponse {
+  track_id: string;
+  job_id: string;
+  status: string;
+}
+
+export interface JobStatusEvent {
+  job_id: string;
+  status: string;
+  step?: string;
+  progress?: number;
+  track_id?: string;
+  clip_url?: string;
+  error?: string;
+}
