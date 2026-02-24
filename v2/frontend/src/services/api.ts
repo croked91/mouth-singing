@@ -22,11 +22,29 @@ const apiClient = axios.create({
 apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
-    const message =
-      error.response?.data?.detail ||
-      error.response?.data?.message ||
-      error.message ||
-      'Произошла ошибка';
+    // Network-level error (server unreachable, DNS failure, etc.)
+    if (!error.response) {
+      if (error.code === 'ECONNABORTED' || error.message?.toLowerCase().includes('timeout')) {
+        return Promise.reject(new Error('Сервер не отвечает'));
+      }
+      return Promise.reject(new Error('Нет подключения к серверу'));
+    }
+
+    const status: number = error.response.status;
+    const serverDetail: string | undefined =
+      error.response.data?.detail || error.response.data?.message;
+
+    let message: string;
+    if (status === 403) {
+      message = 'Доступ запрещён';
+    } else if (status === 404) {
+      message = serverDetail ?? 'Не найдено';
+    } else if (status >= 500) {
+      message = 'Что-то пошло не так, попробуйте позже';
+    } else {
+      message = serverDetail ?? error.message ?? 'Произошла ошибка';
+    }
+
     return Promise.reject(new Error(message));
   }
 );
@@ -128,6 +146,12 @@ export const api = {
       params: { q: query, limit: limit ?? 10 },
     });
     return response.data;
+  },
+
+  terminateSession: async (sessionId: string, adminSecret: string): Promise<void> => {
+    await apiClient.delete(`/sessions/${sessionId}`, {
+      headers: { 'X-Admin-Secret': adminSecret },
+    });
   },
 
   uploadTrack: async (file: File, artist?: string, title?: string): Promise<UploadResponse> => {

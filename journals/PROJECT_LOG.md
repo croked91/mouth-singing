@@ -1,7 +1,7 @@
 # Журнал проекта: Караоке-приложение
 
 ## Статус проекта
-**Текущая фаза:** 11 — Фронтенд Караоке-плеер (завершена)
+**Текущая фаза:** 12 — Фронтенд Админка и UX polish (завершена)
 **Дата начала:** 2026-02-22
 **Последний коммит:** (реструктуризация v2/)
 **Структура:** Реализация в `v2/`, документация в корне
@@ -377,4 +377,32 @@
 - **2026-02-24**: LyricHighlight: ref-driven rAF loop с прямой DOM-мутацией (span.style.color, fontWeight, textShadow) для 60fps. Key-based ремонтирование ActiveLine при смене строки.
 - **2026-02-24**: PlayerPage: полноэкранный overlay, два анимированных blob, top info bar, bottom controls с MUI Slider (gradient track + glow).
 - **2026-02-24**: API types обновлены: startPlaying → StartPlayingResponse, finishPlaying → FinishPlayingResponse.
+- **2026-02-24**: Сборка и TypeScript проверка пройдены.
+- **2026-02-24**: Фаза 11 принята. Коммит 7878463.
+
+## Фаза 12: Фронтенд — Админка и UX polish
+**Коммит:** (pending)
+
+### Задачи фазы:
+- [x] AdminModal с 4 состояниями:
+  - PIN Entry: 4 dot-индикатора (empty/filled/active/pulse) + виртуальный numpad (3x4 grid)
+  - Wrong PIN: красные dots, shake-анимация (CSS @keyframes), «Неверный PIN», auto-reset через 1.5с
+  - Unlocked: зелёные dots, «ЗАВЕРШИТЬ СЕССИЮ» + «Отмена»
+  - Confirmation: WarningAmberIcon, описание, «Отмена» / «Да, завершить» (solid red)
+- [x] PIN → X-Admin-Secret header: DELETE /sessions/{id} → 403=wrong PIN → State B, 204=success → navigate('/')
+- [x] AdminPage: CosmicBackground + AdminModal immediately open, onClose → navigate(-1)
+- [x] API: terminateSession(sessionId, adminSecret) method
+- [x] Улучшенная обработка ошибок в axios interceptor:
+  - Network error → «Нет подключения к серверу»
+  - Timeout → «Сервер не отвечает»
+  - 403 → «Доступ запрещён»
+  - 5xx → «Что-то пошло не так, попробуйте позже»
+- [x] `npm run build` — success, `tsc --noEmit` — 0 errors
+- [ ] Коммит
+
+### Хронология:
+- **2026-02-24**: frontend-web-client реализовал AdminModal с 4 состояниями по спеке 07_admin_modal.md.
+- **2026-02-24**: Glassmorphism card (460px, blur 32px), PIN dots с gradient fill и pulse-анимацией, numpad с hover/active стилями.
+- **2026-02-24**: Shake-анимация при неверном PIN, авто-сброс через setTimeout. Confirm key активна только при 4 цифрах.
+- **2026-02-24**: Axios error interceptor переписан: осмысленные русскоязычные сообщения по типу ошибки.
 - **2026-02-24**: Сборка и TypeScript проверка пройдены.
