@@ -1,8 +1,10 @@
 # Журнал проекта: Караоке-приложение
 
 ## Статус проекта
-**Текущая фаза:** 3 — Скаффолдинг проекта и инфраструктура
+**Текущая фаза:** 8a — Извлечение фичей и эмбеддингов (ожидает начала)
 **Дата начала:** 2026-02-22
+**Последний коммит:** (реструктуризация v2/)
+**Структура:** Реализация в `v2/`, документация в корне
 
 ## Фаза 1: Анализ и проектирование
 **Коммит:** 43bb7dc
@@ -116,9 +118,104 @@
 - [x] Admin-авторизация (X-Admin-Secret)
 - [x] Интеграционные тесты API (41 тест)
 - [x] 160/160 тестов пройдены (119 старых + 41 новых)
-- [ ] Согласование с пользователем
-- [ ] Коммит
+- [x] Согласование с пользователем
+- [x] Коммит (b6e09bd)
 
 ### Хронология:
 - **2026-02-23**: python-developer создал SessionService, QueueService, генератор никнеймов, роутеры sessions и queue. Lint clean, app starts.
 - **2026-02-23**: polyglot-test-engineer написал 41 интеграционный тест (17 sessions, 24 queue). Lifespan bypass pattern для in-memory тестирования. 160/160 pass.
+- **2026-02-23**: Фаза 5 принята пользователем. Коммит b6e09bd.
+
+## Фаза 6: Каталог треков, поиск и стриминг
+**Коммит:** 725f1d3
+
+### Задачи фазы:
+- [x] TrackService (upload MP3, get, list_popular, enqueue_processing)
+- [x] SearchService (гибридный FTS5 + semantic fallback, suggest autocomplete)
+- [x] Playback-роутер (HTTP Range Request стриминг с path confinement)
+- [x] API tracks (5 эндпоинтов)
+- [x] Embedder (опциональная загрузка sentence-transformers при старте)
+- [x] Дополнительные методы SQLiteRepository (28→ расширен)
+- [x] Интеграционные тесты API tracks (24 теста)
+- [x] 184/184 тестов пройдены (160 старых + 24 новых)
+- [x] Коммит (725f1d3)
+
+### Хронология:
+- **2026-02-23**: python-developer создал TrackService, SearchService, playback router, tracks API. Embedder загружает sentence-transformers опционально.
+- **2026-02-23**: polyglot-test-engineer написал 24 интеграционных теста для tracks API. 184/184 pass.
+- **2026-02-23**: Фаза 6 принята. Коммит 725f1d3.
+
+## Фаза 7a: Audio Worker — JobService + UVR сепаратор
+**Коммит:** 1026165
+
+### Задачи фазы:
+- [x] JobService в shared/ (используется и backend, и worker)
+- [x] Worker process с asyncio JobPoller и graceful SIGTERM shutdown
+- [x] UVRSeparator (обёртка audio-separator с lazy model loading)
+- [x] AudioPipeline (шаг 1 реальный, шаги 2-6 заглушки для 7b/8a)
+- [x] Worker Dockerfile + entrypoint с auto-download модели UVR
+- [x] docker-compose worker service
+- [x] Фиксы из ревью: busy_timeout=5000, ALTER TABLE миграция, UVR no_vocal classifier bug, cached separator instance
+- [x] Unit-тесты (22 JobService + 20 AudioPipeline)
+- [x] 226/226 тестов пройдены (184 старых + 42 новых)
+- [x] Коммит (1026165)
+
+### Хронология:
+- **2026-02-23**: python-developer создал JobService, worker process, UVRSeparator, AudioPipeline. Worker Dockerfile с entrypoint.sh для авто-скачивания UVR модели.
+- **2026-02-23**: software-architect провёл ревью. Фиксы: busy_timeout для обоих DB connections, ALTER TABLE миграция для существующих БД, UVR no_vocal classifier bug, cached separator instance.
+- **2026-02-23**: polyglot-test-engineer написал 42 теста (22 JobService + 20 AudioPipeline). 226/226 pass.
+- **2026-02-23**: Фаза 7a принята. Коммит 1026165.
+
+## Фаза 7b: Soniox транскрипция, видеогенерация, SSE стриминг
+**Коммит:** 38abab3
+
+### Задачи фазы:
+- [x] SonoixClient (загрузка vocals → Soniox API → word-level транскрипция)
+- [x] Syllabifier (pyphen, разбиение слов на слоги с пропорциональным распределением таймингов)
+- [x] VideoGenerator (FFmpeg + ASS субтитры с \k тегами для послоговой подсветки)
+- [x] SSE endpoint (стриминг прогресса job → фронтенд)
+- [x] AudioPipeline шаги 2-3 реализованы (транскрипция + видеогенерация)
+- [x] docker-compose: добавлены SONOIX_API_KEY, SONOIX_API_URL
+- [x] Тесты (608 SonoixClient + 436 SSE + 579 Syllabifier + 521 VideoGenerator)
+- [x] 386 тестов всего пройдены
+- [x] Коммит (38abab3)
+
+### Хронология:
+- **2026-02-23**: ml-sota-expert и python-developer создали SonoixClient, Syllabifier, VideoGenerator. SSE endpoint для стриминга прогресса.
+- **2026-02-23**: AudioPipeline шаги 2-3 подключены: vocal → Soniox API → syllabify → FFmpeg ASS video.
+- **2026-02-23**: polyglot-test-engineer написал обширные тесты для всех новых компонентов. 386 pass.
+- **2026-02-23**: Фаза 7b принята. Коммит 38abab3.
+
+## E2E фиксы
+**Коммит:** 370e34f
+
+### Задачи:
+- [x] Syllabifier: поддержка BPE (byte-pair encoding) токенов
+- [x] Worker Dockerfile: исправления сборки (gcc, libc6-dev, pip timeout)
+- [x] AudioPipeline: robustness (graceful handling missing steps)
+- [x] Playback router: мелкий фикс
+- [x] SQLiteRepository: дополнительные методы
+- [x] Коммит (370e34f)
+
+### Хронология:
+- **2026-02-23**: E2E тестирование выявило проблемы: BPE-токены в syllabifier падали, Docker worker не собирался (отсутствовали gcc, libc6-dev), pipeline не обрабатывал edge cases.
+- **2026-02-23**: Все проблемы исправлены. Syllabifier теперь поддерживает BPE. Worker Dockerfile добавлены зависимости сборки. Pipeline более устойчив к ошибкам отдельных шагов.
+- **2026-02-23**: Коммит 370e34f.
+
+## Реструктуризация: перенос в v2/, удаление experiments/
+
+### Задачи:
+- [x] Обновление PROJECT_LOG.md (записи фаз 6, 7a, 7b, E2E fixes)
+- [x] Перенос реализации в v2/ (backend, worker, shared, tests, docker-compose, .env.example)
+- [x] E2E верификация: 386/386 тестов pass, docker compose config valid, docker build backend ok, docker build worker ok
+- [x] Удаление experiments/ (референсная директория, проанализирована в Фазе 1)
+- [x] Обновление master-promt.md (ссылки на experiments → v2/)
+- [x] ADR-010: обоснование реструктуризации
+- [x] Коммит
+
+### Хронология:
+- **2026-02-24**: Обновлён PROJECT_LOG.md — добавлены записи для фаз 6, 7a, 7b, E2E fixes.
+- **2026-02-24**: Реализация перенесена в v2/. Все внутренние относительные пути остались рабочими без правок (docker-compose context, conftest.py paths, Dockerfile COPY).
+- **2026-02-24**: E2E: 386/386 тестов pass (3.02s), docker compose config valid, оба Docker-образа собираются.
+- **2026-02-24**: experiments/ удалена. Ссылки в master-promt.md обновлены.
+- **2026-02-24**: ADR-010 зафиксировано.
