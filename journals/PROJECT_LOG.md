@@ -1,7 +1,7 @@
 # Журнал проекта: Караоке-приложение
 
 ## Статус проекта
-**Текущая фаза:** 12 — Фронтенд Админка и UX polish (завершена)
+**Текущая фаза:** 13 — Bootstrap CLI (завершена)
 **Дата начала:** 2026-02-22
 **Последний коммит:** (реструктуризация v2/)
 **Структура:** Реализация в `v2/`, документация в корне
@@ -406,3 +406,29 @@
 - **2026-02-24**: Shake-анимация при неверном PIN, авто-сброс через setTimeout. Confirm key активна только при 4 цифрах.
 - **2026-02-24**: Axios error interceptor переписан: осмысленные русскоязычные сообщения по типу ошибки.
 - **2026-02-24**: Сборка и TypeScript проверка пройдены.
+- **2026-02-24**: Фаза 12 принята. Коммит 087941d.
+
+## Фаза 13: Bootstrap CLI
+**Коммит:** (pending)
+
+### Задачи фазы:
+- [x] CLI (typer): --input-dir, --workers, --lrclib-dump, --language, --output-dir, --db-path, --qdrant-host/port, --skip-existing
+- [x] LRCLibDump: JSON-lines → in-memory SQLite, fuzzy search (normalize + LIKE fallback), LRC парсинг
+- [x] WhisperXTranscriber: lazy import, transcribe + force_align, CPU-only, модель medium
+- [x] BootstrapRunner: multiprocessing.Pool с imap_unordered, tqdm прогресс-бар
+- [x] Pipeline per track: UVR → LRC search/WhisperX → Syllabifier → VideoGenerator → FeatureExtractor + LyricEmbedder → SQLite + QDrant
+- [x] Batch QDrant upsert (каждые 100 треков)
+- [x] Error resilience: ошибки логируются в файл, не останавливают процесс
+- [x] Track ID: uuid5 от имени файла для детерминизма
+- [x] Dockerfile: python:3.12-slim + ffmpeg + torch CPU + whisperx
+- [x] pyproject.toml с optional deps [whisperx]
+- [x] Python syntax check — все файлы компилируются
+- [ ] Коммит
+
+### Хронология:
+- **2026-02-24**: python-developer создал Bootstrap CLI.
+- **2026-02-24**: LRCLibDump: двухэтапный поиск (exact normalized → LIKE wildcard), парсинг LRC формата с регулярками.
+- **2026-02-24**: WhisperXTranscriber: lazy import с HAS_WHISPERX флагом, force_align через pseudo-segment pattern.
+- **2026-02-24**: BootstrapRunner: module-level _process_track() для pickling в multiprocessing, _WordToken dataclass для Syllabifier duck-typing.
+- **2026-02-24**: Batch QDrant: векторы возвращаются из workers в main process, upsert каждые 100.
+- **2026-02-24**: Dockerfile: 4 слоя для оптимального кэширования (PyTorch ~1GB отдельно).
