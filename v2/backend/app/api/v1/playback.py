@@ -146,9 +146,11 @@ async def stream_track(
             detail=f"Track '{track_id}' not found.",
         )
 
-    # Prefer the clip (MP4) for ready tracks; fall back to the raw MP3.
+    # Prefer instrumental (karaoke) audio; fall back to clip or raw MP3.
     raw_path: str | None = None
-    if track.clip_path:
+    if track.instrumental_path:
+        raw_path = track.instrumental_path
+    elif track.clip_path:
         raw_path = track.clip_path
     elif track.mp3_path:
         raw_path = track.mp3_path

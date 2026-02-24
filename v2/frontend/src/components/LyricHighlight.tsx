@@ -40,6 +40,9 @@ function groupIntoLines(syllables: SyllableTiming[]): LyricLine[] {
   const endsWithSentencePunct = (text: string): boolean =>
     /[.!?]$/.test(text.trimEnd());
 
+  const isPunctOnly = (text: string): boolean =>
+    /^[\s.!?,;:…"'«»„""—–\-]+$/.test(text);
+
   const lines: LyricLine[] = [];
   let currentGroup: SyllableTiming[] = [syllables[0]];
   let currentChars = syllables[0].syllable.length;
@@ -50,6 +53,13 @@ function groupIntoLines(syllables: SyllableTiming[]): LyricLine[] {
     const syllableLen = syllableText.length;
     const isWordBoundary = syllableText.startsWith(' ');
     const prevText = syllables[i - 1].syllable;
+
+    // Never start a new line with punctuation-only token
+    if (isPunctOnly(syllableText)) {
+      currentGroup.push(syllables[i]);
+      currentChars += syllableLen;
+      continue;
+    }
 
     // Always break on a natural pause
     if (gap > LINE_GAP_THRESHOLD_SEC) {

@@ -153,34 +153,10 @@ class AudioPipeline:
                 )
 
             # ------------------------------------------------------------------
-            # Step 3: Video generation (Phase 7b)
+            # Step 3: Video generation — SKIPPED
+            # Frontend renders lyrics in real-time with syllable highlighting,
+            # so server-side MP4 generation is no longer needed.
             # ------------------------------------------------------------------
-            clip_path: str | None = None
-
-            if self.video_gen is not None and transcription is not None:
-                await self.job_service.mark_step(job.id, "generating_video", 0)
-
-                clip_path = await self.video_gen.generate(
-                    instrumental_path=instrumental_path,
-                    syllable_timings=syllable_timings,
-                    artist=track.artist,
-                    title=track.title,
-                    track_id=job.track_id,
-                )
-
-                await self.job_service.mark_step(job.id, "generating_video", 100)
-
-                await self.repo.update_track(
-                    job.track_id,
-                    TrackUpdate(clip_path=clip_path, status="processing"),
-                )
-
-                logger.info(
-                    "step_completed",
-                    job_id=job.id,
-                    step="generating_video",
-                    clip_path=clip_path,
-                )
 
             # ------------------------------------------------------------------
             # Steps 4+5: Feature extraction & lyric embedding (Phase 8a)
