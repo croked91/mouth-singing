@@ -5,11 +5,10 @@ services:
     restart: unless-stopped
     volumes:
       - qdrant_data:/qdrant/storage
-    ports:
-      - "6333:6333"
-      - "6334:6334"
     environment:
       QDRANT__SERVICE__HTTP_PORT: 6333
+    networks:
+      - karaoke_net
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/6333'"]
       interval: 10s
@@ -35,8 +34,8 @@ services:
     volumes:
       - sqlite_data:/data/sqlite
       - media_data:/data/media
-    ports:
-      - "8000:8000"
+    networks:
+      - karaoke_net
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
@@ -47,28 +46,57 @@ services:
     build:
       context: .
       dockerfile: worker/Dockerfile
+    container_name: karaoke_worker
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
     environment:
       DATABASE_URL: /data/sqlite/karaoke.db
       MEDIA_ROOT: /data/media
       MODEL_CACHE_DIR: /data/models
       WORKER_ID: worker-1
-      POLL_INTERVAL_SEC: "2"
-      LOG_LEVEL: INFO
+      POLL_INTERVAL_SEC: ${WORKER_POLL_INTERVAL:-2}
+      MAX_CONCURRENT: ${WORKER_MAX_CONCURRENT:-1}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
       QDRANT_HOST: qdrant
       QDRANT_PORT: "6333"
       SONOIX_API_KEY: ${SONOIX_API_KEY:-}
       SONOIX_API_URL: ${SONOIX_API_URL:-https://api.soniox.com}
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
     volumes:
       - sqlite_data:/data/sqlite
       - media_data:/data/media
       - models_data:/data/models
+    networks:
+      - karaoke_net
+
+  frontend:
+    build:
+      context: frontend
+      dockerfile: Dockerfile
+    container_name: karaoke_frontend
+    restart: unless-stopped
     depends_on:
       backend:
         condition: service_healthy
-    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-80}:80"
+    networks:
+      - karaoke_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
 
 volumes:
   qdrant_data:
   sqlite_data:
   media_data:
   models_data:
+
+networks:
+  karaoke_net:
+    driver: bridge

@@ -1,7 +1,7 @@
 # Журнал проекта: Караоке-приложение
 
 ## Статус проекта
-**Текущая фаза:** 13 — Bootstrap CLI (завершена)
+**Текущая фаза:** 14 — Docker Compose + Nginx + Deploy (завершена)
 **Дата начала:** 2026-02-22
 **Последний коммит:** (реструктуризация v2/)
 **Структура:** Реализация в `v2/`, документация в корне
@@ -432,3 +432,25 @@
 - **2026-02-24**: BootstrapRunner: module-level _process_track() для pickling в multiprocessing, _WordToken dataclass для Syllabifier duck-typing.
 - **2026-02-24**: Batch QDrant: векторы возвращаются из workers в main process, upsert каждые 100.
 - **2026-02-24**: Dockerfile: 4 слоя для оптимального кэширования (PyTorch ~1GB отдельно).
+- **2026-02-24**: Фаза 13 принята. Коммит 23bcba4.
+
+## Фаза 14: Docker Compose + Nginx + Deploy
+**Коммит:** (pending)
+
+### Задачи фазы:
+- [x] docker-compose.yml: 4 сервиса (qdrant, backend, worker, frontend) + karaoke_net сетевая изоляция
+- [x] Frontend (nginx) как единая точка входа: /api/ proxy → backend, /health passthrough, SPA fallback
+- [x] client_max_body_size 50M для загрузки MP3
+- [x] SSE: proxy_buffering off, proxy_cache off, proxy_read_timeout 300s
+- [x] Health checks: qdrant (TCP), backend (curl /health), frontend (curl /)
+- [x] docker-compose.override.yml: dev overrides (exposed ports, DEBUG logging)
+- [x] .env.example: полная документация (ADMIN_SECRET, SONOIX_API_KEY, LOG_LEVEL, WORKER_*, APP_PORT, HTTP_PROXY)
+- [x] Worker env: VPN proxy forwarding (HTTP_PROXY/HTTPS_PROXY)
+- [x] docker compose config — valid
+- [ ] Коммит
+
+### Хронология:
+- **2026-02-24**: Финализирован docker-compose.yml: добавлен frontend сервис, karaoke_net network, container_name для всех сервисов.
+- **2026-02-24**: nginx.conf обновлён: client_max_body_size 50M, /health passthrough.
+- **2026-02-24**: docker-compose.override.yml: dev ports (6333, 8000, 3000), DEBUG logging.
+- **2026-02-24**: .env.example: полный набор переменных с комментариями.

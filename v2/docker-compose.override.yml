@@ -1,0 +1,23 @@
+# Development overrides — hot-reload, debug logging, exposed ports
+# Active by default when running `docker compose up`
+# To run production only: docker compose -f docker-compose.yml up
+
+services:
+  qdrant:
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+
+  backend:
+    ports:
+      - "8000:8000"
+    environment:
+      LOG_LEVEL: DEBUG
+
+  worker:
+    environment:
+      LOG_LEVEL: DEBUG
+
+  frontend:
+    ports:
+      - "3000:80"
