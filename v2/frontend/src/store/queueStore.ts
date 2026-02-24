@@ -14,7 +14,7 @@ interface QueueState {
     participantId: string,
     trackId: string
   ) => Promise<void>;
-  skipTurn: (entryId: string) => Promise<void>;
+  skipTurn: (entryId: string, sessionId: string) => Promise<void>;
   clearError: () => void;
 }
 
@@ -56,14 +56,11 @@ export const useQueueStore = create<QueueState>((set, get) => ({
     }
   },
 
-  skipTurn: async (entryId: string): Promise<void> => {
+  skipTurn: async (entryId: string, sessionId: string): Promise<void> => {
     set({ isLoading: true, error: null });
     try {
       await api.skipTurn(entryId);
-      set((state) => ({
-        upcoming: state.upcoming.filter((e) => e.id !== entryId),
-        isLoading: false,
-      }));
+      await get().loadQueue(sessionId);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Ошибка пропуска хода';
       set({ isLoading: false, error: message });

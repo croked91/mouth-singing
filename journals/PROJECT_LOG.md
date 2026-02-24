@@ -1,7 +1,7 @@
 # Журнал проекта: Караоке-приложение
 
 ## Статус проекта
-**Текущая фаза:** 9 — Фронтенд скаффолдинг, тема, Landing + Sessions (завершена)
+**Текущая фаза:** 10a — Фронтенд QueuePage + рекомендации (завершена)
 **Дата начала:** 2026-02-22
 **Последний коммит:** (реструктуризация v2/)
 **Структура:** Реализация в `v2/`, документация в корне
@@ -298,3 +298,28 @@
 - **2026-02-24**: SessionPage: glassmorphism карточка, chips участников с cycling gradient аватарами, генерация никнеймов через API, empty state с dashed border.
 - **2026-02-24**: E2E flow проверен через Playwright: создание сессии, генерация «ДушевныйПингвин», добавление «Маша» вручную — всё работает с реальным бэкендом.
 - **2026-02-24**: Docker build проходит (multi-stage node:20-alpine → nginx:alpine).
+- **2026-02-24**: Фаза 9 принята. Коммит 571b2a5.
+
+## Фаза 10a: Фронтенд — QueuePage + рекомендации
+**Коммит:** (pending)
+
+### Задачи фазы:
+- [x] Исправлены TypeScript типы под реальный backend API (Session.status, Track.duration_sec, QueueEntry.order_position, RecommendedTrackItem)
+- [x] QueuePage: двухпанельный layout (левая 480px + правая flex)
+- [x] Top nav bar: логотип, «СЕЙЧАС ПОЁТ: NAME» с пульсирующим MicIcon, кнопка «ПРОПУСТИТЬ», admin lock
+- [x] Left panel: Current Singer Card (glassmorphism, 88px avatar, glow ring, status dot) + Queue Strip (горизонтальный скролл аватаров с badge позиции)
+- [x] Right panel: Табы (Поиск / Рекомендации / Загрузить) с кастомным MUI Tabs стилем
+- [x] Таб «Рекомендации»: ParticipantSelector + strategy label + 2-column TrackCard grid
+- [x] Компоненты: TrackCard, QueueItem, ParticipantSelector
+- [x] Кнопка «ВЫБРАТЬ» → addToQueue → refresh очереди
+- [x] Polling очереди каждые 5 сек
+- [x] Placeholder табы «Поиск» и «Загрузить»
+- [x] `npm run build` — success, `tsc --noEmit` — 0 errors
+- [x] E2E: полный flow Landing → Session → Queue через Playwright с реальным API
+- [ ] Коммит
+
+### Хронология:
+- **2026-02-24**: frontend-web-client реализовал QueuePage. Двухпанельный layout с glassmorphism.
+- **2026-02-24**: Типы исправлены: Session.status (string вместо boolean), Track.duration_sec, QueueEntry.order_position, RecommendedTrackItem с similarity_score.
+- **2026-02-24**: TrackCard, QueueItem, ParticipantSelector — переиспользуемые компоненты по дизайн-системе.
+- **2026-02-24**: E2E flow проверен через Playwright: Landing → создание сессии → добавление участника → QueuePage с табами и participant selector.
