@@ -130,10 +130,10 @@ async def stream_track(
 ):
     """Stream a track file with HTTP Range Request support.
 
-    Uses ``clip_path`` (MP4) if the track is ready; falls back to ``mp3_path``
-    otherwise. Responds with 206 Partial Content when the client sends a
-    ``Range`` header; returns a full-file ``FileResponse`` (200) when there is
-    no Range header, letting FastAPI handle the streaming efficiently.
+    Prefers ``instrumental_path`` (karaoke audio without vocals); falls back
+    to the original ``mp3_path``.  Responds with 206 Partial Content when the
+    client sends a ``Range`` header; returns a full-file ``FileResponse`` (200)
+    when there is no Range header.
 
     Raises:
         404: If the track does not exist or has no associated file.
@@ -146,12 +146,10 @@ async def stream_track(
             detail=f"Track '{track_id}' not found.",
         )
 
-    # Prefer instrumental (karaoke) audio; fall back to clip or raw MP3.
+    # Prefer instrumental (karaoke) audio; fall back to raw MP3.
     raw_path: str | None = None
     if track.instrumental_path:
         raw_path = track.instrumental_path
-    elif track.clip_path:
-        raw_path = track.clip_path
     elif track.mp3_path:
         raw_path = track.mp3_path
 

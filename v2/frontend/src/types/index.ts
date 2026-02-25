@@ -22,7 +22,6 @@ export interface Track {
   duration_sec: number | null;
   mp3_path?: string | null;
   instrumental_path?: string | null;
-  clip_path?: string | null;
   lyrics_text?: string | null;
   language?: string | null;
   source: string; // "catalog" | "user_upload"

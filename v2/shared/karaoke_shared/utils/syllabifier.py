@@ -114,6 +114,44 @@ class Syllabifier:
         return result
 
     # ------------------------------------------------------------------
+    # Text-only syllabification (no timestamps)
+    # ------------------------------------------------------------------
+
+    def split_text_to_syllables(
+        self, text: str, language: str
+    ) -> tuple[list[str], list[bool]]:
+        """Split plain text into syllables without timestamps.
+
+        Useful for pre-alignment: the resulting syllable list can be joined
+        with spaces and fed to WhisperX ``force_align()`` so that each
+        syllable gets its own timestamp directly from the audio.
+
+        Args:
+            text: Plain lyrics text (e.g. ``"любовь не обман"``).
+            language: Language code (``"ru"``, ``"en"``).
+
+        Returns:
+            A tuple of two equal-length lists:
+
+            - **syllables**: e.g. ``["лю", "бовь", "не", "об", "ман"]``
+            - **is_word_start**: ``True`` where a syllable begins a new word,
+              e.g. ``[True, False, True, True, False]``
+        """
+        words = text.split()
+        syllables: list[str] = []
+        is_word_start: list[bool] = []
+
+        for word in words:
+            parts = self._split_word(word, language)
+            if not parts:
+                continue
+            for i, part in enumerate(parts):
+                syllables.append(part)
+                is_word_start.append(i == 0)
+
+        return syllables, is_word_start
+
+    # ------------------------------------------------------------------
     # Pyphen helpers
     # ------------------------------------------------------------------
 

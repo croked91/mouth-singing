@@ -5,9 +5,8 @@ files into karaoke tracks:
 
     karaoke-bootstrap /path/to/mp3s --lrclib-dump lrclib.json --workers 4
 
-Each track goes through: UVR separation → lyrics retrieval → WhisperX ASR →
-syllabification → video generation → feature extraction → SQLite + QDrant
-persistence.
+Each track goes through: UVR separation → lyrics retrieval → syllabification →
+WhisperX alignment → feature extraction → SQLite + QDrant persistence.
 
 Run ``karaoke-bootstrap --help`` for all options.
 """
@@ -85,7 +84,11 @@ def bootstrap(
     ),
     lrclib_dump: Path | None = typer.Option(
         None,
-        help="Path to an lrc-lib JSON dump file for lyrics lookup.",
+        help="Path to an lrc-lib JSON-lines dump file for lyrics lookup.",
+    ),
+    lrclib_sqlite: Path | None = typer.Option(
+        None,
+        help="Path to an lrclib SQLite database for lyrics lookup (alternative to --lrclib-dump).",
     ),
     language: str = typer.Option(
         "ru",
@@ -108,34 +111,42 @@ def bootstrap(
         help="Skip tracks whose ID is already present in the database.",
     ),
 ) -> None:
-    """Mass-process MP3 files into karaoke tracks with lyrics, video, and features.
+    """Mass-process MP3 files into karaoke tracks with lyrics and features.
 
     For each MP3 found in INPUT_DIR the pipeline runs:
     \b
       1. UVR separation (vocals / instrumental)
-      2. Lyrics: LRC dump lookup → WhisperX force-align, or full ASR
-      3. Syllabification of word timestamps
-      4. Karaoke video generation (.mp4)
-      5. Audio feature extraction (45-d vector)
-      6. Lyric embedding (384-d vector)
-      7. Persist to SQLite and QDrant
+      2. Lyrics: LRC lookup → syllabify → WhisperX force-align, or full ASR
+      3. Audio feature extraction (45-d vector)
+      4. Lyric embedding (384-d vector)
+      5. Persist to SQLite and QDrant
 
     Errors on individual tracks are logged but do not stop the run.
     """
     _configure_logging()
+
+    # Validate mutually exclusive LRC options.
+    if lrclib_dump is not None and lrclib_sqlite is not None:
+        typer.echo(
+            "ERROR: --lrclib-dump and --lrclib-sqlite are mutually exclusive.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    has_lrc_source = lrclib_dump is not None or lrclib_sqlite is not None
 
     # Warn if WhisperX is not available — the run will fail at the first
     # track that needs transcription, so it is better to surface this early.
     if not HAS_WHISPERX:
         typer.echo(
             "WARNING: WhisperX is not installed. Transcription will fail for any track "
-            "that does not have lyrics in the LRC dump.\n"
+            "that does not have lyrics in the LRC source.\n"
             "Install it with: pip install karaoke-bootstrap[whisperx]",
             err=True,
         )
-        if lrclib_dump is None:
+        if not has_lrc_source:
             typer.echo(
-                "ERROR: WhisperX is not installed and no --lrclib-dump was provided. "
+                "ERROR: WhisperX is not installed and no LRC source was provided. "
                 "Cannot transcribe any tracks. Aborting.",
                 err=True,
             )
@@ -144,6 +155,13 @@ def bootstrap(
     if lrclib_dump is not None and not lrclib_dump.exists():
         typer.echo(
             f"ERROR: --lrclib-dump path does not exist: {lrclib_dump}",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    if lrclib_sqlite is not None and not lrclib_sqlite.exists():
+        typer.echo(
+            f"ERROR: --lrclib-sqlite path does not exist: {lrclib_sqlite}",
             err=True,
         )
         raise typer.Exit(code=1)
@@ -161,6 +179,7 @@ def bootstrap(
         workers=effective_workers,
         language=language,
         lrclib_dump=str(lrclib_dump) if lrclib_dump else None,
+        lrclib_sqlite=str(lrclib_sqlite) if lrclib_sqlite else None,
         db_path=str(db_path),
         qdrant_host=qdrant_host,
         qdrant_port=qdrant_port,
@@ -173,6 +192,7 @@ def bootstrap(
         output_dir=output_dir,
         workers=effective_workers,
         lrclib_dump_path=lrclib_dump,
+        lrclib_sqlite_path=lrclib_sqlite,
         language=language,
         db_path=db_path,
         qdrant_host=qdrant_host,

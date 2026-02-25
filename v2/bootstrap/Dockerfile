@@ -1,7 +1,7 @@
 FROM python:3.12-slim
 
 # System dependencies:
-# - ffmpeg: required by VideoGenerator and audio loading in WhisperX/librosa
+# - ffmpeg: required by audio loading in WhisperX/librosa
 # - gcc, libc6-dev: needed to compile C extensions in some Python packages
 RUN apt-get update && apt-get install -y \
     ffmpeg \
@@ -16,7 +16,7 @@ WORKDIR /app
 COPY shared/ /app/shared/
 RUN pip install --no-cache-dir "/app/shared[ml]"
 
-# Install the worker package so UVRSeparator and VideoGenerator are importable.
+# Install the worker package so UVRSeparator is importable.
 COPY worker/ /app/worker/
 RUN pip install --no-cache-dir /app/worker/
 

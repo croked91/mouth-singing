@@ -215,9 +215,10 @@ async def start_playing(
 
     track = await repo.get_track(entry.track_id)
 
+    stream_url = f"/api/v1/tracks/{entry.track_id}/stream" if track else None
     return StartPlayingResponse(
         entry_id=entry_id,
-        clip_url=track.clip_path if track else None,
+        clip_url=stream_url,
         syllable_timings=track.syllable_timings if track else None,
         duration_sec=track.duration_sec if track else None,
     )

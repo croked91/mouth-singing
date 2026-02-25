@@ -1,13 +1,11 @@
 """Audio processing pipeline.
 
-Orchestrates the full audio processing pipeline for a single job.  Steps
-implemented per phase:
-  - Phase 7a: Step 1 — UVR vocal/instrumental separation.
-  - Phase 7b: Step 2 — Soniox transcription + syllabification.
-              Step 3 — VideoGenerator MP4 generation.
-  - Phase 8a: Step 4 — FeatureExtractor (librosa, 45-d).
-              Step 5 — LyricEmbedder (sentence-transformers, 384-d).
-              Step 6 — QDrant sync (audio_features + lyrics_embeddings).
+Orchestrates the full audio processing pipeline for a single job.  Steps:
+  - Step 1 — UVR vocal/instrumental separation.
+  - Step 2 — Soniox transcription + syllabification.
+  - Step 3 — FeatureExtractor (librosa, 45-d).
+  - Step 4 — LyricEmbedder (sentence-transformers, 384-d).
+  - Step 5 — QDrant sync (audio_features + lyrics_embeddings).
 """
 
 from __future__ import annotations
@@ -25,7 +23,6 @@ from karaoke_shared.utils.syllabifier import Syllabifier
 
 from app.pipeline.sonoix_client import SonoixClient
 from app.pipeline.uvr_separator import UVRSeparator
-from app.pipeline.video_generator import VideoGenerator
 
 logger = structlog.get_logger(__name__)
 
@@ -37,7 +34,7 @@ class AudioPipeline:
     :meth:`process`.  Dependencies are injected so that each component can be
     tested or swapped independently.
 
-    ``sonoix``, ``video_gen``, ``feature_extractor``, ``lyric_embedder``, and
+    ``sonoix``, ``feature_extractor``, ``lyric_embedder``, and
     ``qdrant_repo`` are optional: when ``None`` the corresponding pipeline
     steps are skipped.  This allows unit tests to construct the pipeline
     without providing all dependencies.
@@ -47,8 +44,7 @@ class AudioPipeline:
         uvr: The vocal/instrumental separator.
         repo: Repository for reading track data and persisting updates.
         sonoix: Soniox Speech-to-Text client for transcription.
-        video_gen: VideoGenerator for creating the karaoke MP4 clip.
-        feature_extractor: Extracts 45-d audio feature vector from instrumental.
+        feature_extractor: Extracts 45-d audio feature vector.
         lyric_embedder: Embeds lyrics into 384-d vector.
         qdrant_repo: QDrant repository for upserting vectors.
     """
@@ -59,7 +55,6 @@ class AudioPipeline:
         uvr: UVRSeparator,
         repo: SQLiteRepository,
         sonoix: SonoixClient | None = None,
-        video_gen: VideoGenerator | None = None,
         feature_extractor: object | None = None,
         lyric_embedder: object | None = None,
         qdrant_repo: QDrantRepository | None = None,
@@ -68,7 +63,6 @@ class AudioPipeline:
         self.uvr = uvr
         self.repo = repo
         self.sonoix = sonoix
-        self.video_gen = video_gen
         self.feature_extractor = feature_extractor
         self.lyric_embedder = lyric_embedder
         self.qdrant_repo = qdrant_repo
@@ -153,13 +147,7 @@ class AudioPipeline:
                 )
 
             # ------------------------------------------------------------------
-            # Step 3: Video generation — SKIPPED
-            # Frontend renders lyrics in real-time with syllable highlighting,
-            # so server-side MP4 generation is no longer needed.
-            # ------------------------------------------------------------------
-
-            # ------------------------------------------------------------------
-            # Steps 4+5: Feature extraction & lyric embedding (Phase 8a)
+            # Steps 3+4: Feature extraction & lyric embedding
             # Run in parallel via asyncio.gather.
             # ------------------------------------------------------------------
             feature_vector: list[float] | None = None
@@ -172,7 +160,7 @@ class AudioPipeline:
 
                 async def _extract_features() -> list[float]:
                     vec = await asyncio.to_thread(
-                        self.feature_extractor.extract, instrumental_path
+                        self.feature_extractor.extract, track.mp3_path
                     )
                     await self.job_service.mark_step(job.id, "extracting_features", 100)
                     return vec
@@ -209,7 +197,7 @@ class AudioPipeline:
                 )
 
             # ------------------------------------------------------------------
-            # Step 6: QDrant sync (Phase 8a)
+            # Step 5: QDrant sync
             # ------------------------------------------------------------------
             qdrant_synced = False
 
@@ -256,11 +244,11 @@ class AudioPipeline:
             # ------------------------------------------------------------------
             # Finalize
             # ------------------------------------------------------------------
+            clip_path = None  # Video generation skipped — frontend renders lyrics
+
             steps_completed = ["separating"]
             if transcription is not None:
                 steps_completed.append("transcribing")
-            if clip_path is not None:
-                steps_completed.append("generating_video")
             if feature_vector is not None:
                 steps_completed.append("extracting_features")
             if lyric_vector is not None:

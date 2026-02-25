@@ -1,7 +1,7 @@
 # Журнал проекта: Караоке-приложение
 
 ## Статус проекта
-**Текущая фаза:** 15 — E2E тестирование и hardening (завершена)
+**Текущая фаза:** 16 — Bootstrap pipeline v2 + массовый импорт треков
 **Дата начала:** 2026-02-22
 **Последний коммит:** (реструктуризация v2/)
 **Структура:** Реализация в `v2/`, документация в корне
@@ -489,3 +489,21 @@
 - **2026-02-24**: Browser E2E через Playwright MCP (Docker): Welcome → Session → Participants → Queue → Recommendations → Search → Upload (полный pipeline: UVR+Soniox+FFmpeg) → Player → Admin terminate. Все потоки работают.
 - **2026-02-24**: Найден и исправлен баг PlayerPage: audio event listeners (timeupdate, play, pause и т.д.) привязывались в useEffect с `[]` deps, но `<audio>` элемент рендерится только после isLoading=false. Таймер и слайдер не обновлялись. Fix: deps `[isLoading]`.
 - **2026-02-24**: Найден и исправлен баг QueuePage: handleParticipantSelect сбрасывал recommendations в null при re-click на того же участника, useEffect не перезапускался (тот же dependency value). Fix: `if (id === selectedParticipantId) return;`.
+
+## Фаза 16: Bootstrap pipeline v2 + массовый импорт треков
+
+### Задачи фазы:
+- [x] Собрать библиотеку из 4820 MP3 (lrclib + hitmotop.com грабер)
+- [x] Удалить VideoGenerator — мёртвый код (ADR-011)
+- [x] Feature Extraction на оригинальном MP3 с голосом (ADR-011)
+- [x] Новый syllabify-then-align flow для точных слоговых таймстемпов (ADR-012)
+- [x] LRCLib SQLite адаптер для 78GB дампа на VPS (ADR-012)
+- [ ] Тестовый запуск бутстрапа на 5 треках
+- [ ] Полный бутстрап 4820 треков
+
+### Хронология:
+- **2026-02-25**: Собрано 4820 уникальных MP3 из 6 источников: bootstrap (1770), batch2 (1187), ru_from_db (1067), batch3 (654), missing_batch3 (38), russian_manual (107). Грабер `grab_mp3_links.py` + `download_mp3s.py`.
+- **2026-02-25**: Удалён VideoGenerator — `video_generator.py`, `test_video_generator.py`, все импорты/ссылки в worker, backend, bootstrap, frontend. clip_path оставлен nullable в БД.
+- **2026-02-25**: Feature Extraction переключен с instrumental на оригинальный MP3 (bootstrap_runner.py, audio_pipeline.py).
+- **2026-02-25**: Новый `LRCLibSQLiteAdapter` — read-only адаптер для 78GB SQLite дампа lrclib. CLI: `--lrclib-sqlite`.
+- **2026-02-25**: Новый syllabify-then-align flow: pyphen split → WhisperX force_align → точные слоговые таймстемпы из аудио. Метод `Syllabifier.split_text_to_syllables()` + `_map_syllable_timestamps()`.

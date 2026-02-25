@@ -58,17 +58,14 @@ async def job_status_stream(
                 return
 
             if job.status == "completed":
-                track = await repo.get_track(job.track_id)
-                clip_url: str | None = None
-                if track and track.clip_path:
-                    clip_url = f"/api/v1/tracks/{job.track_id}/stream"
+                stream_url = f"/api/v1/tracks/{job.track_id}/stream"
 
                 payload = json.dumps(
                     {
                         "job_id": job_id,
                         "status": "completed",
                         "track_id": job.track_id,
-                        "clip_url": clip_url,
+                        "clip_url": stream_url,
                     }
                 )
                 yield f"event: completed\ndata: {payload}\n\n"

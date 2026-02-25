@@ -7,10 +7,9 @@ Each worker process runs the full pipeline for a single track:
   1. UVR separation (vocals + instrumental)
   2. Lyrics retrieval: LRC dump lookup → WhisperX force-align, or full ASR
   3. Syllabification of word-level timestamps
-  4. Karaoke video generation
-  5. Audio feature extraction (45-d vector)
-  6. Lyric embedding (384-d vector)
-  7. Persist to SQLite and batch-upsert to QDrant
+  4. Audio feature extraction (45-d vector)
+  5. Lyric embedding (384-d vector)
+  6. Persist to SQLite and batch-upsert to QDrant
 
 QDrant upserts are accumulated in the main process and flushed every 100 tracks
 to avoid per-track round-trips to the vector database.
@@ -18,7 +17,6 @@ to avoid per-track round-trips to the vector database.
 
 from __future__ import annotations
 
-import asyncio
 import dataclasses
 import multiprocessing
 import os
@@ -66,6 +64,7 @@ class BootstrapConfig:
     output_dir: Path
     workers: int
     lrclib_dump_path: Path | None
+    lrclib_sqlite_path: Path | None
     language: str
     db_path: Path
     qdrant_host: str
@@ -199,6 +198,57 @@ def _insert_track_sync(db_path: Path, track_data: dict) -> None:
 
 
 # ------------------------------------------------------------------
+# Syllable timestamp mapping
+# ------------------------------------------------------------------
+
+
+def _map_syllable_timestamps(
+    whisperx_words: list[dict],
+    expected_syllables: list[str],
+    is_word_start: list[bool],
+) -> list:
+    """Map WhisperX force-align output to ``SyllableTiming`` objects.
+
+    WhisperX may drop some "words" (syllables) that it cannot align.
+    We match by position and add space prefixes for word boundaries so
+    that rendered karaoke text has proper spacing.
+
+    Args:
+        whisperx_words: Output of ``WhisperXTranscriber.force_align()``,
+            each with ``"word"``, ``"start"``, ``"end"`` keys.
+        expected_syllables: The syllable strings sent to WhisperX.
+        is_word_start: Boolean flags — ``True`` marks the first syllable
+            of a new word.
+
+    Returns:
+        List of ``SyllableTiming`` instances.
+    """
+    from karaoke_shared.models.track import SyllableTiming  # noqa: PLC0415
+
+    timings: list[SyllableTiming] = []
+
+    for i, word_info in enumerate(whisperx_words):
+        if i >= len(expected_syllables):
+            break
+
+        syllable_text = word_info["word"]
+
+        # Add space prefix for word boundaries (except the very first syllable).
+        if i > 0 and i < len(is_word_start) and is_word_start[i]:
+            syllable_text = " " + syllable_text
+
+        timings.append(
+            SyllableTiming(
+                syllable=syllable_text,
+                start=float(word_info["start"]),
+                end=float(word_info["end"]),
+            )
+        )
+
+    return timings
+
+
+# ------------------------------------------------------------------
 # Per-track worker function
 # ------------------------------------------------------------------
 
@@ -264,42 +314,65 @@ def _process_track(args: tuple) -> dict | None:
         )
 
         # ----------------------------------------------------------
-        # Step 2: Lyrics retrieval and transcription
+        # Steps 2+3: Lyrics retrieval, syllabification, alignment
         # ----------------------------------------------------------
+        from app.pipeline.lrclib_dump import LRCLibDump  # noqa: PLC0415
+
         lyrics_text: str = ""
-        word_timestamps: list[dict] = []
+        syllable_timings: list = []
+        used_lrc = False
 
-        if config.lrclib_dump_path is not None:
-            from app.pipeline.lrclib_dump import LRCLibDump  # noqa: PLC0415
+        # Select LRC adapter: SQLite (78 GB on-disk) or JSON-lines dump.
+        lrc_raw: str | None = None
+        if config.lrclib_sqlite_path is not None:
+            from app.pipeline.lrclib_sqlite_adapter import (  # noqa: PLC0415
+                LRCLibSQLiteAdapter,
+            )
 
-            # LRCLibDump is expensive to construct (loads full dump into RAM).
-            # It is created fresh in each worker process — not shared across
-            # processes — because Python multiprocessing uses separate memory
-            # spaces.  If memory is a concern, consider sharing it via a
-            # Manager, but for 5K-10K tracks the simplicity wins.
+            adapter = LRCLibSQLiteAdapter(config.lrclib_sqlite_path)
+            try:
+                lrc_raw = adapter.search(artist, title)
+            finally:
+                adapter.close()
+        elif config.lrclib_dump_path is not None:
             dump = LRCLibDump(config.lrclib_dump_path)
             try:
                 lrc_raw = dump.search(artist, title)
             finally:
                 dump.close()
 
-            if lrc_raw:
-                track_log.info("bootstrap.lrc_found")
-                lrc_lines = LRCLibDump.parse_lrc(lrc_raw)
-                lyrics_text = " ".join(line["text"] for line in lrc_lines)
+        if lrc_raw:
+            track_log.info("bootstrap.lrc_found")
+            lrc_lines = LRCLibDump.parse_lrc(lrc_raw)
+            lyrics_text = " ".join(line["text"] for line in lrc_lines)
+
+            # New flow: syllabify text THEN force-align syllables for
+            # accurate per-syllable timestamps from the audio.
+            syllabifier = Syllabifier()
+            syl_strings, is_word_start = syllabifier.split_text_to_syllables(
+                lyrics_text, config.language
+            )
+
+            if syl_strings:
+                syl_text = " ".join(syl_strings)
 
                 from app.pipeline.whisperx_transcriber import (  # noqa: PLC0415
                     WhisperXTranscriber,
                 )
 
                 transcriber = WhisperXTranscriber(language=config.language)
-                word_timestamps = transcriber.force_align(
-                    Path(vocals_path), lyrics_text
+                syl_timestamps = transcriber.force_align(
+                    Path(vocals_path), syl_text
                 )
-            else:
-                track_log.info("bootstrap.lrc_not_found_falling_back_to_asr")
+                syllable_timings = _map_syllable_timestamps(
+                    syl_timestamps, syl_strings, is_word_start
+                )
+                used_lrc = True
+        else:
+            track_log.info("bootstrap.lrc_not_found_falling_back_to_asr")
 
-        if not word_timestamps:
+        if not used_lrc:
+            # Fallback: full ASR + proportional syllabification.
             from app.pipeline.whisperx_transcriber import (  # noqa: PLC0415
                 WhisperXTranscriber,
             )
@@ -308,49 +381,32 @@ def _process_track(args: tuple) -> dict | None:
             word_timestamps = transcriber.transcribe(Path(vocals_path))
             lyrics_text = " ".join(w["word"] for w in word_timestamps)
 
-        track_log.info("bootstrap.transcription_done", word_count=len(word_timestamps))
+            syllabifier = Syllabifier()
+            tokens = _words_to_tokens(word_timestamps, config.language)
+            syllable_timings = syllabifier.syllabify(tokens)
 
-        # ----------------------------------------------------------
-        # Step 3: Syllabification
-        # ----------------------------------------------------------
-        syllabifier = Syllabifier()
-        tokens = _words_to_tokens(word_timestamps, config.language)
-        syllable_timings = syllabifier.syllabify(tokens)
-        track_log.info("bootstrap.syllabify_done", syllable_count=len(syllable_timings))
-
-        # ----------------------------------------------------------
-        # Step 4: Video generation
-        # ----------------------------------------------------------
-        from app.pipeline.video_generator import VideoGenerator  # noqa: PLC0415
-
-        video_gen = VideoGenerator(media_root=str(config.output_dir))
-        clip_path = asyncio.run(
-            video_gen.generate(
-                instrumental_path=instrumental_path,
-                syllable_timings=syllable_timings,
-                artist=artist,
-                title=title,
-                track_id=track_id,
-            )
+        track_log.info(
+            "bootstrap.lyrics_done",
+            syllable_count=len(syllable_timings),
+            used_lrc=used_lrc,
         )
-        track_log.info("bootstrap.video_done", clip_path=clip_path)
 
         # ----------------------------------------------------------
-        # Step 5: Audio feature extraction
+        # Step 4: Audio feature extraction
         # ----------------------------------------------------------
         feature_extractor = FeatureExtractor()
-        audio_vector = feature_extractor.extract(instrumental_path)
+        audio_vector = feature_extractor.extract(str(mp3_path))
         track_log.info("bootstrap.features_extracted")
 
         # ----------------------------------------------------------
-        # Step 6: Lyric embedding
+        # Step 5: Lyric embedding
         # ----------------------------------------------------------
         lyric_embedder = LyricEmbedder()
         lyric_vector = lyric_embedder.embed(lyrics_text)
         track_log.info("bootstrap.lyrics_embedded")
 
         # ----------------------------------------------------------
-        # Step 7: Persist to SQLite
+        # Step 6: Persist to SQLite
         # ----------------------------------------------------------
         now_iso = datetime.now(timezone.utc).isoformat()
         syllable_timings_json = _serialise_syllable_timings(syllable_timings)
@@ -364,7 +420,7 @@ def _process_track(args: tuple) -> dict | None:
                 "duration_sec": None,
                 "mp3_path": str(mp3_path),
                 "instrumental_path": instrumental_path,
-                "clip_path": clip_path,
+                "clip_path": None,
                 "lyrics_text": lyrics_text or None,
                 "syllable_timings": syllable_timings_json,
                 "language": config.language,
