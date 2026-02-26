@@ -54,6 +54,16 @@ function groupIntoLines(syllables: SyllableTiming[]): LyricLine[] {
     const isWordBoundary = syllableText.startsWith(' ');
     const prevText = syllables[i - 1].syllable;
 
+    // Explicit line break marker from backend (LRC line boundaries).
+    // Strip the \n prefix and force a new line group.
+    if (syllableText.startsWith('\n')) {
+      lines.push(pushLine(currentGroup));
+      const stripped = { ...syllables[i], syllable: syllableText.slice(1) };
+      currentGroup = [stripped];
+      currentChars = stripped.syllable.length;
+      continue;
+    }
+
     // Never start a new line with punctuation-only token
     if (isPunctOnly(syllableText)) {
       currentGroup.push(syllables[i]);

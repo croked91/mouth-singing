@@ -4,9 +4,9 @@ Provides the same search interface as ``LRCLibDump`` but queries a large
 SQLite database file directly, without loading it into memory.  Suitable
 for databases that are too large to fit in RAM (e.g. the 78 GB lrclib dump).
 
-The database is expected to have a ``tracks`` table with at least these
-columns: ``artist_name``, ``name`` (track title), ``artist_name_lower``,
-``synced_lyrics``.
+The database is expected to have a ``tracks`` table (with ``artist_name_lower``,
+``name``, ``last_lyrics_id``) and a ``lyrics`` table (with ``synced_lyrics``)
+linked via ``tracks.last_lyrics_id → lyrics.id``.
 
 Usage::
 
@@ -27,8 +27,8 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
-# Characters stripped from artist names to match ``artist_name_lower`` in the DB.
-_STRIP_CHARS_RE = re.compile(r"[&\-!]")
+# Characters stripped to match lrclib ``artist_name_lower`` / ``name_lower`` convention.
+_STRIP_CHARS_RE = re.compile(r"[&\-!+()\[\]]")
 
 
 def _normalize_for_db(text: str) -> str:
@@ -81,14 +81,16 @@ class LRCLibSQLiteAdapter:
         artist_norm = _normalize_for_db(artist)
         title_norm = _normalize_for_db(title)
 
-        # Exact match on artist_name_lower + normalized title.
+        # Exact match using indexed columns artist_name_lower + name_lower.
         cursor = self._conn.execute(
             """
-            SELECT synced_lyrics FROM tracks
-            WHERE artist_name_lower = ?
-              AND LOWER(name) = ?
-              AND synced_lyrics IS NOT NULL
-              AND synced_lyrics != ''
+            SELECT l.synced_lyrics
+            FROM tracks t
+            JOIN lyrics l ON l.id = t.last_lyrics_id
+            WHERE t.artist_name_lower = ?
+              AND t.name_lower = ?
+              AND l.synced_lyrics IS NOT NULL
+              AND l.synced_lyrics != ''
             LIMIT 1
             """,
             (artist_norm, title_norm),
@@ -97,17 +99,19 @@ class LRCLibSQLiteAdapter:
         if row:
             return row["synced_lyrics"]
 
-        # Fallback: LIKE wildcards for partial matches.
+        # Fallback: exact artist + title prefix match (still index-friendly).
         cursor = self._conn.execute(
             """
-            SELECT synced_lyrics FROM tracks
-            WHERE artist_name_lower LIKE ?
-              AND LOWER(name) LIKE ?
-              AND synced_lyrics IS NOT NULL
-              AND synced_lyrics != ''
+            SELECT l.synced_lyrics
+            FROM tracks t
+            JOIN lyrics l ON l.id = t.last_lyrics_id
+            WHERE t.artist_name_lower = ?
+              AND t.name_lower LIKE ?
+              AND l.synced_lyrics IS NOT NULL
+              AND l.synced_lyrics != ''
             LIMIT 1
             """,
-            (f"%{artist_norm}%", f"%{title_norm}%"),
+            (artist_norm, f"{title_norm}%"),
         )
         row = cursor.fetchone()
         if row:

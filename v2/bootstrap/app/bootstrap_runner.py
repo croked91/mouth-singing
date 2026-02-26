@@ -65,7 +65,10 @@ class BootstrapConfig:
     workers: int
     lrclib_dump_path: Path | None
     lrclib_sqlite_path: Path | None
+    lrclib_url: str | None
     language: str
+    device: str
+    whisper_model: str
     db_path: Path
     qdrant_host: str
     qdrant_port: int
@@ -206,12 +209,19 @@ def _map_syllable_timestamps(
     whisperx_words: list[dict],
     expected_syllables: list[str],
     is_word_start: list[bool],
+    is_line_start: list[bool] | None = None,
 ) -> list:
     """Map WhisperX force-align output to ``SyllableTiming`` objects.
 
     WhisperX may drop some "words" (syllables) that it cannot align.
-    We match by position and add space prefixes for word boundaries so
-    that rendered karaoke text has proper spacing.
+    We match by position and add prefixes for word/line boundaries so
+    that rendered karaoke text has proper spacing and line breaks.
+
+    Prefix conventions:
+    - ``" "`` (space) marks the first syllable of a new word.
+    - ``"\\n"`` marks the first syllable of a new LRC line (implies
+      word boundary too).  The frontend ``groupIntoLines()`` splits
+      on this marker instead of using gap/punctuation heuristics.
 
     Args:
         whisperx_words: Output of ``WhisperXTranscriber.force_align()``,
@@ -219,6 +229,8 @@ def _map_syllable_timestamps(
         expected_syllables: The syllable strings sent to WhisperX.
         is_word_start: Boolean flags — ``True`` marks the first syllable
             of a new word.
+        is_line_start: Optional boolean flags — ``True`` marks the first
+            syllable of a new LRC line.
 
     Returns:
         List of ``SyllableTiming`` instances.
@@ -233,9 +245,12 @@ def _map_syllable_timestamps(
 
         syllable_text = word_info["word"]
 
-        # Add space prefix for word boundaries (except the very first syllable).
-        if i > 0 and i < len(is_word_start) and is_word_start[i]:
-            syllable_text = " " + syllable_text
+        if i > 0:
+            # Line break marker takes priority over word boundary space.
+            if is_line_start and i < len(is_line_start) and is_line_start[i]:
+                syllable_text = "\n" + syllable_text
+            elif i < len(is_word_start) and is_word_start[i]:
+                syllable_text = " " + syllable_text
 
         timings.append(
             SyllableTiming(
@@ -322,9 +337,19 @@ def _process_track(args: tuple) -> dict | None:
         syllable_timings: list = []
         used_lrc = False
 
-        # Select LRC adapter: SQLite (78 GB on-disk) or JSON-lines dump.
+        # Select LRC adapter: HTTP server, SQLite, or JSON-lines dump.
         lrc_raw: str | None = None
-        if config.lrclib_sqlite_path is not None:
+        if config.lrclib_url is not None:
+            from app.pipeline.lrclib_http_adapter import (  # noqa: PLC0415
+                LRCLibHTTPAdapter,
+            )
+
+            adapter = LRCLibHTTPAdapter(config.lrclib_url)
+            try:
+                lrc_raw = adapter.search(artist, title)
+            finally:
+                adapter.close()
+        elif config.lrclib_sqlite_path is not None:
             from app.pipeline.lrclib_sqlite_adapter import (  # noqa: PLC0415
                 LRCLibSQLiteAdapter,
             )
@@ -344,30 +369,58 @@ def _process_track(args: tuple) -> dict | None:
         if lrc_raw:
             track_log.info("bootstrap.lrc_found")
             lrc_lines = LRCLibDump.parse_lrc(lrc_raw)
-            lyrics_text = " ".join(line["text"] for line in lrc_lines)
+            lyrics_text = "\n".join(line["text"] for line in lrc_lines)
 
-            # New flow: syllabify text THEN force-align syllables for
-            # accurate per-syllable timestamps from the audio.
+            # Build per-line segments: syllabify each LRC line and use
+            # the LRC timestamps as segment boundaries for WhisperX.
             syllabifier = Syllabifier()
-            syl_strings, is_word_start = syllabifier.split_text_to_syllables(
-                lyrics_text, config.language
-            )
+            segments: list[dict] = []
+            all_syl_strings: list[str] = []
+            all_is_word_start: list[bool] = []
+            all_is_line_start: list[bool] = []
 
-            if syl_strings:
+            for line in lrc_lines:
+                text = line["text"].strip()
+                if not text:
+                    continue
+                syl_strings, is_word_start = syllabifier.split_text_to_syllables(
+                    text, config.language
+                )
+                if not syl_strings:
+                    continue
                 syl_text = " ".join(syl_strings)
+                segments.append({
+                    "text": syl_text,
+                    "start": line["start_ms"] / 1000.0,
+                    "end": line["end_ms"] / 1000.0,
+                })
+                # Track line boundaries: first syllable of each LRC line
+                line_flags = [False] * len(syl_strings)
+                line_flags[0] = True
+                all_syl_strings.extend(syl_strings)
+                all_is_word_start.extend(is_word_start)
+                all_is_line_start.extend(line_flags)
 
+            if segments:
                 from app.pipeline.whisperx_transcriber import (  # noqa: PLC0415
                     WhisperXTranscriber,
                 )
 
-                transcriber = WhisperXTranscriber(language=config.language)
-                syl_timestamps = transcriber.force_align(
-                    Path(vocals_path), syl_text
-                )
-                syllable_timings = _map_syllable_timestamps(
-                    syl_timestamps, syl_strings, is_word_start
-                )
-                used_lrc = True
+                try:
+                    transcriber = WhisperXTranscriber(model_name=config.whisper_model, language=config.language, device=config.device)
+                    syl_timestamps = transcriber.force_align(
+                        Path(vocals_path), segments
+                    )
+                    syllable_timings = _map_syllable_timestamps(
+                        syl_timestamps, all_syl_strings, all_is_word_start,
+                        all_is_line_start,
+                    )
+                    used_lrc = True
+                except Exception:
+                    track_log.warning(
+                        "bootstrap.force_align_failed_falling_back_to_asr",
+                        exc_info=True,
+                    )
         else:
             track_log.info("bootstrap.lrc_not_found_falling_back_to_asr")
 
@@ -377,7 +430,7 @@ def _process_track(args: tuple) -> dict | None:
                 WhisperXTranscriber,
             )
 
-            transcriber = WhisperXTranscriber(language=config.language)
+            transcriber = WhisperXTranscriber(language=config.language, device=config.device)
             word_timestamps = transcriber.transcribe(Path(vocals_path))
             lyrics_text = " ".join(w["word"] for w in word_timestamps)
 
@@ -488,6 +541,39 @@ class BootstrapRunner:
     def __init__(self, config: BootstrapConfig) -> None:
         self._config = config
 
+    @staticmethod
+    def _ensure_db_schema(db_path: Path) -> None:
+        """Create the tracks table if it does not exist."""
+        conn = sqlite3.connect(str(db_path))
+        try:
+            conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS tracks (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    artist TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    duration_sec INTEGER,
+                    mp3_path TEXT,
+                    instrumental_path TEXT,
+                    clip_path TEXT,
+                    lyrics_text TEXT,
+                    syllable_timings TEXT,
+                    language TEXT,
+                    source TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    error_message TEXT,
+                    play_count INTEGER NOT NULL DEFAULT 0,
+                    qdrant_synced INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS idx_tracks_status ON tracks(status);
+                CREATE INDEX IF NOT EXISTS idx_tracks_artist_title ON tracks(artist, title);
+                """
+            )
+        finally:
+            conn.close()
+
     def run(self) -> None:
         """Discover MP3 files and process them in parallel.
 
@@ -497,6 +583,8 @@ class BootstrapRunner:
         3. Map each MP3 through the pipeline, showing a tqdm progress bar.
         4. Batch-upsert accumulated QDrant vectors.
         """
+        self._ensure_db_schema(self._config.db_path)
+
         mp3_files = sorted(self._config.input_dir.glob("*.mp3"))
         if not mp3_files:
             logger.warning(

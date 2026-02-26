@@ -38,7 +38,6 @@ def _configure_logging() -> None:
     structlog.configure(
         processors=[
             structlog.stdlib.add_log_level,
-            structlog.stdlib.add_logger_name,
             structlog.processors.TimeStamper(fmt="iso"),
             structlog.dev.ConsoleRenderer(),
         ],
@@ -90,6 +89,10 @@ def bootstrap(
         None,
         help="Path to an lrclib SQLite database for lyrics lookup (alternative to --lrclib-dump).",
     ),
+    lrclib_url: str | None = typer.Option(
+        None,
+        help="URL of a remote lrclib HTTP server (alternative to --lrclib-dump/--lrclib-sqlite).",
+    ),
     language: str = typer.Option(
         "ru",
         help="Language code for WhisperX transcription (e.g. 'ru', 'en').",
@@ -105,6 +108,14 @@ def bootstrap(
     qdrant_port: int = typer.Option(
         6333,
         help="QDrant server port.",
+    ),
+    device: str = typer.Option(
+        "cpu",
+        help="PyTorch device for WhisperX ('cpu' or 'cuda').",
+    ),
+    whisper_model: str = typer.Option(
+        "medium",
+        help="Whisper model size ('tiny', 'base', 'small', 'medium', 'large-v3').",
     ),
     skip_existing: bool = typer.Option(
         True,
@@ -126,14 +137,15 @@ def bootstrap(
     _configure_logging()
 
     # Validate mutually exclusive LRC options.
-    if lrclib_dump is not None and lrclib_sqlite is not None:
+    lrc_opts = sum(x is not None for x in (lrclib_dump, lrclib_sqlite, lrclib_url))
+    if lrc_opts > 1:
         typer.echo(
-            "ERROR: --lrclib-dump and --lrclib-sqlite are mutually exclusive.",
+            "ERROR: --lrclib-dump, --lrclib-sqlite, and --lrclib-url are mutually exclusive.",
             err=True,
         )
         raise typer.Exit(code=1)
 
-    has_lrc_source = lrclib_dump is not None or lrclib_sqlite is not None
+    has_lrc_source = lrc_opts > 0
 
     # Warn if WhisperX is not available — the run will fail at the first
     # track that needs transcription, so it is better to surface this early.
@@ -180,6 +192,9 @@ def bootstrap(
         language=language,
         lrclib_dump=str(lrclib_dump) if lrclib_dump else None,
         lrclib_sqlite=str(lrclib_sqlite) if lrclib_sqlite else None,
+        lrclib_url=lrclib_url,
+        device=device,
+        whisper_model=whisper_model,
         db_path=str(db_path),
         qdrant_host=qdrant_host,
         qdrant_port=qdrant_port,
@@ -193,7 +208,10 @@ def bootstrap(
         workers=effective_workers,
         lrclib_dump_path=lrclib_dump,
         lrclib_sqlite_path=lrclib_sqlite,
+        lrclib_url=lrclib_url,
         language=language,
+        device=device,
+        whisper_model=whisper_model,
         db_path=db_path,
         qdrant_host=qdrant_host,
         qdrant_port=qdrant_port,

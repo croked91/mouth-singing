@@ -24,14 +24,13 @@ RUN pip install --no-cache-dir /app/worker/
 COPY bootstrap/ /app/bootstrap/
 RUN pip install --no-cache-dir /app/bootstrap/
 
-# Install PyTorch CPU build first (large download — separate layer for better
-# cache reuse when re-building after bootstrap code changes).
-RUN pip install --no-cache-dir \
-    torch \
-    torchaudio \
-    --index-url https://download.pytorch.org/whl/cpu
-
-# WhisperX after torch so it can detect the installed torch version.
+# WhisperX first — it pins torch to its required version (~2.8.0).
+# Default PyPI torch includes CUDA support, which we keep for bootstrap
+# GPU inference (UVR separation + WhisperX).
 RUN pip install --no-cache-dir whisperx
+
+# Replace CPU-only onnxruntime with GPU variant so audio_separator
+# can use CUDA for UVR separation.
+RUN pip install --no-cache-dir onnxruntime-gpu
 
 ENTRYPOINT ["python", "-m", "app.cli"]

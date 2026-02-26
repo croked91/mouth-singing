@@ -39,9 +39,9 @@ def _require_whisperx() -> None:
 class WhisperXTranscriber:
     """Wraps WhisperX for full transcription and forced alignment.
 
-    The WhisperX model and alignment model are loaded once at construction
-    time and reused across calls so that repeated transcriptions in the same
-    process do not pay the model-loading overhead each time.
+    The alignment model (wav2vec2, lightweight) is loaded eagerly at
+    construction time.  The heavy ASR model is loaded lazily on the first
+    ``transcribe()`` call so that force-align-only usage avoids the cost.
 
     Args:
         model_name: Whisper model size (e.g. "medium", "large-v3").
@@ -61,21 +61,12 @@ class WhisperXTranscriber:
         self._language = language
         self._device = device
         self._model_name = model_name
+        self._asr_model = None  # loaded lazily on first transcribe()
 
         logger.info(
-            "whisperx.loading_model",
-            model=model_name,
+            "whisperx.loading_align_model",
             language=language,
             device=device,
-        )
-
-        # compute_type "int8" is recommended for CPU to reduce memory usage.
-        compute_type = "int8" if device == "cpu" else "float16"
-        self._asr_model = whisperx.load_model(
-            model_name,
-            device=device,
-            compute_type=compute_type,
-            language=language,
         )
 
         # Load the alignment model for word-level timestamps.
@@ -84,7 +75,27 @@ class WhisperXTranscriber:
             device=device,
         )
 
-        logger.info("whisperx.model_ready", model=model_name)
+        logger.info("whisperx.align_model_ready")
+
+    def _ensure_asr_model(self) -> None:
+        """Load the ASR model on first use."""
+        if self._asr_model is not None:
+            return
+
+        logger.info(
+            "whisperx.loading_asr_model",
+            model=self._model_name,
+            device=self._device,
+        )
+
+        self._asr_model = whisperx.load_model(
+            self._model_name,
+            device=self._device,
+            compute_type="int8",
+            language=self._language,
+        )
+
+        logger.info("whisperx.asr_model_ready", model=self._model_name)
 
     def transcribe(self, audio_path: Path) -> list[dict]:
         """Transcribe an audio file and return word-level timestamps.
@@ -105,6 +116,7 @@ class WhisperXTranscriber:
             RuntimeError: If transcription produces no segments.
         """
         _require_whisperx()
+        self._ensure_asr_model()
 
         logger.info("whisperx.transcribing", audio_path=str(audio_path))
 
@@ -129,17 +141,17 @@ class WhisperXTranscriber:
 
         return self._extract_words(aligned)
 
-    def force_align(self, audio_path: Path, text: str) -> list[dict]:
-        """Force-align existing text to an audio file.
+    def force_align(
+        self, audio_path: Path, segments: list[dict]
+    ) -> list[dict]:
+        """Force-align pre-segmented text to an audio file.
 
-        Splits the text into pseudo-segments of ~10 words each, then runs
-        WhisperX alignment to assign per-word timestamps.  This is used when
-        lyrics are already available (e.g. from the LRC dump) and we only need
-        accurate timing.
+        Each segment must have ``text``, ``start`` (seconds), and ``end``
+        (seconds).  Typically one segment per LRC line.
 
         Args:
             audio_path: Path to the audio file.
-            text: The known lyric text to align (plain string, no timestamps).
+            segments: List of ``{"text": str, "start": float, "end": float}``.
 
         Returns:
             List of word dicts: ``[{"word": str, "start": float, "end": float}, ...]``.
@@ -149,13 +161,13 @@ class WhisperXTranscriber:
         """
         _require_whisperx()
 
-        logger.info("whisperx.force_aligning", audio_path=str(audio_path))
+        logger.info(
+            "whisperx.force_aligning",
+            audio_path=str(audio_path),
+            segment_count=len(segments),
+        )
 
         audio = whisperx.load_audio(str(audio_path))
-
-        # WhisperX alignment expects a list of segment dicts with "text".
-        # We create one large segment covering the whole audio.
-        segments = [{"text": text, "start": 0.0, "end": None}]
 
         aligned = whisperx.align(
             segments,
