@@ -1,9 +1,20 @@
 """Bootstrap CLI entry point.
 
 Provides a single ``bootstrap`` command that mass-processes a directory of MP3
-files into karaoke tracks:
+files into karaoke tracks.
 
-    karaoke-bootstrap /path/to/mp3s --lrclib-dump lrclib.json --workers 4
+**Local mode** (default)::
+
+    karaoke-bootstrap /path/to/mp3s --lrclib-url http://localhost:9876 --workers 4
+
+**Remote mode** (pull MP3s from a server, process locally with GPU, push back)::
+
+    karaoke-bootstrap /tmp/work \\
+        --remote-host root@130.49.170.186 \\
+        --remote-mp3-dir /root/mp3_library \\
+        --remote-output-dir /root/bootstrap_output \\
+        --remote-db-path /root/bootstrap_output/karaoke.db \\
+        --device cuda
 
 Each track goes through: UVR separation → lyrics retrieval → syllabification →
 WhisperX alignment → feature extraction → SQLite + QDrant persistence.
@@ -15,7 +26,6 @@ from __future__ import annotations
 
 import multiprocessing
 import os
-import sys
 from pathlib import Path
 
 import structlog
@@ -66,19 +76,24 @@ def _resolve_worker_count(requested: int) -> int:
 def bootstrap(
     input_dir: Path = typer.Argument(
         ...,
-        help="Directory containing MP3 files to process.",
-        exists=True,
+        help=(
+            "Local MP3 directory (local mode) or local working directory where "
+            "remote MP3s are staged during processing (remote mode). Created "
+            "automatically in remote mode if it does not exist."
+        ),
         file_okay=False,
         dir_okay=True,
-        readable=True,
     ),
     output_dir: Path = typer.Option(
         "./data",
-        help="Root output directory for processed audio, video, and the database.",
+        help="Root output directory for processed audio and the local database.",
     ),
     workers: int = typer.Option(
         0,
-        help="Number of parallel worker processes. 0 = CPU count minus 1.",
+        help=(
+            "Number of parallel worker processes (local mode only). "
+            "0 = CPU count minus 1. Ignored in remote mode."
+        ),
         min=0,
     ),
     lrclib_dump: Path | None = typer.Option(
@@ -87,11 +102,11 @@ def bootstrap(
     ),
     lrclib_sqlite: Path | None = typer.Option(
         None,
-        help="Path to an lrclib SQLite database for lyrics lookup (alternative to --lrclib-dump).",
+        help="Path to an lrclib SQLite database for lyrics lookup.",
     ),
     lrclib_url: str | None = typer.Option(
         None,
-        help="URL of a remote lrclib HTTP server (alternative to --lrclib-dump/--lrclib-sqlite).",
+        help="URL of a remote lrclib HTTP server for lyrics lookup.",
     ),
     language: str = typer.Option(
         "ru",
@@ -99,7 +114,7 @@ def bootstrap(
     ),
     db_path: Path = typer.Option(
         "./data/karaoke.db",
-        help="Path to the SQLite database file.",
+        help="Path to the local SQLite database file.",
     ),
     qdrant_host: str = typer.Option(
         "localhost",
@@ -121,10 +136,51 @@ def bootstrap(
         True,
         help="Skip tracks whose ID is already present in the database.",
     ),
+    limit: int = typer.Option(
+        0,
+        help="Process at most N tracks (0 = no limit). Useful for test runs.",
+        min=0,
+    ),
+    # Remote mode options — all optional.
+    remote_host: str | None = typer.Option(
+        None,
+        help=(
+            "SSH host for remote mode, e.g. 'root@130.49.170.186'. "
+            "When set, MP3s are pulled from the server, processed locally, "
+            "and results are pushed back. Workers is forced to 1."
+        ),
+    ),
+    remote_mp3_dir: str = typer.Option(
+        "/root/mp3_library",
+        help="Directory on the remote server containing source MP3 files.",
+    ),
+    remote_output_dir: str = typer.Option(
+        "/root/bootstrap_output",
+        help="Directory on the remote server where processed files are written.",
+    ),
+    remote_db_path: str = typer.Option(
+        "/root/bootstrap_output/karaoke.db",
+        help="Path to the SQLite database on the remote server.",
+    ),
+    no_delete_remote_source: bool = typer.Option(
+        False,
+        "--no-delete-remote-source",
+        help=(
+            "Do not delete the source MP3 from the remote server after "
+            "successful processing. Useful for dry-run testing."
+        ),
+    ),
 ) -> None:
     """Mass-process MP3 files into karaoke tracks with lyrics and features.
 
-    For each MP3 found in INPUT_DIR the pipeline runs:
+    **Local mode** (default): processes all ``*.mp3`` files found in INPUT_DIR
+    using a parallel worker pool.
+
+    **Remote mode** (``--remote-host``): pulls MP3s from the remote server one
+    at a time, processes them locally (GPU recommended), pushes the
+    instrumental back, writes to the remote database, and deletes the source.
+
+    For each track the pipeline runs:
     \b
       1. UVR separation (vocals / instrumental)
       2. Lyrics: LRC lookup → syllabify → WhisperX force-align, or full ASR
@@ -178,11 +234,37 @@ def bootstrap(
         )
         raise typer.Exit(code=1)
 
+    # Validate and prepare input_dir differently depending on the mode.
+    if remote_host is not None:
+        # Remote mode: input_dir is a local staging area, not a source of MP3s.
+        # Create it if it does not exist.
+        if workers > 1:
+            typer.echo(
+                f"WARNING: --workers={workers} is ignored in remote mode. "
+                "Processing is always sequential (1 track at a time).",
+                err=True,
+            )
+        effective_workers = 1
+        input_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        # Local mode: input_dir must already exist and be a readable directory.
+        if not input_dir.exists():
+            typer.echo(
+                f"ERROR: Input directory does not exist: {input_dir}",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        if not input_dir.is_dir():
+            typer.echo(
+                f"ERROR: Input path is not a directory: {input_dir}",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+        effective_workers = _resolve_worker_count(workers)
+
     # Ensure output directories exist before workers start writing.
     output_dir.mkdir(parents=True, exist_ok=True)
     db_path.parent.mkdir(parents=True, exist_ok=True)
-
-    effective_workers = _resolve_worker_count(workers)
 
     logger.info(
         "cli.bootstrap_starting",
@@ -200,6 +282,11 @@ def bootstrap(
         qdrant_port=qdrant_port,
         skip_existing=skip_existing,
         has_whisperx=HAS_WHISPERX,
+        remote_host=remote_host,
+        remote_mp3_dir=remote_mp3_dir if remote_host else None,
+        remote_output_dir=remote_output_dir if remote_host else None,
+        remote_db_path=remote_db_path if remote_host else None,
+        delete_remote_source=not no_delete_remote_source if remote_host else None,
     )
 
     config = BootstrapConfig(
@@ -216,6 +303,12 @@ def bootstrap(
         qdrant_host=qdrant_host,
         qdrant_port=qdrant_port,
         skip_existing=skip_existing,
+        limit=limit,
+        remote_host=remote_host,
+        remote_mp3_dir=remote_mp3_dir,
+        remote_output_dir=remote_output_dir,
+        remote_db_path=remote_db_path,
+        delete_remote_source=not no_delete_remote_source,
     )
 
     runner = BootstrapRunner(config)

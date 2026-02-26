@@ -226,7 +226,7 @@ class SQLiteRepository:
             A list of ``{'artist': str, 'title': str}`` dicts.
         """
         escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-        pattern = f"{escaped}%"
+        pattern = f"%{escaped}%"
         cursor = await self.db.execute(
             """
             SELECT DISTINCT artist, title FROM tracks
