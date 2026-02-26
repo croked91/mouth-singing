@@ -322,6 +322,7 @@ def _process_track(args: tuple) -> dict | None:
             media_root=str(config.output_dir),
         )
         vocals_path, instrumental_path = separator.separate(str(mp3_path))
+        separator.cleanup()
         track_log.info(
             "bootstrap.uvr_done",
             vocals_path=vocals_path,
@@ -411,6 +412,7 @@ def _process_track(args: tuple) -> dict | None:
                     syl_timestamps = transcriber.force_align(
                         Path(vocals_path), segments
                     )
+                    transcriber.cleanup()
                     syllable_timings = _map_syllable_timestamps(
                         syl_timestamps, all_syl_strings, all_is_word_start,
                         all_is_line_start,
@@ -432,6 +434,7 @@ def _process_track(args: tuple) -> dict | None:
 
             transcriber = WhisperXTranscriber(language=config.language, device=config.device)
             word_timestamps = transcriber.transcribe(Path(vocals_path))
+            transcriber.cleanup()
             lyrics_text = " ".join(w["word"] for w in word_timestamps)
 
             syllabifier = Syllabifier()

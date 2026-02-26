@@ -122,3 +122,26 @@ class UVRSeparator:
         )
 
         return vocals_path, instrumental_path
+
+    def cleanup(self) -> None:
+        """Release GPU memory held by the ONNX model.
+
+        Deletes the cached separator instance and asks PyTorch / ONNX
+        runtime to release cached GPU memory.
+        """
+        import gc
+
+        if self._separator is not None:
+            del self._separator
+            self._separator = None
+
+        gc.collect()
+
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except ImportError:
+            pass
+
+        logger.info("uvr_cleanup_done")

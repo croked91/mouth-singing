@@ -180,6 +180,35 @@ class WhisperXTranscriber:
 
         return self._extract_words(aligned)
 
+    def cleanup(self) -> None:
+        """Release GPU memory held by loaded models.
+
+        Deletes the alignment and ASR model references and asks PyTorch to
+        release cached CUDA memory.  Call this when the transcriber instance
+        is no longer needed to avoid GPU memory accumulation across tracks.
+        """
+        import gc
+
+        del self._align_model
+        del self._align_metadata
+        self._align_model = None  # type: ignore[assignment]
+        self._align_metadata = None  # type: ignore[assignment]
+
+        if self._asr_model is not None:
+            del self._asr_model
+            self._asr_model = None
+
+        gc.collect()
+
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except ImportError:
+            pass
+
+        logger.info("whisperx.cleanup_done")
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
