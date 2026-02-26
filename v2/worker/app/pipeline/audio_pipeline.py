@@ -125,6 +125,13 @@ class AudioPipeline:
                 transcription = await self.sonoix.transcribe(vocals_path)
                 syllable_timings = self._syllabifier.syllabify(transcription.tokens)
 
+                # Inject line breaks from timing gaps / beat detection.
+                from karaoke_shared.utils.line_breaker import detect_line_breaks  # noqa: PLC0415
+
+                syllable_timings = await asyncio.to_thread(
+                    detect_line_breaks, syllable_timings, vocals_path
+                )
+
                 await self.job_service.mark_step(job.id, "transcribing", 100)
 
                 await self.repo.update_track(

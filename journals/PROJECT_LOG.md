@@ -507,3 +507,8 @@
 - **2026-02-25**: Feature Extraction переключен с instrumental на оригинальный MP3 (bootstrap_runner.py, audio_pipeline.py).
 - **2026-02-25**: Новый `LRCLibSQLiteAdapter` — read-only адаптер для 78GB SQLite дампа lrclib. CLI: `--lrclib-sqlite`.
 - **2026-02-25**: Новый syllabify-then-align flow: pyphen split → WhisperX force_align → точные слоговые таймстемпы из аудио. Метод `Syllabifier.split_text_to_syllables()` + `_map_syllable_timestamps()`.
+- **2026-02-26**: Тестовый прогон на "Виктор Цой — Малыш" (RTX 4060, 1:57). Результат: 29 строк, 236 слогов, идеальное совпадение с LRC.
+- **2026-02-26**: Fix force_align: per-line LRC segments с start/end из LRC таймстемпов → точное выравнивание. Lazy ASR loading (force_align не грузит тяжёлую модель).
+- **2026-02-26**: `\n` маркеры строк в syllable_timings из LRC: `is_line_start` флаги → `_map_syllable_timestamps()` инжектит `\n` prefix вместо пробела на границах строк.
+- **2026-02-26**: Фронтенд: `groupIntoLines()` в LyricHighlight.tsx обрабатывает `\n` маркеры — разбивает строки по бэкенд-маркерам вместо эвристик (gap/punctuation).
+- **2026-02-26**: Коммит 9dcbc96: bootstrap pipeline \n markers, lazy ASR, force_align per-line segments.
