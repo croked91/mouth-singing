@@ -3,7 +3,7 @@
 ## Статус проекта
 **Текущая фаза:** 16 — Bootstrap pipeline v2 + массовый импорт треков
 **Дата начала:** 2026-02-22
-**Последний коммит:** (реструктуризация v2/)
+**Последний коммит:** c898bab (GPU memory leak fix)
 **Структура:** Реализация в `v2/`, документация в корне
 
 ## Фаза 1: Анализ и проектирование
@@ -498,8 +498,14 @@
 - [x] Feature Extraction на оригинальном MP3 с голосом (ADR-011)
 - [x] Новый syllabify-then-align flow для точных слоговых таймстемпов (ADR-012)
 - [x] LRCLib SQLite адаптер для 78GB дампа на VPS (ADR-012)
-- [ ] Тестовый запуск бутстрапа на 5 треках
-- [ ] Полный бутстрап 4820 треков
+- [x] HTTP адаптер для lrclib (`--lrclib-url`)
+- [x] Тестовый запуск бутстрапа на 5 треках (5/5 ok)
+- [x] Fix GPU memory leak (cleanup() для WhisperX и UVR)
+- [x] Remote mode: pull MP3 → process local GPU → push results → delete source
+- [x] Multi-worker claiming: atomic `mv` для параллельной работы на нескольких GPU
+- [x] Setup/run scripts для быстрого старта на новой машине
+- [x] BS-Roformer (SDR 12.9) вместо MDX-NET (SDR ~8-9) для бутстрапа (ADR-013)
+- [ ] Полный бутстрап 4797 треков (двумя воркерами)
 
 ### Хронология:
 - **2026-02-25**: Собрано 4820 уникальных MP3 из 6 источников: bootstrap (1770), batch2 (1187), ru_from_db (1067), batch3 (654), missing_batch3 (38), russian_manual (107). Грабер `grab_mp3_links.py` + `download_mp3s.py`.
@@ -512,3 +518,16 @@
 - **2026-02-26**: `\n` маркеры строк в syllable_timings из LRC: `is_line_start` флаги → `_map_syllable_timestamps()` инжектит `\n` prefix вместо пробела на границах строк.
 - **2026-02-26**: Фронтенд: `groupIntoLines()` в LyricHighlight.tsx обрабатывает `\n` маркеры — разбивает строки по бэкенд-маркерам вместо эвристик (gap/punctuation).
 - **2026-02-26**: Коммит 9dcbc96: bootstrap pipeline \n markers, lazy ASR, force_align per-line segments.
+- **2026-02-26**: Добавлен `LRCLibHTTPAdapter` — HTTP-клиент для lrclib сервера на VPS. CLI: `--lrclib-url`.
+- **2026-02-26**: lrclib HTTP сервер запущен на VPS (`http://130.49.170.186:9876`) поверх 78GB SQLite дампа.
+- **2026-02-26**: Тестовый прогон на 5 треках (Adele, Metallica, Ария, Валерия, Виктор Цой). Результат первого прогона: 3/5 ok, 1 CUDA OOM (Валерия — ASR fallback), 1 killed (Цой — UVR crawl). Причина: GPU memory leak — модели WhisperX и UVR ONNX не освобождали VRAM между треками.
+- **2026-02-26**: Fix GPU memory leak: добавлены `cleanup()` методы в `WhisperXTranscriber` (del models + gc.collect + torch.cuda.empty_cache) и `UVRSeparator` (del separator + gc.collect + empty_cache). Вызываются после каждого шага в `_process_track`.
+- **2026-02-26**: Повторный прогон: **5/5 ok, 0 failed, 5:25 total** (было >45 min с 2 failures). Валерия обработана через ASR fallback (589 слогов, без `\n`). Все LRC-треки с `\n` маркерами.
+- **2026-02-26**: Коммит c898bab: Fix GPU memory leak between bootstrap tracks.
+- **2026-02-26**: Remote mode: `--remote-host` флаг — pull MP3 с VPS → process local GPU → push instrumental + DB insert → delete source MP3. SSH ControlMaster для единого TCP-соединения.
+- **2026-02-26**: Тест remote mode на 20 треках: 20/20 ok, ~1.5 мин/трек (MDX-NET), 4820→4800 MP3 на сервере.
+- **2026-02-26**: Multi-worker claiming: atomic `mv -n` в `.processing/` subdir. Два GPU-воркера работают параллельно без дубликатов. Unclaim-on-failure возвращает файл при ошибке. Коммит 4b4a08d.
+- **2026-02-26**: Setup scripts: `tools/setup-worker.sh` (conda env, PyTorch+CUDA, packages), `tools/run-bootstrap.sh` (one-liner с defaults для VPS).
+- **2026-02-26**: A/B/C сравнение моделей vocal separation: MDX-NET-Voc_FT (SDR ~8-9, 16-19s), BS-Roformer-1297 (SDR 12.9, 59-65s), Mel-Roformer-Karaoke (SDR 10.2, 28s). Тест на мужском (5sta Family) и женском (Adele) вокале.
+- **2026-02-26**: Переключение бутстрапа на BS-Roformer (SDR 12.9, SOTA). `UVRSeparator` параметризован (`model_name`), CLI: `--uvr-model`. Дефолт для бутстрапа: BS-Roformer. Продакшн-воркер: MDX-NET (обратная совместимость).
+- **2026-02-26**: Тест BS-Roformer на 5 треках: 5/5 ok, ~63-66 сек/трек UVR (vs 16-19 на MDX-NET). Качество значительно лучше — минимум вокального bleed в инструментале.

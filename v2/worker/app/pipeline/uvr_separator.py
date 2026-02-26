@@ -26,9 +26,15 @@ class UVRSeparator:
 
     MODEL_NAME = "UVR-MDX-NET-Voc_FT.onnx"
 
-    def __init__(self, model_cache_dir: str, media_root: str) -> None:
+    def __init__(
+        self,
+        model_cache_dir: str,
+        media_root: str,
+        model_name: str | None = None,
+    ) -> None:
         self.model_cache_dir = model_cache_dir
         self.media_root = media_root
+        self._model_name = model_name or self.MODEL_NAME
         self._separator: object | None = None
         self._output_dir: str | None = None
 
@@ -53,11 +59,11 @@ class UVRSeparator:
             model_file_dir=self.model_cache_dir,
             output_format="MP3",
         )
-        self._separator.load_model(model_filename=self.MODEL_NAME)
+        self._separator.load_model(model_filename=self._model_name)
 
         logger.info(
             "uvr_model_loaded",
-            model=self.MODEL_NAME,
+            model=self._model_name,
             output_dir=self._output_dir,
         )
         return self._separator

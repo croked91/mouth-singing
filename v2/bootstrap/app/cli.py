@@ -162,6 +162,10 @@ def bootstrap(
         "/root/bootstrap_output/karaoke.db",
         help="Path to the SQLite database on the remote server.",
     ),
+    uvr_model: str = typer.Option(
+        "model_bs_roformer_ep_317_sdr_12.9755.ckpt",
+        help="UVR model name for vocal separation (audio-separator model identifier).",
+    ),
     no_delete_remote_source: bool = typer.Option(
         False,
         "--no-delete-remote-source",
@@ -287,6 +291,7 @@ def bootstrap(
         remote_output_dir=remote_output_dir if remote_host else None,
         remote_db_path=remote_db_path if remote_host else None,
         delete_remote_source=not no_delete_remote_source if remote_host else None,
+        uvr_model=uvr_model,
     )
 
     config = BootstrapConfig(
@@ -309,6 +314,7 @@ def bootstrap(
         remote_output_dir=remote_output_dir,
         remote_db_path=remote_db_path,
         delete_remote_source=not no_delete_remote_source,
+        uvr_model=uvr_model,
     )
 
     runner = BootstrapRunner(config)

@@ -99,6 +99,7 @@ class BootstrapConfig:
     remote_db_path: str = "/root/bootstrap_output/karaoke.db"
     remote_container_media_prefix: str = "/data/media"
     delete_remote_source: bool = True
+    uvr_model: str = "model_bs_roformer_ep_317_sdr_12.9755.ckpt"
 
 
 # ------------------------------------------------------------------
@@ -399,6 +400,7 @@ def _process_track(args: tuple) -> dict | None:
         separator = UVRSeparator(
             model_cache_dir=model_cache_dir,
             media_root=str(config.output_dir),
+            model_name=config.uvr_model,
         )
         vocals_path, instrumental_path = separator.separate(str(mp3_path))
         separator.cleanup()
