@@ -68,11 +68,24 @@
 - **Файлы:** feature_extractor.py, recommendation_service.py, qdrant_repository.py, sqlite_repository.py, main.py + скрипт reindex + тесты
 - **TODO:** Запустить `reindex_audio_features.py` на сервере (bootstrap завершён)
 
+## Weighted fusion: Audio + Lyrics embeddings в рекомендациях (2026-03-01)
+
+- **Статус:** Завершено
+- **Контекст:** master-promt.md: "рекомендации на основе похожести аудиофичей **и векторов лирики**". Коллекция `lyrics_embeddings` (384-dim) наполнена при bootstrap, но не использовалась в рекомендациях.
+- **Решение:** Weighted fusion — 0.7 audio + 0.3 lyrics:
+  - Два параллельных KNN (asyncio.gather) по audio_features и lyrics_embeddings
+  - Merge по track_id: `fused = 0.7 * audio + 0.3 * lyrics`
+  - Dual EMA portrait (audio + lyrics) для каждого участника
+  - DB migration: `lyrics_portrait_vector TEXT` в participants
+  - Fallback: tracks без текста → чистый audio KNN
+- **Тесты:** 98/98 pass (80 recommendation + 18 feature extractor)
+- **Файлы:** recommendation_service.py, session.py, sqlite_repository.py, init.sql, main.py + тесты
+
 ## Итог
 
 Все 17 фаз (1–15, включая подфазы a/b) завершены. Фаза 16 (массовый импорт каталога) завершена:
-- **540+ unit/integration тестов** — все pass (включая 85 новых для рекомендательной системы)
+- **540+ unit/integration тестов** — все pass (включая 98 для рекомендательной системы)
 - **Browser E2E** (Playwright через Docker) — все потоки проверены
 - **Архитектурное ревью** — 2 критических бага и 5 предупреждений найдены и исправлены
-- **ML-аудит рекомендательной системы** — 9 проблем найдены и исправлены
+- **ML-аудит рекомендательной системы** — 9 проблем найдены и исправлены + weighted fusion audio+lyrics
 - **Bootstrap:** 4725/4727 треков обработано за ~10ч на 4×RTX 4090 (12 воркеров)

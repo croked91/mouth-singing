@@ -4,16 +4,19 @@ Strategies are selected automatically based on how many tracks the
 participant has already sung in the current session:
 
 - 0 tracks → ``popular``: 70% most-played + 30% random from catalog.
-- 1 track  → ``last``: transition graph candidates + KNN on last track.
-- 2 tracks → ``last_two_avg``: KNN on the average of the last two vectors.
-- 3+ tracks → ``session_avg``: KNN on the participant's EMA portrait vector.
+- 1 track  → ``last``: transition graph candidates + fused KNN on last track.
+- 2 tracks → ``last_two_avg``: fused KNN on the average of the last two vectors.
+- 3+ tracks → ``session_avg``: fused KNN on the participant's EMA portrait vectors.
 
-All vector searches run against the ``audio_features`` QDrant collection
-(45-dimensional librosa features, z-score normalised).  Already-played
-tracks are excluded.
+Vector searches use **weighted fusion** of two QDrant collections:
+- ``audio_features`` (45-dim librosa, z-score normalised) — weight 0.7
+- ``lyrics_embeddings`` (384-dim SentenceTransformer) — weight 0.3
+
+When a track has no lyrics vector, the system falls back to pure audio KNN.
 
 Portrait vectors are updated using Exponential Moving Average (EMA) with
-``alpha = 0.3`` and L2-renormalised after each update.
+``alpha = 0.3`` and L2-renormalised after each update.  Both audio and
+lyrics portraits are maintained independently.
 """
 
 from __future__ import annotations
@@ -31,11 +34,16 @@ from karaoke_shared.repositories.sqlite_repository import SQLiteRepository
 logger = structlog.get_logger(__name__)
 
 _AUDIO_COLLECTION = "audio_features"
+_LYRICS_COLLECTION = "lyrics_embeddings"
 _TRANSITIONS_COLLECTION = "transitions"
 
 # Weight of the most recent track in EMA portrait update.
 # Effective window ≈ 1/alpha ≈ 3-4 most recent tracks.
 _EMA_ALPHA = 0.3
+
+# Fusion weights for audio and lyrics KNN scores.
+_AUDIO_WEIGHT = 0.7
+_LYRICS_WEIGHT = 0.3
 
 
 class RecommendedTrack:
@@ -99,10 +107,13 @@ class RecommendationService:
                 history[0].track_id, history[1].track_id, played_ids, limit
             )
 
-        # 3+ tracks: use the participant's EMA portrait vector.
+        # 3+ tracks: use the participant's EMA portrait vectors.
         if participant and participant.portrait_vector:
             return await self._session_avg_strategy(
-                participant.portrait_vector, played_ids, limit
+                participant.portrait_vector,
+                participant.lyrics_portrait_vector,
+                played_ids,
+                limit,
             )
 
         # Fallback: if portrait is somehow missing, use last two.
@@ -155,25 +166,28 @@ class RecommendationService:
     async def _last_strategy(
         self, track_id: str, played_ids: set[str], limit: int
     ) -> tuple[RecommendationStrategy, list[RecommendedTrack]]:
-        """Transition graph candidates + KNN on last track's audio features.
+        """Transition graph candidates + fused KNN on last track.
 
         If the transition graph has data for this track, those candidates
-        come first (real human signal). Remaining slots are filled by KNN.
+        come first (real human signal). Remaining slots are filled by
+        fused audio+lyrics KNN.
         """
         # Transition candidates (up to half the slots).
         trans_limit = limit // 2
         trans_ids = await self._transition_candidates(track_id, played_ids, trans_limit)
 
-        # KNN for the rest.
-        vector = await self._get_track_vector(track_id)
-        if vector is None and not trans_ids:
+        # Fetch both vectors for the track.
+        audio_vec = await self._get_track_vector(track_id)
+        lyrics_vec = await self._get_track_lyrics_vector(track_id)
+
+        if audio_vec is None and lyrics_vec is None and not trans_ids:
             return await self._popular_strategy(played_ids, limit)
 
         knn_results: list[RecommendedTrack] = []
-        if vector is not None:
+        if audio_vec is not None or lyrics_vec is not None:
             knn_exclude = played_ids | set(trans_ids)
-            knn_results = await self._knn_search(
-                vector, knn_exclude, limit - len(trans_ids)
+            knn_results = await self._fused_knn_search(
+                audio_vec, lyrics_vec, knn_exclude, limit - len(trans_ids)
             )
 
         # Resolve transition candidates to full tracks.
@@ -196,34 +210,34 @@ class RecommendationService:
         played_ids: set[str],
         limit: int,
     ) -> tuple[RecommendationStrategy, list[RecommendedTrack]]:
-        """KNN on the L2-normalised average of the two most recent vectors."""
-        v1 = await self._get_track_vector(track_id_1)
-        v2 = await self._get_track_vector(track_id_2)
+        """Fused KNN on the L2-normalised average of the two most recent vectors."""
+        a1 = await self._get_track_vector(track_id_1)
+        a2 = await self._get_track_vector(track_id_2)
+        l1 = await self._get_track_lyrics_vector(track_id_1)
+        l2 = await self._get_track_lyrics_vector(track_id_2)
 
-        if v1 is None and v2 is None:
+        audio_avg = _avg_vectors(a1, a2)
+        lyrics_avg = _avg_vectors(l1, l2)
+
+        if audio_avg is None and lyrics_avg is None:
             return await self._popular_strategy(played_ids, limit)
-        if v1 is None:
-            results = await self._knn_search(v2, played_ids, limit)
-            return RecommendationStrategy.LAST_TWO_AVG, results
-        if v2 is None:
-            results = await self._knn_search(v1, played_ids, limit)
-            return RecommendationStrategy.LAST_TWO_AVG, results
 
-        avg = np.array([(a + b) / 2.0 for a, b in zip(v1, v2)], dtype=np.float64)
-        norm = np.linalg.norm(avg)
-        if norm > 1e-8:
-            avg = avg / norm
-        results = await self._knn_search(avg.tolist(), played_ids, limit)
+        results = await self._fused_knn_search(
+            audio_avg, lyrics_avg, played_ids, limit
+        )
         return RecommendationStrategy.LAST_TWO_AVG, results
 
     async def _session_avg_strategy(
         self,
         portrait_vector: list[float],
+        lyrics_portrait_vector: list[float] | None,
         played_ids: set[str],
         limit: int,
     ) -> tuple[RecommendationStrategy, list[RecommendedTrack]]:
-        """KNN on the participant's session EMA portrait vector."""
-        results = await self._knn_search(portrait_vector, played_ids, limit)
+        """Fused KNN on the participant's session EMA portrait vectors."""
+        results = await self._fused_knn_search(
+            portrait_vector, lyrics_portrait_vector, played_ids, limit
+        )
         return RecommendationStrategy.SESSION_AVG, results
 
     # ------------------------------------------------------------------
@@ -239,58 +253,122 @@ class RecommendationService:
         except Exception as exc:
             logger.warning(
                 "vector_retrieval_failed",
+                collection=_AUDIO_COLLECTION,
                 track_id=track_id,
                 error=str(exc),
             )
             return None
 
-    async def _knn_search(
+    async def _get_track_lyrics_vector(self, track_id: str) -> list[float] | None:
+        """Retrieve the lyrics_embeddings vector for a track from QDrant."""
+        try:
+            return await asyncio.to_thread(
+                self.qdrant_repo.retrieve, _LYRICS_COLLECTION, track_id
+            )
+        except Exception as exc:
+            logger.warning(
+                "vector_retrieval_failed",
+                collection=_LYRICS_COLLECTION,
+                track_id=track_id,
+                error=str(exc),
+            )
+            return None
+
+    async def _fused_knn_search(
         self,
-        vector: list[float],
+        audio_vector: list[float] | None,
+        lyrics_vector: list[float] | None,
         exclude_ids: set[str],
         limit: int,
     ) -> list[RecommendedTrack]:
-        """Run KNN search in QDrant and return enriched results.
+        """Run weighted fusion KNN across audio and lyrics collections.
 
-        Uses a single batch SQLite query instead of N+1 individual lookups.
+        Searches both collections in parallel (when vectors are available),
+        merges results by track ID with weighted scores:
+        ``fused = 0.7 * audio_score + 0.3 * lyrics_score``
+
+        Falls back to single-collection search when one vector is missing.
         """
-        try:
-            hits = await asyncio.to_thread(
-                self.qdrant_repo.search,
-                _AUDIO_COLLECTION,
-                vector,
-                limit=limit + len(exclude_ids) + 10,
-                filters={"status": "ready"},
-            )
-        except Exception as exc:
-            logger.warning("knn_search_failed", error=str(exc))
+        oversample = limit + len(exclude_ids) + 10
+
+        # Launch parallel KNN searches.
+        audio_task = self._knn_raw(
+            _AUDIO_COLLECTION, audio_vector, oversample
+        ) if audio_vector else _empty_coro()
+
+        lyrics_task = self._knn_raw(
+            _LYRICS_COLLECTION, lyrics_vector, oversample
+        ) if lyrics_vector else _empty_coro()
+
+        audio_hits, lyrics_hits = await asyncio.gather(audio_task, lyrics_task)
+
+        # Build score maps (point_id → score).
+        audio_scores: dict[str, float] = {
+            pid: score for pid, score, _ in audio_hits
+            if pid not in exclude_ids
+        }
+        lyrics_scores: dict[str, float] = {
+            pid: score for pid, score, _ in lyrics_hits
+            if pid not in exclude_ids
+        }
+
+        # Merge: union of all candidate IDs.
+        all_ids = set(audio_scores) | set(lyrics_scores)
+        if not all_ids:
             return []
 
-        # Collect candidate IDs (excluding already-played).
-        candidate_ids: list[str] = []
-        candidate_scores: dict[str, float] = {}
-        for point_id, score, _payload in hits:
-            if point_id not in exclude_ids and len(candidate_ids) < limit:
-                candidate_ids.append(point_id)
-                candidate_scores[point_id] = score
+        # Compute fused scores.
+        if audio_scores and lyrics_scores:
+            # Both available — weighted fusion.
+            fused: list[tuple[str, float]] = []
+            for pid in all_ids:
+                a = audio_scores.get(pid, 0.0)
+                l = lyrics_scores.get(pid, 0.0)
+                fused.append((pid, _AUDIO_WEIGHT * a + _LYRICS_WEIGHT * l))
+        elif audio_scores:
+            # Audio only.
+            fused = [(pid, score) for pid, score in audio_scores.items()]
+        else:
+            # Lyrics only.
+            fused = [(pid, score) for pid, score in lyrics_scores.items()]
 
-        if not candidate_ids:
+        # Sort by fused score descending, take top-N.
+        fused.sort(key=lambda x: x[1], reverse=True)
+        top = fused[:limit]
+
+        if not top:
             return []
 
         # Single batch SQLite query.
+        candidate_ids = [pid for pid, _ in top]
         tracks_map = await self.sqlite_repo.get_tracks_by_ids(candidate_ids)
 
         results: list[RecommendedTrack] = []
-        for cid in candidate_ids:
-            track = tracks_map.get(cid)
+        for pid, score in top:
+            track = tracks_map.get(pid)
             if track is not None:
-                results.append(
-                    RecommendedTrack(
-                        track=track, similarity_score=candidate_scores[cid]
-                    )
-                )
+                results.append(RecommendedTrack(track=track, similarity_score=score))
 
         return results
+
+    async def _knn_raw(
+        self,
+        collection: str,
+        vector: list[float],
+        limit: int,
+    ) -> list[tuple[str, float, dict]]:
+        """Run raw KNN search in a single QDrant collection."""
+        try:
+            return await asyncio.to_thread(
+                self.qdrant_repo.search,
+                collection,
+                vector,
+                limit=limit,
+                filters={"status": "ready"},
+            )
+        except Exception as exc:
+            logger.warning("knn_search_failed", collection=collection, error=str(exc))
+            return []
 
     async def _transition_candidates(
         self, from_track_id: str, exclude_ids: set[str], limit: int
@@ -326,18 +404,18 @@ class RecommendationService:
     async def update_portrait(
         self, participant_id: str, track_id: str
     ) -> list[float] | None:
-        """Update the participant's portrait vector after finishing a track.
+        """Update the participant's portrait vectors after finishing a track.
 
-        Uses Exponential Moving Average (EMA):
-        ``new = alpha * current + (1 - alpha) * old``
+        Uses Exponential Moving Average (EMA) for both audio and lyrics
+        portrait vectors independently.  Each is L2-renormalised.
 
-        The result is L2-renormalised to stay on the unit sphere.
-
-        Returns the updated portrait vector, or ``None`` if the track has
-        no vector in QDrant.
+        Returns the updated audio portrait vector, or ``None`` if the
+        track has no audio vector in QDrant.
         """
-        current_vector = await self._get_track_vector(track_id)
-        if current_vector is None:
+        audio_vec = await self._get_track_vector(track_id)
+        lyrics_vec = await self._get_track_lyrics_vector(track_id)
+
+        if audio_vec is None:
             return None
 
         participant = await self.sqlite_repo.get_participant(participant_id)
@@ -345,27 +423,21 @@ class RecommendationService:
             return None
 
         n = participant.tracks_played  # Already incremented by finish_playing.
-        old_portrait = participant.portrait_vector
 
-        if old_portrait is None or n <= 1:
-            # First track — the portrait IS the track's vector.
-            new_portrait = current_vector
-        else:
-            # Exponential Moving Average.
-            new_portrait = [
-                _EMA_ALPHA * cur + (1 - _EMA_ALPHA) * old
-                for old, cur in zip(old_portrait, current_vector)
-            ]
+        # Audio portrait EMA.
+        new_audio = _ema_update(participant.portrait_vector, audio_vec, n)
 
-        # L2-renormalise (EMA of unit vectors is not a unit vector).
-        arr = np.array(new_portrait, dtype=np.float64)
-        norm = np.linalg.norm(arr)
-        if norm > 1e-8:
-            arr = arr / norm
-        new_portrait = arr.tolist()
+        # Lyrics portrait EMA.
+        new_lyrics: list[float] | None = None
+        if lyrics_vec is not None:
+            new_lyrics = _ema_update(
+                participant.lyrics_portrait_vector, lyrics_vec, n
+            )
 
-        await self.sqlite_repo.update_portrait(participant_id, new_portrait)
-        return new_portrait
+        await self.sqlite_repo.update_portrait(
+            participant_id, new_audio, new_lyrics
+        )
+        return new_audio
 
     async def record_transition(
         self, participant_id: str, current_track_id: str
@@ -425,3 +497,51 @@ class RecommendationService:
             )
         except Exception as exc:
             logger.warning("transition_record_failed", error=str(exc))
+
+
+# ------------------------------------------------------------------
+# Module-level helpers
+# ------------------------------------------------------------------
+
+def _ema_update(
+    old_portrait: list[float] | None,
+    current_vector: list[float],
+    n: int,
+) -> list[float]:
+    """Apply EMA update to a portrait vector and L2-renormalise."""
+    if old_portrait is None or n <= 1:
+        new = current_vector
+    else:
+        new = [
+            _EMA_ALPHA * cur + (1 - _EMA_ALPHA) * old
+            for old, cur in zip(old_portrait, current_vector)
+        ]
+
+    arr = np.array(new, dtype=np.float64)
+    norm = np.linalg.norm(arr)
+    if norm > 1e-8:
+        arr = arr / norm
+    return arr.tolist()
+
+
+def _avg_vectors(
+    v1: list[float] | None, v2: list[float] | None
+) -> list[float] | None:
+    """Average two vectors with L2-renormalisation.  Returns None if both are None."""
+    if v1 is None and v2 is None:
+        return None
+    if v1 is None:
+        return v2
+    if v2 is None:
+        return v1
+
+    avg = np.array([(a + b) / 2.0 for a, b in zip(v1, v2)], dtype=np.float64)
+    norm = np.linalg.norm(avg)
+    if norm > 1e-8:
+        avg = avg / norm
+    return avg.tolist()
+
+
+async def _empty_coro() -> list:
+    """Return an empty list — used as a no-op coroutine for asyncio.gather."""
+    return []

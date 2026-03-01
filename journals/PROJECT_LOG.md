@@ -565,3 +565,10 @@
   - QDrant payload index from_track_id для transitions
   - tracks_played из participant (не len(history))
   - Тесты: 85/85 pass (27 feature extractor + 58 recommendation service)
+- **2026-03-01**: Weighted fusion рекомендаций: audio (0.7) + lyrics embeddings (0.3):
+  - Два параллельных KNN запроса (audio_features + lyrics_embeddings) через asyncio.gather
+  - Merge по track_id: fused_score = 0.7 * audio_score + 0.3 * lyrics_score
+  - Dual EMA portrait: отдельные audio и lyrics портреты участника
+  - DB migration: lyrics_portrait_vector TEXT в participants
+  - Fallback: tracks без текста → чистый audio KNN
+  - Тесты: 98/98 pass (80 recommendation + 18 feature extractor, +13 новых для fusion)

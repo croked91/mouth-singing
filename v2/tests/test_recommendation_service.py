@@ -1,12 +1,13 @@
-"""Comprehensive tests for the Phase 8b recommendation system.
+"""Comprehensive tests for the Phase 8b recommendation system (weighted fusion update).
 
 Coverage:
 - RecommendationService.get_recommendations — all four strategy branches
-- RecommendationService.update_portrait — first-track and EMA paths
+- RecommendationService.update_portrait — first-track, EMA paths, dual audio+lyrics
 - RecommendationService.record_transition — records and skips cases
 - QDrantRepository.retrieve — existing and non-existing point
 - GET /api/v1/recommendations — endpoint contract and RecommendationResponse schema
 - QueueService.finish_playing integration — portrait + transition update paths
+- _fused_knn_search — weighted fusion scoring, audio-only fallback, lyrics-only fallback
 
 All async tests use asyncio_mode = "auto" (configured in pytest.ini).
 SQLiteRepository / QDrantRepository are mocked with AsyncMock / MagicMock
@@ -17,7 +18,7 @@ from __future__ import annotations
 
 import math
 import uuid
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 import pytest_asyncio
@@ -32,17 +33,28 @@ from karaoke_shared.models.track import Track
 # ---------------------------------------------------------------------------
 
 _DIM = 45  # audio_features vector dimension
+_LYRICS_DIM = 384  # lyrics_embeddings vector dimension
 
 
 def _uid() -> str:
     return str(uuid.uuid4())
 
 
-def _vec(seed: float = 0.1) -> list[float]:
-    """Return a normalised float vector of dimension _DIM."""
-    raw = [(seed + i * 0.001) for i in range(_DIM)]
+def _vec(seed: float = 0.1, dim: int = _DIM) -> list[float]:
+    """Return a normalised float vector of dimension dim."""
+    raw = [(seed + i * 0.001) for i in range(dim)]
     norm = sum(x**2 for x in raw) ** 0.5
     return [x / norm for x in raw]
+
+
+def _audio_vec(seed: float = 0.1) -> list[float]:
+    """Return a normalised 45-dim audio vector."""
+    return _vec(seed, _DIM)
+
+
+def _lyrics_vec(seed: float = 0.1) -> list[float]:
+    """Return a normalised 384-dim lyrics vector."""
+    return _vec(seed, _LYRICS_DIM)
 
 
 def _l2_norm(v: list[float]) -> float:
@@ -89,6 +101,7 @@ def _make_participant(
     participant_id: str,
     tracks_played: int = 0,
     portrait_vector: list[float] | None = None,
+    lyrics_portrait_vector: list[float] | None = None,
 ) -> Participant:
     """Construct a minimal Participant model."""
     return Participant(
@@ -96,6 +109,7 @@ def _make_participant(
         session_id="sess-1",
         display_name="Alice",
         portrait_vector=portrait_vector,
+        lyrics_portrait_vector=lyrics_portrait_vector,
         tracks_played=tracks_played,
         created_at="2024-01-01T00:00:00+00:00",
     )
@@ -112,6 +126,7 @@ def _make_sqlite_repo(
     Includes all methods used by the new recommendation_service implementation:
     - list_random (70/30 popular mix)
     - get_tracks_by_ids (batch KNN result enrichment)
+    - update_portrait now accepts 3 positional args (participant_id, audio_portrait, lyrics_portrait)
     """
     repo = AsyncMock()
     repo.get_history_by_participant.return_value = history or []
@@ -125,20 +140,46 @@ def _make_sqlite_repo(
 
 
 def _make_qdrant_repo(
-    retrieve_return: list[float] | None = None,
-    search_return: list | None = None,
+    audio_retrieve: list[float] | None = None,
+    lyrics_retrieve: list[float] | None = None,
+    audio_search: list | None = None,
+    lyrics_search: list | None = None,
 ) -> MagicMock:
-    """Build a MagicMock QDrantRepository.
+    """Build a MagicMock QDrantRepository that handles both audio and lyrics collections.
 
     retrieve(), search(), upsert(), retrieve_payload(), and scroll_filtered()
     are synchronous methods called via asyncio.to_thread, so they are plain
     MagicMocks (not AsyncMocks).
+
+    retrieve uses side_effect to dispatch by collection name:
+    - "audio_features" -> audio_retrieve
+    - "lyrics_embeddings" -> lyrics_retrieve
+    - other -> None
+
+    search uses side_effect to dispatch by collection name:
+    - "audio_features" -> audio_search (defaults to [])
+    - "lyrics_embeddings" -> lyrics_search (defaults to [])
+    - other -> []
     """
     repo = MagicMock()
-    repo.retrieve.return_value = retrieve_return
-    repo.search.return_value = search_return or []
+
+    def _retrieve_side_effect(collection: str, track_id: str):
+        if collection == "audio_features":
+            return audio_retrieve
+        if collection == "lyrics_embeddings":
+            return lyrics_retrieve
+        return None
+
+    def _search_side_effect(collection: str, vector, limit=10, filters=None):
+        if collection == "audio_features":
+            return audio_search or []
+        if collection == "lyrics_embeddings":
+            return lyrics_search or []
+        return []
+
+    repo.retrieve.side_effect = _retrieve_side_effect
+    repo.search.side_effect = _search_side_effect
     repo.upsert.return_value = None
-    # New methods required by the updated implementation.
     repo.retrieve_payload.return_value = None  # no existing transition by default
     repo.scroll_filtered.return_value = []     # no transition candidates by default
     return repo
@@ -220,8 +261,8 @@ class TestStrategySelection:
             new_track_id: _make_track(new_track_id)
         }
         qdrant_repo = _make_qdrant_repo(
-            retrieve_return=_vec(),
-            search_return=[(new_track_id, 0.95, {"status": "ready"})],
+            audio_retrieve=_audio_vec(),
+            audio_search=[(new_track_id, 0.95, {"status": "ready"})],
         )
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
@@ -229,18 +270,31 @@ class TestStrategySelection:
 
         assert strategy is RecommendationStrategy.LAST
 
-    async def test_one_history_uses_last_track_vector(self):
-        """With tracks_played=1, retrieve() is called with the last track id."""
+    async def test_one_history_retrieves_audio_features_for_last_track(self):
+        """With tracks_played=1, retrieve() is called with audio_features and the last track id."""
         track_id = _uid()
         history = [_make_history_entry("p-1", track_id)]
         participant = _make_participant("p-1", tracks_played=1)
         sqlite_repo = _make_sqlite_repo(history=history, participant=participant)
-        qdrant_repo = _make_qdrant_repo(retrieve_return=_vec(), search_return=[])
+        qdrant_repo = _make_qdrant_repo(audio_retrieve=_audio_vec())
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         await service.get_recommendations("p-1", "s-1", limit=5)
 
-        qdrant_repo.retrieve.assert_called_once_with("audio_features", track_id)
+        qdrant_repo.retrieve.assert_any_call("audio_features", track_id)
+
+    async def test_one_history_retrieves_lyrics_embeddings_for_last_track(self):
+        """With tracks_played=1, retrieve() is also called with lyrics_embeddings."""
+        track_id = _uid()
+        history = [_make_history_entry("p-1", track_id)]
+        participant = _make_participant("p-1", tracks_played=1)
+        sqlite_repo = _make_sqlite_repo(history=history, participant=participant)
+        qdrant_repo = _make_qdrant_repo(audio_retrieve=_audio_vec(), lyrics_retrieve=_lyrics_vec())
+
+        service = RecommendationService(sqlite_repo, qdrant_repo)
+        await service.get_recommendations("p-1", "s-1", limit=5)
+
+        qdrant_repo.retrieve.assert_any_call("lyrics_embeddings", track_id)
 
     # -- 2 tracks played → LAST_TWO_AVG ------------------------------------
 
@@ -250,34 +304,43 @@ class TestStrategySelection:
         history = [_make_history_entry("p-1", t1), _make_history_entry("p-1", t2)]
         participant = _make_participant("p-1", tracks_played=2)
         sqlite_repo = _make_sqlite_repo(history=history, participant=participant)
-        qdrant_repo = _make_qdrant_repo(retrieve_return=_vec(), search_return=[])
+        qdrant_repo = _make_qdrant_repo(audio_retrieve=_audio_vec())
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         strategy, _ = await service.get_recommendations("p-1", "s-1", limit=5)
 
         assert strategy is RecommendationStrategy.LAST_TWO_AVG
 
-    async def test_two_history_retrieves_both_vectors(self):
-        """With tracks_played=2, retrieve() is called for both track IDs."""
+    async def test_two_history_retrieves_audio_vectors_for_both_tracks(self):
+        """With tracks_played=2, retrieve('audio_features', ...) is called for both track IDs."""
         t1, t2 = _uid(), _uid()
         history = [_make_history_entry("p-1", t1), _make_history_entry("p-1", t2)]
         participant = _make_participant("p-1", tracks_played=2)
         sqlite_repo = _make_sqlite_repo(history=history, participant=participant)
 
-        v1, v2 = _vec(0.1), _vec(0.2)
-        retrieve_side = {t1: v1, t2: v2}
-        qdrant_repo = _make_qdrant_repo(search_return=[])
-        qdrant_repo.retrieve.side_effect = lambda coll, tid: retrieve_side.get(tid)
+        v1, v2 = _audio_vec(0.1), _audio_vec(0.2)
+
+        def retrieve_side(coll, tid):
+            if coll == "audio_features":
+                return {t1: v1, t2: v2}.get(tid)
+            return None
+
+        qdrant_repo = _make_qdrant_repo()
+        qdrant_repo.retrieve.side_effect = retrieve_side
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         await service.get_recommendations("p-1", "s-1", limit=5)
 
-        retrieved_ids = {call.args[1] for call in qdrant_repo.retrieve.call_args_list}
-        assert t1 in retrieved_ids
-        assert t2 in retrieved_ids
+        audio_calls = [
+            c for c in qdrant_repo.retrieve.call_args_list
+            if c.args[0] == "audio_features"
+        ]
+        retrieved_audio_ids = {c.args[1] for c in audio_calls}
+        assert t1 in retrieved_audio_ids
+        assert t2 in retrieved_audio_ids
 
-    async def test_two_history_knn_uses_averaged_vector(self):
-        """With tracks_played=2, the KNN search uses the L2-normalised average of both vectors."""
+    async def test_two_history_knn_uses_averaged_audio_vector(self):
+        """With tracks_played=2, the audio KNN search uses the L2-normalised average of both vectors."""
         t1, t2 = _uid(), _uid()
         history = [_make_history_entry("p-1", t1), _make_history_entry("p-1", t2)]
         participant = _make_participant("p-1", tracks_played=2)
@@ -289,14 +352,24 @@ class TestStrategySelection:
         raw_avg = [2.0] * _DIM
         expected_avg = _l2_normalize(raw_avg)
 
-        retrieve_side = {t1: v1, t2: v2}
-        qdrant_repo = _make_qdrant_repo(search_return=[])
-        qdrant_repo.retrieve.side_effect = lambda coll, tid: retrieve_side.get(tid)
+        def retrieve_side(coll, tid):
+            if coll == "audio_features":
+                return {t1: v1, t2: v2}.get(tid)
+            return None
+
+        qdrant_repo = _make_qdrant_repo()
+        qdrant_repo.retrieve.side_effect = retrieve_side
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         await service.get_recommendations("p-1", "s-1", limit=5)
 
-        call_vector = qdrant_repo.search.call_args.args[1]
+        # Find the audio_features search call
+        audio_search_calls = [
+            c for c in qdrant_repo.search.call_args_list
+            if c.args[0] == "audio_features"
+        ]
+        assert len(audio_search_calls) >= 1
+        call_vector = audio_search_calls[0].args[1]
         assert call_vector == pytest.approx(expected_avg)
 
     # -- 3+ tracks played → SESSION_AVG ------------------------------------
@@ -304,7 +377,7 @@ class TestStrategySelection:
     async def test_three_history_uses_session_avg_strategy(self):
         """With tracks_played=3 and a portrait, SESSION_AVG is used."""
         participant_id = "p-1"
-        portrait = _vec(0.5)
+        portrait = _audio_vec(0.5)
         history = [
             _make_history_entry(participant_id, _uid()),
             _make_history_entry(participant_id, _uid()),
@@ -312,7 +385,7 @@ class TestStrategySelection:
         ]
         participant = _make_participant(participant_id, tracks_played=3, portrait_vector=portrait)
         sqlite_repo = _make_sqlite_repo(history=history, participant=participant)
-        qdrant_repo = _make_qdrant_repo(search_return=[])
+        qdrant_repo = _make_qdrant_repo()
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         strategy, _ = await service.get_recommendations(participant_id, "s-1", limit=5)
@@ -320,9 +393,9 @@ class TestStrategySelection:
         assert strategy is RecommendationStrategy.SESSION_AVG
 
     async def test_three_history_knn_uses_portrait_vector(self):
-        """With tracks_played=3, the KNN search uses the participant's portrait."""
+        """With tracks_played=3, the audio KNN search uses the participant's portrait."""
         participant_id = "p-1"
-        portrait = _vec(0.77)
+        portrait = _audio_vec(0.77)
         history = [
             _make_history_entry(participant_id, _uid()),
             _make_history_entry(participant_id, _uid()),
@@ -330,13 +403,272 @@ class TestStrategySelection:
         ]
         participant = _make_participant(participant_id, tracks_played=3, portrait_vector=portrait)
         sqlite_repo = _make_sqlite_repo(history=history, participant=participant)
-        qdrant_repo = _make_qdrant_repo(search_return=[])
+        qdrant_repo = _make_qdrant_repo()
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         await service.get_recommendations(participant_id, "s-1", limit=5)
 
-        call_vector = qdrant_repo.search.call_args.args[1]
+        # Audio KNN must be called with the portrait vector
+        audio_search_calls = [
+            c for c in qdrant_repo.search.call_args_list
+            if c.args[0] == "audio_features"
+        ]
+        assert len(audio_search_calls) >= 1
+        call_vector = audio_search_calls[0].args[1]
         assert call_vector == pytest.approx(portrait)
+
+    async def test_three_history_knn_uses_lyrics_portrait_vector(self):
+        """With tracks_played=3 and both portraits, lyrics KNN uses the lyrics portrait."""
+        participant_id = "p-1"
+        portrait = _audio_vec(0.5)
+        lyrics_portrait = _lyrics_vec(0.3)
+        history = [
+            _make_history_entry(participant_id, _uid()),
+            _make_history_entry(participant_id, _uid()),
+            _make_history_entry(participant_id, _uid()),
+        ]
+        participant = _make_participant(
+            participant_id,
+            tracks_played=3,
+            portrait_vector=portrait,
+            lyrics_portrait_vector=lyrics_portrait,
+        )
+        sqlite_repo = _make_sqlite_repo(history=history, participant=participant)
+        qdrant_repo = _make_qdrant_repo()
+
+        service = RecommendationService(sqlite_repo, qdrant_repo)
+        await service.get_recommendations(participant_id, "s-1", limit=5)
+
+        lyrics_search_calls = [
+            c for c in qdrant_repo.search.call_args_list
+            if c.args[0] == "lyrics_embeddings"
+        ]
+        assert len(lyrics_search_calls) >= 1
+        call_vector = lyrics_search_calls[0].args[1]
+        assert call_vector == pytest.approx(lyrics_portrait)
+
+
+# ===========================================================================
+# TestFusedKnnSearch
+# ===========================================================================
+
+
+class TestFusedKnnSearch:
+    """Tests for _fused_knn_search: weighted fusion, audio-only, lyrics-only fallbacks."""
+
+    async def test_fusion_score_is_weighted_combination(self):
+        """When both audio and lyrics results exist, score = 0.7*audio + 0.3*lyrics."""
+        track_id = _uid()
+        new_id = _uid()
+
+        audio_score = 0.80
+        lyrics_score = 0.60
+        expected_fused = 0.7 * audio_score + 0.3 * lyrics_score
+
+        history = [_make_history_entry("p-1", track_id)]
+        participant = _make_participant("p-1", tracks_played=1)
+        sqlite_repo = _make_sqlite_repo(history=history, participant=participant)
+        sqlite_repo.get_tracks_by_ids.return_value = {new_id: _make_track(new_id)}
+
+        qdrant_repo = _make_qdrant_repo(
+            audio_retrieve=_audio_vec(),
+            lyrics_retrieve=_lyrics_vec(),
+            audio_search=[(new_id, audio_score, {"status": "ready"})],
+            lyrics_search=[(new_id, lyrics_score, {"status": "ready"})],
+        )
+
+        service = RecommendationService(sqlite_repo, qdrant_repo)
+        _, results = await service.get_recommendations("p-1", "s-1", limit=5)
+
+        # Should get the track with fused score
+        assert len(results) == 1
+        assert results[0].track.id == new_id
+        assert results[0].similarity_score == pytest.approx(expected_fused, abs=1e-6)
+
+    async def test_fusion_audio_only_when_lyrics_vector_none(self):
+        """When lyrics_vector is None, pure audio KNN score is used (no weighting)."""
+        track_id = _uid()
+        new_id = _uid()
+        audio_score = 0.90
+
+        history = [_make_history_entry("p-1", track_id)]
+        participant = _make_participant("p-1", tracks_played=1)
+        sqlite_repo = _make_sqlite_repo(history=history, participant=participant)
+        sqlite_repo.get_tracks_by_ids.return_value = {new_id: _make_track(new_id)}
+
+        # lyrics_retrieve=None → only audio search runs
+        qdrant_repo = _make_qdrant_repo(
+            audio_retrieve=_audio_vec(),
+            lyrics_retrieve=None,
+            audio_search=[(new_id, audio_score, {"status": "ready"})],
+            lyrics_search=[],
+        )
+
+        service = RecommendationService(sqlite_repo, qdrant_repo)
+        _, results = await service.get_recommendations("p-1", "s-1", limit=5)
+
+        assert len(results) == 1
+        assert results[0].track.id == new_id
+        # Pure audio: score is the raw audio score (no weighting applied)
+        assert results[0].similarity_score == pytest.approx(audio_score, abs=1e-6)
+
+    async def test_fusion_lyrics_only_when_audio_vector_none(self):
+        """When audio_vector is None but lyrics_vector exists, pure lyrics KNN is used."""
+        track_id = _uid()
+        new_id = _uid()
+        lyrics_score = 0.75
+
+        history = [_make_history_entry("p-1", track_id)]
+        participant = _make_participant("p-1", tracks_played=1)
+        sqlite_repo = _make_sqlite_repo(history=history, participant=participant)
+        sqlite_repo.get_tracks_by_ids.return_value = {new_id: _make_track(new_id)}
+
+        # audio_retrieve=None → no audio vector; lyrics_retrieve present → lyrics only
+        qdrant_repo = _make_qdrant_repo(
+            audio_retrieve=None,
+            lyrics_retrieve=_lyrics_vec(),
+            audio_search=[],
+            lyrics_search=[(new_id, lyrics_score, {"status": "ready"})],
+        )
+
+        service = RecommendationService(sqlite_repo, qdrant_repo)
+        _, results = await service.get_recommendations("p-1", "s-1", limit=5)
+
+        assert len(results) == 1
+        assert results[0].track.id == new_id
+        # Pure lyrics: score is the raw lyrics score (no weighting applied)
+        assert results[0].similarity_score == pytest.approx(lyrics_score, abs=1e-6)
+
+    async def test_fusion_searches_both_collections(self):
+        """_fused_knn_search calls search() on both audio_features and lyrics_embeddings."""
+        track_id = _uid()
+        history = [_make_history_entry("p-1", track_id)]
+        participant = _make_participant("p-1", tracks_played=1)
+        sqlite_repo = _make_sqlite_repo(history=history, participant=participant)
+
+        qdrant_repo = _make_qdrant_repo(
+            audio_retrieve=_audio_vec(),
+            lyrics_retrieve=_lyrics_vec(),
+        )
+
+        service = RecommendationService(sqlite_repo, qdrant_repo)
+        await service.get_recommendations("p-1", "s-1", limit=5)
+
+        called_collections = {c.args[0] for c in qdrant_repo.search.call_args_list}
+        assert "audio_features" in called_collections
+        assert "lyrics_embeddings" in called_collections
+
+    async def test_fusion_deduplicates_candidates_by_track_id(self):
+        """A track appearing in both audio and lyrics results is included once."""
+        track_id = _uid()
+        shared_id = _uid()
+
+        history = [_make_history_entry("p-1", track_id)]
+        participant = _make_participant("p-1", tracks_played=1)
+        sqlite_repo = _make_sqlite_repo(history=history, participant=participant)
+        sqlite_repo.get_tracks_by_ids.return_value = {shared_id: _make_track(shared_id)}
+
+        qdrant_repo = _make_qdrant_repo(
+            audio_retrieve=_audio_vec(),
+            lyrics_retrieve=_lyrics_vec(),
+            audio_search=[(shared_id, 0.8, {})],
+            lyrics_search=[(shared_id, 0.7, {})],
+        )
+
+        service = RecommendationService(sqlite_repo, qdrant_repo)
+        _, results = await service.get_recommendations("p-1", "s-1", limit=5)
+
+        result_ids = [r.track.id for r in results]
+        assert result_ids.count(shared_id) == 1
+
+    async def test_fusion_merges_results_from_both_collections(self):
+        """Union of audio-only and lyrics-only candidate IDs all appear in results."""
+        track_id = _uid()
+        audio_only_id = _uid()
+        lyrics_only_id = _uid()
+
+        history = [_make_history_entry("p-1", track_id)]
+        participant = _make_participant("p-1", tracks_played=1)
+        sqlite_repo = _make_sqlite_repo(history=history, participant=participant)
+        sqlite_repo.get_tracks_by_ids.return_value = {
+            audio_only_id: _make_track(audio_only_id),
+            lyrics_only_id: _make_track(lyrics_only_id),
+        }
+
+        qdrant_repo = _make_qdrant_repo(
+            audio_retrieve=_audio_vec(),
+            lyrics_retrieve=_lyrics_vec(),
+            audio_search=[(audio_only_id, 0.85, {})],
+            lyrics_search=[(lyrics_only_id, 0.70, {})],
+        )
+
+        service = RecommendationService(sqlite_repo, qdrant_repo)
+        _, results = await service.get_recommendations("p-1", "s-1", limit=5)
+
+        result_ids = {r.track.id for r in results}
+        assert audio_only_id in result_ids
+        assert lyrics_only_id in result_ids
+
+    async def test_fusion_audio_only_track_gets_weighted_score(self):
+        """A track only in audio results gets score = 0.7 * audio_score + 0 (lyrics absent)."""
+        track_id = _uid()
+        audio_only_id = _uid()
+        lyrics_only_id = _uid()
+
+        audio_score = 0.9
+        lyrics_score = 0.8
+
+        history = [_make_history_entry("p-1", track_id)]
+        participant = _make_participant("p-1", tracks_played=1)
+        sqlite_repo = _make_sqlite_repo(history=history, participant=participant)
+        sqlite_repo.get_tracks_by_ids.return_value = {
+            audio_only_id: _make_track(audio_only_id),
+            lyrics_only_id: _make_track(lyrics_only_id),
+        }
+
+        qdrant_repo = _make_qdrant_repo(
+            audio_retrieve=_audio_vec(),
+            lyrics_retrieve=_lyrics_vec(),
+            audio_search=[(audio_only_id, audio_score, {})],
+            lyrics_search=[(lyrics_only_id, lyrics_score, {})],
+        )
+
+        service = RecommendationService(sqlite_repo, qdrant_repo)
+        _, results = await service.get_recommendations("p-1", "s-1", limit=5)
+
+        result_map = {r.track.id: r.similarity_score for r in results}
+        # audio_only_id: 0.7 * 0.9 + 0.3 * 0 = 0.63
+        assert result_map[audio_only_id] == pytest.approx(0.7 * audio_score, abs=1e-6)
+        # lyrics_only_id: 0.7 * 0 + 0.3 * 0.8 = 0.24
+        assert result_map[lyrics_only_id] == pytest.approx(0.3 * lyrics_score, abs=1e-6)
+
+    async def test_fusion_results_sorted_by_fused_score_descending(self):
+        """Results are ordered by fused score, highest first."""
+        track_id = _uid()
+        id_a = _uid()  # audio=0.95, lyrics=0.5 → fused=0.7*0.95+0.3*0.5 = 0.815
+        id_b = _uid()  # audio=0.6, lyrics=0.95 → fused=0.7*0.6+0.3*0.95 = 0.705
+
+        history = [_make_history_entry("p-1", track_id)]
+        participant = _make_participant("p-1", tracks_played=1)
+        sqlite_repo = _make_sqlite_repo(history=history, participant=participant)
+        sqlite_repo.get_tracks_by_ids.return_value = {
+            id_a: _make_track(id_a),
+            id_b: _make_track(id_b),
+        }
+
+        qdrant_repo = _make_qdrant_repo(
+            audio_retrieve=_audio_vec(),
+            lyrics_retrieve=_lyrics_vec(),
+            audio_search=[(id_a, 0.95, {}), (id_b, 0.60, {})],
+            lyrics_search=[(id_a, 0.50, {}), (id_b, 0.95, {})],
+        )
+
+        service = RecommendationService(sqlite_repo, qdrant_repo)
+        _, results = await service.get_recommendations("p-1", "s-1", limit=5)
+
+        assert len(results) == 2
+        assert results[0].track.id == id_a  # higher fused score first
+        assert results[1].track.id == id_b
 
 
 # ===========================================================================
@@ -362,7 +694,7 @@ class TestFilteringPlayedTracks:
             popular=[played_track, other_track],
             participant=participant,
         )
-        qdrant_repo = _make_qdrant_repo(retrieve_return=None, search_return=[])
+        qdrant_repo = _make_qdrant_repo(audio_retrieve=None, lyrics_retrieve=None)
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         _, results = await service.get_recommendations("p-1", "s-1", limit=10)
@@ -384,8 +716,8 @@ class TestFilteringPlayedTracks:
 
         # QDrant returns both played and a new track
         qdrant_repo = _make_qdrant_repo(
-            retrieve_return=_vec(),
-            search_return=[
+            audio_retrieve=_audio_vec(),
+            audio_search=[
                 (played_id, 0.99, {"status": "ready"}),
                 (new_id, 0.90, {"status": "ready"}),
             ],
@@ -412,7 +744,7 @@ class TestFilteringPlayedTracks:
         sqlite_repo.get_tracks_by_ids.return_value = {
             nid: _make_track(nid) for nid in new_ids
         }
-        qdrant_repo = _make_qdrant_repo(retrieve_return=_vec(), search_return=search_hits)
+        qdrant_repo = _make_qdrant_repo(audio_retrieve=_audio_vec(), audio_search=search_hits)
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         _, results = await service.get_recommendations("p-1", "s-1", limit=3)
@@ -438,7 +770,7 @@ class TestFallbackBehavior:
             history=history, popular=[popular_track], participant=participant
         )
         # scroll_filtered returns [] (default in _make_qdrant_repo), no transitions
-        qdrant_repo = _make_qdrant_repo(retrieve_return=None)
+        qdrant_repo = _make_qdrant_repo(audio_retrieve=None, lyrics_retrieve=None)
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         strategy, results = await service.get_recommendations("p-1", "s-1", limit=5)
@@ -456,7 +788,7 @@ class TestFallbackBehavior:
         sqlite_repo = _make_sqlite_repo(
             history=history, popular=[popular_track], participant=participant
         )
-        qdrant_repo = _make_qdrant_repo(retrieve_return=None)
+        qdrant_repo = _make_qdrant_repo(audio_retrieve=None, lyrics_retrieve=None)
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         strategy, results = await service.get_recommendations("p-1", "s-1", limit=5)
@@ -464,7 +796,7 @@ class TestFallbackBehavior:
         assert strategy is RecommendationStrategy.POPULAR
 
     async def test_last_two_avg_uses_only_v1_when_v2_missing(self):
-        """If the second vector is missing, KNN uses the first vector alone."""
+        """If the second audio vector is missing, KNN uses the first audio vector alone."""
         t1, t2 = _uid(), _uid()
         history = [_make_history_entry("p-1", t1), _make_history_entry("p-1", t2)]
         participant = _make_participant("p-1", tracks_played=2)
@@ -472,22 +804,32 @@ class TestFallbackBehavior:
             history=history, participant=participant, track=_make_track(_uid())
         )
 
-        v1 = _vec(0.1)
-        retrieve_side = {t1: v1, t2: None}
-        qdrant_repo = _make_qdrant_repo(search_return=[])
-        qdrant_repo.retrieve.side_effect = lambda coll, tid: retrieve_side.get(tid)
+        v1 = _audio_vec(0.1)
+
+        def retrieve_side(coll, tid):
+            if coll == "audio_features":
+                return {t1: v1, t2: None}.get(tid)
+            return None
+
+        qdrant_repo = _make_qdrant_repo()
+        qdrant_repo.retrieve.side_effect = retrieve_side
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         strategy, _ = await service.get_recommendations("p-1", "s-1", limit=5)
 
         # Should still yield LAST_TWO_AVG (not fallback to popular)
         assert strategy is RecommendationStrategy.LAST_TWO_AVG
-        # And the KNN search must have been called with v1
-        call_vector = qdrant_repo.search.call_args.args[1]
+        # Audio KNN must have been called with v1 (the only available audio vector)
+        audio_search_calls = [
+            c for c in qdrant_repo.search.call_args_list
+            if c.args[0] == "audio_features"
+        ]
+        assert len(audio_search_calls) >= 1
+        call_vector = audio_search_calls[0].args[1]
         assert call_vector == pytest.approx(v1)
 
     async def test_last_two_avg_uses_only_v2_when_v1_missing(self):
-        """If the first vector is missing, KNN uses the second vector alone."""
+        """If the first audio vector is missing, KNN uses the second audio vector alone."""
         t1, t2 = _uid(), _uid()
         history = [_make_history_entry("p-1", t1), _make_history_entry("p-1", t2)]
         participant = _make_participant("p-1", tracks_played=2)
@@ -495,16 +837,26 @@ class TestFallbackBehavior:
             history=history, participant=participant, track=_make_track(_uid())
         )
 
-        v2 = _vec(0.2)
-        retrieve_side = {t1: None, t2: v2}
-        qdrant_repo = _make_qdrant_repo(search_return=[])
-        qdrant_repo.retrieve.side_effect = lambda coll, tid: retrieve_side.get(tid)
+        v2 = _audio_vec(0.2)
+
+        def retrieve_side(coll, tid):
+            if coll == "audio_features":
+                return {t1: None, t2: v2}.get(tid)
+            return None
+
+        qdrant_repo = _make_qdrant_repo()
+        qdrant_repo.retrieve.side_effect = retrieve_side
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         strategy, _ = await service.get_recommendations("p-1", "s-1", limit=5)
 
         assert strategy is RecommendationStrategy.LAST_TWO_AVG
-        call_vector = qdrant_repo.search.call_args.args[1]
+        audio_search_calls = [
+            c for c in qdrant_repo.search.call_args_list
+            if c.args[0] == "audio_features"
+        ]
+        assert len(audio_search_calls) >= 1
+        call_vector = audio_search_calls[0].args[1]
         assert call_vector == pytest.approx(v2)
 
     async def test_session_avg_falls_back_to_last_two_avg_when_portrait_missing(self):
@@ -520,10 +872,15 @@ class TestFallbackBehavior:
         participant = _make_participant(participant_id, tracks_played=3, portrait_vector=None)
         sqlite_repo = _make_sqlite_repo(history=history, participant=participant)
 
-        v1, v2 = _vec(0.1), _vec(0.2)
-        retrieve_side = {t1: v1, t2: v2, t3: None}
-        qdrant_repo = _make_qdrant_repo(search_return=[])
-        qdrant_repo.retrieve.side_effect = lambda coll, tid: retrieve_side.get(tid)
+        v1, v2 = _audio_vec(0.1), _audio_vec(0.2)
+
+        def retrieve_side(coll, tid):
+            if coll == "audio_features":
+                return {t1: v1, t2: v2, t3: None}.get(tid)
+            return None
+
+        qdrant_repo = _make_qdrant_repo()
+        qdrant_repo.retrieve.side_effect = retrieve_side
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         strategy, _ = await service.get_recommendations(participant_id, "s-1", limit=5)
@@ -544,7 +901,7 @@ class TestFallbackBehavior:
         sqlite_repo = _make_sqlite_repo(
             history=history, participant=None, popular=[popular_track]
         )
-        qdrant_repo = _make_qdrant_repo(search_return=[])
+        qdrant_repo = _make_qdrant_repo()
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         strategy, _ = await service.get_recommendations(participant_id, "s-1", limit=5)
@@ -557,7 +914,7 @@ class TestFallbackBehavior:
         history = [_make_history_entry("p-1", track_id)]
         participant = _make_participant("p-1", tracks_played=1)
         sqlite_repo = _make_sqlite_repo(history=history, participant=participant)
-        qdrant_repo = _make_qdrant_repo(retrieve_return=_vec())
+        qdrant_repo = _make_qdrant_repo(audio_retrieve=_audio_vec())
         qdrant_repo.search.side_effect = RuntimeError("qdrant unavailable")
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
@@ -660,24 +1017,27 @@ class TestPopularStrategy:
 
 
 class TestUpdatePortrait:
-    """Tests for RecommendationService.update_portrait (EMA + L2-renorm)."""
+    """Tests for RecommendationService.update_portrait (EMA + L2-renorm, dual audio+lyrics)."""
 
     async def test_first_track_portrait_equals_track_vector(self):
         """When tracks_played == 1 (just incremented), portrait = track vector (L2-normalised)."""
         participant_id = "p-1"
         track_id = _uid()
-        track_vector = _vec(0.3)  # already unit-norm
+        track_vector = _audio_vec(0.3)  # already unit-norm
 
         participant = _make_participant(participant_id, tracks_played=1, portrait_vector=None)
         sqlite_repo = _make_sqlite_repo(participant=participant)
-        qdrant_repo = _make_qdrant_repo(retrieve_return=track_vector)
+        qdrant_repo = _make_qdrant_repo(audio_retrieve=track_vector, lyrics_retrieve=None)
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         result = await service.update_portrait(participant_id, track_id)
 
         # L2-normalizing a unit vector gives back the same vector
         assert result == pytest.approx(track_vector)
-        sqlite_repo.update_portrait.assert_called_once_with(participant_id, pytest.approx(track_vector))
+        # update_portrait now called with 3 args: (participant_id, audio_portrait, lyrics_portrait)
+        sqlite_repo.update_portrait.assert_called_once_with(
+            participant_id, pytest.approx(track_vector), None
+        )
 
     async def test_subsequent_track_uses_ema_formula(self):
         """After the first track, portrait is computed with EMA: 0.3*cur + 0.7*old."""
@@ -692,40 +1052,130 @@ class TestUpdatePortrait:
 
         participant = _make_participant(participant_id, tracks_played=2, portrait_vector=old_portrait)
         sqlite_repo = _make_sqlite_repo(participant=participant)
-        qdrant_repo = _make_qdrant_repo(retrieve_return=track_vector)
+        qdrant_repo = _make_qdrant_repo(audio_retrieve=track_vector, lyrics_retrieve=None)
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         result = await service.update_portrait(participant_id, track_id)
 
         assert result == pytest.approx(expected)
 
-    async def test_update_portrait_persisted_to_sqlite(self):
-        """update_portrait calls sqlite_repo.update_portrait with the computed vector."""
+    async def test_update_portrait_persisted_to_sqlite_with_three_args(self):
+        """update_portrait calls sqlite_repo.update_portrait(participant_id, audio_vec, lyrics_vec)."""
         participant_id = "p-1"
         track_id = _uid()
-        track_vector = _vec(0.5)
+        track_vector = _audio_vec(0.5)
         n = 3
 
-        old_portrait = _vec(0.2)
+        old_portrait = _audio_vec(0.2)
         participant = _make_participant(participant_id, tracks_played=n, portrait_vector=old_portrait)
         sqlite_repo = _make_sqlite_repo(participant=participant)
-        qdrant_repo = _make_qdrant_repo(retrieve_return=track_vector)
+        qdrant_repo = _make_qdrant_repo(audio_retrieve=track_vector, lyrics_retrieve=None)
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         await service.update_portrait(participant_id, track_id)
 
         sqlite_repo.update_portrait.assert_called_once()
-        call_pid, call_vec = sqlite_repo.update_portrait.call_args.args
+        call_args = sqlite_repo.update_portrait.call_args.args
+        # 3 positional args: participant_id, audio_portrait, lyrics_portrait
+        assert len(call_args) == 3
+        call_pid, call_audio_vec, call_lyrics_vec = call_args
         assert call_pid == participant_id
-        assert len(call_vec) == _DIM
+        assert len(call_audio_vec) == _DIM
+        # No lyrics vector for this track → lyrics portrait is None
+        assert call_lyrics_vec is None
 
-    async def test_update_portrait_returns_none_when_no_vector(self):
-        """If QDrant has no vector for the track, update_portrait returns None."""
+    async def test_update_portrait_lyrics_portrait_updated_when_lyrics_vector_available(self):
+        """When track has a lyrics vector, lyrics portrait is updated alongside audio portrait."""
+        participant_id = "p-1"
+        track_id = _uid()
+        audio_vector = _audio_vec(0.5)
+        lyrics_vector = _lyrics_vec(0.3)
+
+        old_audio = _audio_vec(0.2)
+        old_lyrics = _lyrics_vec(0.1)
+        participant = _make_participant(
+            participant_id,
+            tracks_played=3,
+            portrait_vector=old_audio,
+            lyrics_portrait_vector=old_lyrics,
+        )
+        sqlite_repo = _make_sqlite_repo(participant=participant)
+        qdrant_repo = _make_qdrant_repo(audio_retrieve=audio_vector, lyrics_retrieve=lyrics_vector)
+
+        service = RecommendationService(sqlite_repo, qdrant_repo)
+        result = await service.update_portrait(participant_id, track_id)
+
+        assert result is not None
+        sqlite_repo.update_portrait.assert_called_once()
+        call_args = sqlite_repo.update_portrait.call_args.args
+        assert len(call_args) == 3
+        call_pid, call_audio_vec, call_lyrics_vec = call_args
+        assert call_pid == participant_id
+        assert len(call_audio_vec) == _DIM
+        # Lyrics portrait must be updated (not None)
+        assert call_lyrics_vec is not None
+        assert len(call_lyrics_vec) == _LYRICS_DIM
+
+    async def test_lyrics_portrait_first_track_equals_lyrics_vector(self):
+        """When tracks_played==1 and lyrics vector present, lyrics_portrait = lyrics_vector (L2-norm)."""
+        participant_id = "p-1"
+        track_id = _uid()
+        audio_vector = _audio_vec(0.3)
+        lyrics_vector = _lyrics_vec(0.4)
+
+        participant = _make_participant(
+            participant_id,
+            tracks_played=1,
+            portrait_vector=None,
+            lyrics_portrait_vector=None,
+        )
+        sqlite_repo = _make_sqlite_repo(participant=participant)
+        qdrant_repo = _make_qdrant_repo(audio_retrieve=audio_vector, lyrics_retrieve=lyrics_vector)
+
+        service = RecommendationService(sqlite_repo, qdrant_repo)
+        await service.update_portrait(participant_id, track_id)
+
+        call_args = sqlite_repo.update_portrait.call_args.args
+        _, _, call_lyrics_vec = call_args
+        # First track: portrait = track vector directly (then L2-normalized)
+        assert call_lyrics_vec == pytest.approx(lyrics_vector)
+
+    async def test_lyrics_portrait_uses_ema_on_subsequent_tracks(self):
+        """On 2nd+ track, lyrics portrait uses EMA: 0.3*cur + 0.7*old (L2-normalized)."""
+        participant_id = "p-1"
+        track_id = _uid()
+
+        old_lyrics = [2.0] * _LYRICS_DIM
+        lyrics_vector = [4.0] * _LYRICS_DIM
+        ema_raw = [0.3 * 4.0 + 0.7 * 2.0] * _LYRICS_DIM
+        expected_lyrics = _l2_normalize(ema_raw)
+
+        participant = _make_participant(
+            participant_id,
+            tracks_played=2,
+            portrait_vector=_audio_vec(0.3),
+            lyrics_portrait_vector=old_lyrics,
+        )
+        sqlite_repo = _make_sqlite_repo(participant=participant)
+        qdrant_repo = _make_qdrant_repo(
+            audio_retrieve=_audio_vec(0.5),
+            lyrics_retrieve=lyrics_vector,
+        )
+
+        service = RecommendationService(sqlite_repo, qdrant_repo)
+        await service.update_portrait(participant_id, track_id)
+
+        call_args = sqlite_repo.update_portrait.call_args.args
+        _, _, call_lyrics_vec = call_args
+        assert call_lyrics_vec == pytest.approx(expected_lyrics)
+
+    async def test_update_portrait_returns_none_when_no_audio_vector(self):
+        """If QDrant has no audio vector for the track, update_portrait returns None."""
         participant_id = "p-1"
         track_id = _uid()
 
         sqlite_repo = _make_sqlite_repo()
-        qdrant_repo = _make_qdrant_repo(retrieve_return=None)
+        qdrant_repo = _make_qdrant_repo(audio_retrieve=None, lyrics_retrieve=None)
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         result = await service.update_portrait(participant_id, track_id)
@@ -739,7 +1189,7 @@ class TestUpdatePortrait:
         track_id = _uid()
 
         sqlite_repo = _make_sqlite_repo(participant=None)
-        qdrant_repo = _make_qdrant_repo(retrieve_return=_vec())
+        qdrant_repo = _make_qdrant_repo(audio_retrieve=_audio_vec())
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         result = await service.update_portrait(participant_id, track_id)
@@ -751,18 +1201,18 @@ class TestUpdatePortrait:
         """If old portrait is None but n > 1 (data inconsistency), track vector is used."""
         participant_id = "p-1"
         track_id = _uid()
-        track_vector = _vec(0.9)
+        track_vector = _audio_vec(0.9)
 
         # portrait_vector=None but tracks_played=5 (edge case)
         participant = _make_participant(participant_id, tracks_played=5, portrait_vector=None)
         sqlite_repo = _make_sqlite_repo(participant=participant)
-        qdrant_repo = _make_qdrant_repo(retrieve_return=track_vector)
+        qdrant_repo = _make_qdrant_repo(audio_retrieve=track_vector, lyrics_retrieve=None)
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         result = await service.update_portrait(participant_id, track_id)
 
         # The condition is: old_portrait is None OR n <= 1 → use track vector directly
-        # _vec(0.9) is already a unit vector, so L2-norm gives the same vector
+        # _audio_vec(0.9) is already a unit vector, so L2-norm gives the same vector
         assert result == pytest.approx(track_vector)
 
     async def test_ema_portrait_formula_with_n_equals_5(self):
@@ -778,7 +1228,7 @@ class TestUpdatePortrait:
 
         participant = _make_participant(participant_id, tracks_played=5, portrait_vector=old_portrait)
         sqlite_repo = _make_sqlite_repo(participant=participant)
-        qdrant_repo = _make_qdrant_repo(retrieve_return=track_vector)
+        qdrant_repo = _make_qdrant_repo(audio_retrieve=track_vector, lyrics_retrieve=None)
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         result = await service.update_portrait(participant_id, track_id)
@@ -796,7 +1246,7 @@ class TestUpdatePortrait:
 
         participant = _make_participant(participant_id, tracks_played=2, portrait_vector=old_portrait)
         sqlite_repo = _make_sqlite_repo(participant=participant)
-        qdrant_repo = _make_qdrant_repo(retrieve_return=track_vector)
+        qdrant_repo = _make_qdrant_repo(audio_retrieve=track_vector, lyrics_retrieve=None)
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         result = await service.update_portrait(participant_id, track_id)
@@ -824,7 +1274,7 @@ class TestRecordTransition:
             _make_history_entry(participant_id, prev_id),
         ]
         sqlite_repo = _make_sqlite_repo(history=history)
-        qdrant_repo = _make_qdrant_repo(retrieve_return=_vec())
+        qdrant_repo = _make_qdrant_repo(audio_retrieve=_audio_vec())
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         await service.record_transition(participant_id, curr_id)
@@ -843,7 +1293,7 @@ class TestRecordTransition:
             _make_history_entry(participant_id, prev_id),
         ]
         sqlite_repo = _make_sqlite_repo(history=history)
-        qdrant_repo = _make_qdrant_repo(retrieve_return=_vec())
+        qdrant_repo = _make_qdrant_repo(audio_retrieve=_audio_vec())
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         await service.record_transition(participant_id, curr_id)
@@ -862,7 +1312,7 @@ class TestRecordTransition:
             _make_history_entry(participant_id, prev_id),
         ]
         sqlite_repo = _make_sqlite_repo(history=history)
-        qdrant_repo = _make_qdrant_repo(retrieve_return=_vec())
+        qdrant_repo = _make_qdrant_repo(audio_retrieve=_audio_vec())
         # retrieve_payload returns None → no existing transition → weight starts at 1
         qdrant_repo.retrieve_payload.return_value = None
 
@@ -884,7 +1334,7 @@ class TestRecordTransition:
             _make_history_entry(participant_id, prev_id),
         ]
         sqlite_repo = _make_sqlite_repo(history=history)
-        qdrant_repo = _make_qdrant_repo(retrieve_return=_vec())
+        qdrant_repo = _make_qdrant_repo(audio_retrieve=_audio_vec())
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         await service.record_transition(participant_id, curr_id)
@@ -898,7 +1348,7 @@ class TestRecordTransition:
         curr_id = _uid()
         history = [_make_history_entry(participant_id, curr_id)]
         sqlite_repo = _make_sqlite_repo(history=history)
-        qdrant_repo = _make_qdrant_repo(retrieve_return=_vec())
+        qdrant_repo = _make_qdrant_repo(audio_retrieve=_audio_vec())
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         await service.record_transition(participant_id, curr_id)
@@ -910,7 +1360,7 @@ class TestRecordTransition:
         participant_id = "p-1"
         curr_id = _uid()
         sqlite_repo = _make_sqlite_repo(history=[])
-        qdrant_repo = _make_qdrant_repo(retrieve_return=_vec())
+        qdrant_repo = _make_qdrant_repo(audio_retrieve=_audio_vec())
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         await service.record_transition(participant_id, curr_id)
@@ -927,7 +1377,7 @@ class TestRecordTransition:
             _make_history_entry(participant_id, prev_id),
         ]
         sqlite_repo = _make_sqlite_repo(history=history)
-        qdrant_repo = _make_qdrant_repo(retrieve_return=None)
+        qdrant_repo = _make_qdrant_repo(audio_retrieve=None, lyrics_retrieve=None)
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         await service.record_transition(participant_id, curr_id)
@@ -944,7 +1394,7 @@ class TestRecordTransition:
             _make_history_entry(participant_id, prev_id),
         ]
         sqlite_repo = _make_sqlite_repo(history=history)
-        qdrant_repo = _make_qdrant_repo(retrieve_return=_vec())
+        qdrant_repo = _make_qdrant_repo(audio_retrieve=_audio_vec())
         # retrieve_payload succeeds but upsert raises
         qdrant_repo.retrieve_payload.return_value = None
         qdrant_repo.upsert.side_effect = RuntimeError("qdrant failed")
@@ -963,7 +1413,7 @@ class TestRecordTransition:
             _make_history_entry(participant_id, prev_id),
         ]
         sqlite_repo = _make_sqlite_repo(history=history)
-        qdrant_repo = _make_qdrant_repo(retrieve_return=_vec())
+        qdrant_repo = _make_qdrant_repo(audio_retrieve=_audio_vec())
         # Simulate an existing transition with weight=3
         qdrant_repo.retrieve_payload.return_value = {"weight": 3}
 
@@ -983,7 +1433,7 @@ class TestRecordTransition:
             _make_history_entry(participant_id, prev_id),
         ]
         sqlite_repo = _make_sqlite_repo(history=history)
-        qdrant_repo = _make_qdrant_repo(retrieve_return=_vec())
+        qdrant_repo = _make_qdrant_repo(audio_retrieve=_audio_vec())
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         await service.record_transition(participant_id, curr_id)
@@ -1014,7 +1464,7 @@ class TestTransitionCandidates:
             transition_to_id: transition_track
         }
 
-        qdrant_repo = _make_qdrant_repo(retrieve_return=_vec(), search_return=[])
+        qdrant_repo = _make_qdrant_repo(audio_retrieve=_audio_vec())
         # Return a transition candidate from scroll_filtered
         qdrant_repo.scroll_filtered.return_value = [
             ("trans-point-id", 0.0, {
@@ -1037,7 +1487,7 @@ class TestTransitionCandidates:
         history = [_make_history_entry("p-1", track_id)]
         participant = _make_participant("p-1", tracks_played=1)
         sqlite_repo = _make_sqlite_repo(history=history, participant=participant)
-        qdrant_repo = _make_qdrant_repo(retrieve_return=_vec(), search_return=[])
+        qdrant_repo = _make_qdrant_repo(audio_retrieve=_audio_vec())
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         await service.get_recommendations("p-1", "s-1", limit=5)
@@ -1065,7 +1515,7 @@ class TestTransitionCandidates:
         sqlite_repo = _make_sqlite_repo(history=history2, participant=participant)
         sqlite_repo.get_tracks_by_ids.return_value = {fresh_id: _make_track(fresh_id)}
 
-        qdrant_repo = _make_qdrant_repo(retrieve_return=_vec(), search_return=[])
+        qdrant_repo = _make_qdrant_repo(audio_retrieve=_audio_vec())
         # scroll_filtered returns transition to track_id2 (played) and fresh_id (not played)
         qdrant_repo.scroll_filtered.return_value = [
             ("p1", 0.0, {"from_track_id": track_id2, "to_track_id": track_id2, "weight": 2}),  # played
@@ -1085,7 +1535,7 @@ class TestTransitionCandidates:
         history = [_make_history_entry("p-1", track_id)]
         participant = _make_participant("p-1", tracks_played=1)
         sqlite_repo = _make_sqlite_repo(history=history, participant=participant)
-        qdrant_repo = _make_qdrant_repo(retrieve_return=_vec(), search_return=[])
+        qdrant_repo = _make_qdrant_repo(audio_retrieve=_audio_vec())
         qdrant_repo.scroll_filtered.side_effect = RuntimeError("qdrant down")
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
@@ -1106,7 +1556,7 @@ class TestQDrantRepoRetrieve:
     def test_retrieve_returns_vector_for_existing_point(self, qdrant_repo):
         """retrieve() returns the stored vector when the point exists."""
         pid = _uid()
-        v = _vec(0.42)
+        v = _audio_vec(0.42)
         qdrant_repo.upsert("audio_features", pid, v, {"status": "ready"})
 
         result = qdrant_repo.retrieve("audio_features", pid)
@@ -1124,7 +1574,7 @@ class TestQDrantRepoRetrieve:
     def test_retrieve_returns_none_after_delete(self, qdrant_repo):
         """retrieve() returns None after the point has been deleted."""
         pid = _uid()
-        v = _vec(0.1)
+        v = _audio_vec(0.1)
         qdrant_repo.upsert("audio_features", pid, v, {})
         qdrant_repo.delete("audio_features", pid)
 
@@ -1198,7 +1648,7 @@ class TestRecommendationsEndpoint:
             )
 
         # Store the track's audio vector
-        v = _vec(0.3)
+        v = _audio_vec(0.3)
         qdrant_client.upsert(
             collection_name="audio_features",
             points=[
@@ -1396,7 +1846,7 @@ class TestQueueServiceFinishPlayingIntegration:
         """finish_playing calls update_portrait when qdrant_repo is provided."""
         entry = self._make_queue_entry("e-1", "s-1", "p-1", "t-1")
 
-        qdrant_repo = _make_qdrant_repo(retrieve_return=_vec(), search_return=[])
+        qdrant_repo = _make_qdrant_repo(audio_retrieve=_audio_vec())
         service, repo = await self._build_queue_service_with_repo(entry, qdrant_repo)
 
         # Provide participant data for portrait update
@@ -1408,7 +1858,7 @@ class TestQueueServiceFinishPlayingIntegration:
         with patch(
             "app.services.recommendation_service.RecommendationService.update_portrait",
             new_callable=AsyncMock,
-            return_value=_vec(),
+            return_value=_audio_vec(),
         ) as mock_update, patch(
             "app.services.recommendation_service.RecommendationService.record_transition",
             new_callable=AsyncMock,
@@ -1421,7 +1871,7 @@ class TestQueueServiceFinishPlayingIntegration:
         """finish_playing calls record_transition when qdrant_repo is provided."""
         entry = self._make_queue_entry("e-1", "s-1", "p-1", "t-1")
 
-        qdrant_repo = _make_qdrant_repo(retrieve_return=_vec(), search_return=[])
+        qdrant_repo = _make_qdrant_repo(audio_retrieve=_audio_vec())
         service, repo = await self._build_queue_service_with_repo(entry, qdrant_repo)
 
         repo.get_participant.return_value = _make_participant("p-1", tracks_played=1)

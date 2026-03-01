@@ -69,7 +69,8 @@ CREATE TABLE IF NOT EXISTS participants (
     id TEXT PRIMARY KEY NOT NULL,
     session_id TEXT NOT NULL,
     display_name TEXT NOT NULL,
-    portrait_vector TEXT,  -- JSON float array
+    portrait_vector TEXT,  -- JSON float array (45-dim audio)
+    lyrics_portrait_vector TEXT,  -- JSON float array (384-dim lyrics)
     tracks_played INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
 );

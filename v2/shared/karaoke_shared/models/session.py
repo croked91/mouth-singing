@@ -41,6 +41,7 @@ class Participant(BaseModel):
     session_id: str
     display_name: str
     portrait_vector: list[float] | None = None
+    lyrics_portrait_vector: list[float] | None = None
     tracks_played: int = 0
     created_at: str
 

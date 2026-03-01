@@ -108,6 +108,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     db = await init_db(settings.database_url)
     app.state.db = db
 
+    # 2b. Safe schema migrations for existing databases.
+    try:
+        await db.execute(
+            "ALTER TABLE participants ADD COLUMN lyrics_portrait_vector TEXT"
+        )
+        await db.commit()
+        logger.info("migration_applied", column="lyrics_portrait_vector")
+    except Exception:
+        pass  # Column already exists.
+
     # 3. QDrant — create client and ensure collections exist.
     qdrant = QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port)
     app.state.qdrant = qdrant

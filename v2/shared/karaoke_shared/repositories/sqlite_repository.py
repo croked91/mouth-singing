@@ -369,10 +369,11 @@ class SQLiteRepository:
         await self.db.execute(
             """
             INSERT INTO participants (
-                id, session_id, display_name, portrait_vector, tracks_played, created_at
+                id, session_id, display_name, portrait_vector,
+                lyrics_portrait_vector, tracks_played, created_at
             ) VALUES (
                 :id, :session_id, :display_name, :portrait_vector,
-                :tracks_played, :created_at
+                :lyrics_portrait_vector, :tracks_played, :created_at
             )
             """,
             {
@@ -380,6 +381,7 @@ class SQLiteRepository:
                 "session_id": data.session_id,
                 "display_name": data.display_name,
                 "portrait_vector": None,
+                "lyrics_portrait_vector": None,
                 "tracks_played": data.tracks_played,
                 "created_at": data.created_at,
             },
@@ -411,12 +413,19 @@ class SQLiteRepository:
         return self._participant_from_row(row)
 
     async def update_portrait(
-        self, participant_id: str, portrait_vector: list[float]
+        self,
+        participant_id: str,
+        portrait_vector: list[float],
+        lyrics_portrait_vector: list[float] | None = None,
     ) -> None:
-        """Persist the participant's interest portrait vector as JSON."""
+        """Persist the participant's portrait vectors (audio + lyrics) as JSON."""
         await self.db.execute(
-            "UPDATE participants SET portrait_vector = ? WHERE id = ?",
-            (json.dumps(portrait_vector), participant_id),
+            "UPDATE participants SET portrait_vector = ?, lyrics_portrait_vector = ? WHERE id = ?",
+            (
+                json.dumps(portrait_vector),
+                json.dumps(lyrics_portrait_vector) if lyrics_portrait_vector is not None else None,
+                participant_id,
+            ),
         )
         await self.db.commit()
 
@@ -436,11 +445,17 @@ class SQLiteRepository:
         if isinstance(raw_portrait, str):
             portrait_vector = json.loads(raw_portrait)
 
+        lyrics_portrait_vector: list[float] | None = None
+        raw_lyrics = data.get("lyrics_portrait_vector")
+        if isinstance(raw_lyrics, str):
+            lyrics_portrait_vector = json.loads(raw_lyrics)
+
         return Participant(
             id=data["id"],
             session_id=data["session_id"],
             display_name=data["display_name"],
             portrait_vector=portrait_vector,
+            lyrics_portrait_vector=lyrics_portrait_vector,
             tracks_played=data.get("tracks_played", 0),
             created_at=data["created_at"],
         )
