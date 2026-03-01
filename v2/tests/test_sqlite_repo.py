@@ -389,6 +389,33 @@ class TestParticipants:
         assert len(updated.portrait_vector) == 45
         assert updated.portrait_vector == pytest.approx(vector)
 
+    async def test_update_portrait_preserves_lyrics_when_none(self, sqlite_repo: SQLiteRepository):
+        """When lyrics_portrait_vector is None, existing lyrics portrait must be preserved."""
+        # Arrange
+        session = await sqlite_repo.create_session(_session())
+        participant = await sqlite_repo.create_participant(
+            _participant(session_id=session.id)
+        )
+        audio_vec = [float(i) / 100.0 for i in range(45)]
+        lyrics_vec = [float(i) / 1000.0 for i in range(384)]
+
+        # Set both portraits
+        await sqlite_repo.update_portrait(participant.id, audio_vec, lyrics_vec)
+        with_lyrics = await sqlite_repo.get_participant(participant.id)
+        assert with_lyrics is not None
+        assert with_lyrics.lyrics_portrait_vector is not None
+
+        # Act: update portrait with lyrics=None (track without lyrics)
+        new_audio = [float(i) / 50.0 for i in range(45)]
+        await sqlite_repo.update_portrait(participant.id, new_audio, None)
+        updated = await sqlite_repo.get_participant(participant.id)
+
+        # Assert: audio updated, lyrics preserved
+        assert updated is not None
+        assert updated.portrait_vector == pytest.approx(new_audio)
+        assert updated.lyrics_portrait_vector is not None
+        assert updated.lyrics_portrait_vector == pytest.approx(lyrics_vec)
+
     async def test_increment_tracks_played(self, sqlite_repo: SQLiteRepository):
         # Arrange
         session = await sqlite_repo.create_session(_session())

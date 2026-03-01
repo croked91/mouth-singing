@@ -3,7 +3,7 @@
 ## Статус проекта
 **Текущая фаза:** 16 — Bootstrap pipeline v2 + массовый импорт треков
 **Дата начала:** 2026-02-22
-**Последний коммит:** c898bab (GPU memory leak fix)
+**Последний коммит:** (pending) Recommendation system audit bugfixes
 **Структура:** Реализация в `v2/`, документация в корне
 
 ## Фаза 1: Анализ и проектирование
@@ -572,3 +572,19 @@
   - DB migration: lyrics_portrait_vector TEXT в participants
   - Fallback: tracks без текста → чистый audio KNN
   - Тесты: 98/98 pass (80 recommendation + 18 feature extractor, +13 новых для fusion)
+- **2026-03-01**: Глубокий аудит рекомендательной системы — mental trace всех флоу. Выявлено 3 бага:
+  1. **Critical**: Worker создаёт FeatureExtractor без normalization_stats_path → user-uploaded треки в другом нормализационном пространстве vs каталог (z-scored). Каскадно портит portrait при смешивании.
+  2. **Medium**: update_portrait стирает lyrics_portrait_vector при игре трека без лирики (NULL overwrite).
+  3. **Medium**: Fallback в get_recommendations при portrait=None и len(history)<2 → IndexError (500).
+- **2026-03-01**: Все 3 бага исправлены:
+  - Worker config: добавлен `NORMALIZATION_STATS_PATH` → передаётся в FeatureExtractor
+  - SQLite update_portrait: если lyrics=None — не трогает столбец (оставляет старый)
+  - Fallback: каскадная деградация history≥2→LAST_TWO, ==1→LAST, 0→POPULAR
+  - Docker Compose: env var `NORMALIZATION_STATS_PATH` для worker
+  - ADR-015: Нормализация фичей при пользовательских загрузках
+  - Тесты: 85+48 pass (5 новых: 3 fallback guard + 1 lyrics preservation + 1 SQLite portrait)
+- **2026-03-01**: Повторный аудит рекомендательной системы (mental trace всех flow). 3 фикса:
+  1. Zero vector guard в AudioPipeline: нулевые векторы (от сбоя librosa/sentence-transformers) больше не попадают в QDrant (cosine distance undefined для нулевого вектора). Логирование warning при пропуске.
+  2. Defensive guards в get_recommendations: при рассинхроне tracks_played и history (len(history) < tracks_played) — безопасная деградация к более простой стратегии вместо IndexError.
+  3. Cold start diversity: `list_popular` ORDER BY `play_count DESC, RANDOM()` — треки с одинаковым play_count перемешиваются, ломая positive feedback loop при бутстрапе (все play_count=0).
+  - Тесты: 132/132 pass (0 новых — существующие тесты покрывают все изменённые пути)

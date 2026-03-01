@@ -1971,3 +1971,143 @@ class TestQueueServiceFinishPlayingIntegration:
         assert call_arg.session_id == "s-1"
         assert call_arg.participant_id == "p-1"
         assert call_arg.track_id == "t-1"
+
+
+# ===========================================================================
+# TestFallbackGuard — regression tests for the IndexError fix
+# ===========================================================================
+
+
+class TestFallbackGuard:
+    """Verify the cascading fallback when portrait is missing and history is short."""
+
+    async def test_fallback_with_empty_history_uses_popular(self):
+        """tracks_played=5 but history is empty and portrait is None → POPULAR."""
+        participant_id = "p-1"
+        participant = _make_participant(
+            participant_id, tracks_played=5, portrait_vector=None
+        )
+        popular_track = _make_track(_uid())
+        sqlite_repo = _make_sqlite_repo(
+            history=[], participant=participant, popular=[popular_track]
+        )
+        qdrant_repo = _make_qdrant_repo()
+
+        service = RecommendationService(sqlite_repo, qdrant_repo)
+        strategy, results = await service.get_recommendations(
+            participant_id, "s-1", limit=5
+        )
+
+        assert strategy is RecommendationStrategy.POPULAR
+
+    async def test_fallback_with_one_history_entry_uses_last(self):
+        """tracks_played=3 but only 1 history entry and no portrait → LAST."""
+        participant_id = "p-1"
+        track_id = _uid()
+        history = [_make_history_entry(participant_id, track_id)]
+        participant = _make_participant(
+            participant_id, tracks_played=3, portrait_vector=None
+        )
+        popular_track = _make_track(_uid())
+        sqlite_repo = _make_sqlite_repo(
+            history=history, participant=participant, popular=[popular_track]
+        )
+        # Track has no audio vector → LAST falls back to POPULAR
+        qdrant_repo = _make_qdrant_repo(audio_retrieve=None, lyrics_retrieve=None)
+
+        service = RecommendationService(sqlite_repo, qdrant_repo)
+        strategy, _ = await service.get_recommendations(
+            participant_id, "s-1", limit=5
+        )
+
+        # LAST strategy selected, then falls back to POPULAR internally
+        assert strategy is RecommendationStrategy.POPULAR
+
+    async def test_fallback_with_two_history_entries_uses_last_two_avg(self):
+        """tracks_played=4 but no portrait and 2 history entries → LAST_TWO_AVG."""
+        participant_id = "p-1"
+        t1, t2 = _uid(), _uid()
+        history = [
+            _make_history_entry(participant_id, t1),
+            _make_history_entry(participant_id, t2),
+        ]
+        participant = _make_participant(
+            participant_id, tracks_played=4, portrait_vector=None
+        )
+        sqlite_repo = _make_sqlite_repo(history=history, participant=participant)
+        qdrant_repo = _make_qdrant_repo(
+            audio_retrieve=_audio_vec(0.1), lyrics_retrieve=None
+        )
+
+        service = RecommendationService(sqlite_repo, qdrant_repo)
+        strategy, _ = await service.get_recommendations(
+            participant_id, "s-1", limit=5
+        )
+
+        assert strategy is RecommendationStrategy.LAST_TWO_AVG
+
+
+# ===========================================================================
+# TestLyricsPortraitPreservation — regression tests for lyrics erasure fix
+# ===========================================================================
+
+
+class TestLyricsPortraitPreservation:
+    """Verify that lyrics portrait is preserved when playing a track without lyrics."""
+
+    async def test_no_lyrics_track_preserves_existing_lyrics_portrait(self):
+        """Playing a track with no lyrics embedding must NOT erase the lyrics portrait."""
+        participant_id = "p-1"
+        track_id = _uid()
+        old_audio = _audio_vec(0.2)
+        old_lyrics = _lyrics_vec(0.5)
+
+        participant = _make_participant(
+            participant_id,
+            tracks_played=3,
+            portrait_vector=old_audio,
+            lyrics_portrait_vector=old_lyrics,
+        )
+        sqlite_repo = _make_sqlite_repo(participant=participant)
+        # Track has audio but no lyrics vector
+        qdrant_repo = _make_qdrant_repo(
+            audio_retrieve=_audio_vec(0.8), lyrics_retrieve=None
+        )
+
+        service = RecommendationService(sqlite_repo, qdrant_repo)
+        await service.update_portrait(participant_id, track_id)
+
+        # update_portrait should be called with lyrics_portrait=None
+        # (meaning "don't change it" — the SQLite repo handles this)
+        sqlite_repo.update_portrait.assert_called_once()
+        call_args = sqlite_repo.update_portrait.call_args.args
+        _, _, call_lyrics_vec = call_args
+        assert call_lyrics_vec is None
+
+    async def test_lyrics_track_updates_lyrics_portrait(self):
+        """Playing a track WITH lyrics should update the lyrics portrait normally."""
+        participant_id = "p-1"
+        track_id = _uid()
+        old_audio = _audio_vec(0.2)
+        old_lyrics = _lyrics_vec(0.5)
+
+        participant = _make_participant(
+            participant_id,
+            tracks_played=3,
+            portrait_vector=old_audio,
+            lyrics_portrait_vector=old_lyrics,
+        )
+        sqlite_repo = _make_sqlite_repo(participant=participant)
+        qdrant_repo = _make_qdrant_repo(
+            audio_retrieve=_audio_vec(0.8), lyrics_retrieve=_lyrics_vec(0.9)
+        )
+
+        service = RecommendationService(sqlite_repo, qdrant_repo)
+        await service.update_portrait(participant_id, track_id)
+
+        sqlite_repo.update_portrait.assert_called_once()
+        call_args = sqlite_repo.update_portrait.call_args.args
+        _, _, call_lyrics_vec = call_args
+        # Lyrics portrait should be updated (not None)
+        assert call_lyrics_vec is not None
+        assert len(call_lyrics_vec) == _LYRICS_DIM

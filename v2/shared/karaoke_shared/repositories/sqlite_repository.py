@@ -165,7 +165,7 @@ class SQLiteRepository:
         """Return the most-played ready tracks, ordered by play count descending."""
         cursor = await self.db.execute(
             "SELECT * FROM tracks"
-            " WHERE status = 'ready' ORDER BY play_count DESC LIMIT ?",
+            " WHERE status = 'ready' ORDER BY play_count DESC, RANDOM() LIMIT ?",
             (limit,),
         )
         rows = await cursor.fetchall()
@@ -418,15 +418,26 @@ class SQLiteRepository:
         portrait_vector: list[float],
         lyrics_portrait_vector: list[float] | None = None,
     ) -> None:
-        """Persist the participant's portrait vectors (audio + lyrics) as JSON."""
-        await self.db.execute(
-            "UPDATE participants SET portrait_vector = ?, lyrics_portrait_vector = ? WHERE id = ?",
-            (
-                json.dumps(portrait_vector),
-                json.dumps(lyrics_portrait_vector) if lyrics_portrait_vector is not None else None,
-                participant_id,
-            ),
-        )
+        """Persist the participant's portrait vectors (audio + lyrics) as JSON.
+
+        When *lyrics_portrait_vector* is ``None`` the lyrics column is left
+        unchanged — this prevents erasing a previously accumulated lyrics
+        portrait when the current track has no lyrics.
+        """
+        if lyrics_portrait_vector is not None:
+            await self.db.execute(
+                "UPDATE participants SET portrait_vector = ?, lyrics_portrait_vector = ? WHERE id = ?",
+                (
+                    json.dumps(portrait_vector),
+                    json.dumps(lyrics_portrait_vector),
+                    participant_id,
+                ),
+            )
+        else:
+            await self.db.execute(
+                "UPDATE participants SET portrait_vector = ? WHERE id = ?",
+                (json.dumps(portrait_vector), participant_id),
+            )
         await self.db.commit()
 
     async def increment_tracks_played(self, participant_id: str) -> None:

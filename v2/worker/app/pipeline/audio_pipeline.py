@@ -218,7 +218,9 @@ class AudioPipeline:
                     "status": "ready",
                 }
 
-                if feature_vector is not None:
+                if feature_vector is not None and any(
+                    v != 0.0 for v in feature_vector
+                ):
                     await asyncio.to_thread(
                         self.qdrant_repo.upsert,
                         "audio_features",
@@ -226,14 +228,28 @@ class AudioPipeline:
                         feature_vector,
                         payload,
                     )
+                elif feature_vector is not None:
+                    logger.warning(
+                        "skipping_zero_audio_vector",
+                        job_id=job.id,
+                        track_id=job.track_id,
+                    )
 
-                if lyric_vector is not None:
+                if lyric_vector is not None and any(
+                    v != 0.0 for v in lyric_vector
+                ):
                     await asyncio.to_thread(
                         self.qdrant_repo.upsert,
                         "lyrics_embeddings",
                         job.track_id,
                         lyric_vector,
                         payload,
+                    )
+                elif lyric_vector is not None:
+                    logger.warning(
+                        "skipping_zero_lyrics_vector",
+                        job_id=job.id,
+                        track_id=job.track_id,
                     )
 
                 qdrant_synced = feature_vector is not None or lyric_vector is not None

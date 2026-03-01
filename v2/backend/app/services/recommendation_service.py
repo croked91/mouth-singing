@@ -100,9 +100,17 @@ class RecommendationService:
             return await self._popular_strategy(played_ids, limit)
 
         if tracks_played == 1:
+            if len(history) < 1:
+                return await self._popular_strategy(played_ids, limit)
             return await self._last_strategy(history[0].track_id, played_ids, limit)
 
         if tracks_played == 2:
+            if len(history) < 2:
+                if len(history) == 1:
+                    return await self._last_strategy(
+                        history[0].track_id, played_ids, limit
+                    )
+                return await self._popular_strategy(played_ids, limit)
             return await self._last_two_avg_strategy(
                 history[0].track_id, history[1].track_id, played_ids, limit
             )
@@ -116,10 +124,16 @@ class RecommendationService:
                 limit,
             )
 
-        # Fallback: if portrait is somehow missing, use last two.
-        return await self._last_two_avg_strategy(
-            history[0].track_id, history[1].track_id, played_ids, limit
-        )
+        # Fallback: portrait missing — cascade to a strategy the history can support.
+        if len(history) >= 2:
+            return await self._last_two_avg_strategy(
+                history[0].track_id, history[1].track_id, played_ids, limit
+            )
+        if len(history) == 1:
+            return await self._last_strategy(
+                history[0].track_id, played_ids, limit
+            )
+        return await self._popular_strategy(played_ids, limit)
 
     # ------------------------------------------------------------------
     # Strategies
@@ -427,7 +441,9 @@ class RecommendationService:
         # Audio portrait EMA.
         new_audio = _ema_update(participant.portrait_vector, audio_vec, n)
 
-        # Lyrics portrait EMA.
+        # Lyrics portrait EMA — only update if the current track has lyrics.
+        # When lyrics_vec is None (instrumental / no transcription), we
+        # preserve the previously accumulated lyrics portrait as-is.
         new_lyrics: list[float] | None = None
         if lyrics_vec is not None:
             new_lyrics = _ema_update(

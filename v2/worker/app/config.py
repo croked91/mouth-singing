@@ -20,6 +20,11 @@ class WorkerSettings(BaseSettings):
     poll_interval_sec: float = 2.0
     log_level: str = "INFO"
 
+    # Audio feature normalization stats (z-score).  Must point to the JSON
+    # file produced by ``scripts/reindex_audio_features.py`` so that user-uploaded
+    # tracks are normalised into the same vector space as the bootstrap catalog.
+    normalization_stats_path: str = ""
+
     # QDrant vector database settings (for feature/embedding sync).
     qdrant_host: str = "qdrant"
     qdrant_port: int = 6333

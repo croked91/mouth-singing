@@ -61,6 +61,7 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       QDRANT_HOST: qdrant
       QDRANT_PORT: "6333"
+      NORMALIZATION_STATS_PATH: ${NORMALIZATION_STATS_PATH:-/data/models/feature_normalization_stats.json}
       SONOIX_API_KEY: ${SONOIX_API_KEY:-}
       SONOIX_API_URL: ${SONOIX_API_URL:-https://api.soniox.com}
     volumes:

@@ -143,8 +143,14 @@ async def main() -> None:
         try:
             from karaoke_shared.ml.feature_extractor import FeatureExtractor
 
-            feature_extractor = FeatureExtractor()
-            logger.info("feature_extractor_loaded")
+            fe_kwargs: dict = {}
+            if settings.normalization_stats_path:
+                fe_kwargs["normalization_stats_path"] = settings.normalization_stats_path
+            feature_extractor = FeatureExtractor(**fe_kwargs)
+            logger.info(
+                "feature_extractor_loaded",
+                normalization_stats=settings.normalization_stats_path or "none",
+            )
         except Exception:
             logger.warning("feature_extractor_unavailable", hint="librosa may not be installed")
 
