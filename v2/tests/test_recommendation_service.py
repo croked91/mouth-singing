@@ -2,7 +2,7 @@
 
 Coverage:
 - RecommendationService.get_recommendations — all four strategy branches
-- RecommendationService.update_portrait — first-track and running-average paths
+- RecommendationService.update_portrait — first-track and EMA paths
 - RecommendationService.record_transition — records and skips cases
 - QDrantRepository.retrieve — existing and non-existing point
 - GET /api/v1/recommendations — endpoint contract and RecommendationResponse schema
@@ -15,6 +15,7 @@ for unit tests; integration tests use the real in-memory fixtures from conftest.
 
 from __future__ import annotations
 
+import math
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -42,6 +43,19 @@ def _vec(seed: float = 0.1) -> list[float]:
     raw = [(seed + i * 0.001) for i in range(_DIM)]
     norm = sum(x**2 for x in raw) ** 0.5
     return [x / norm for x in raw]
+
+
+def _l2_norm(v: list[float]) -> float:
+    """Compute the L2 norm of a vector."""
+    return math.sqrt(sum(x**2 for x in v))
+
+
+def _l2_normalize(v: list[float]) -> list[float]:
+    """L2-normalize a vector."""
+    norm = _l2_norm(v)
+    if norm < 1e-8:
+        return v
+    return [x / norm for x in v]
 
 
 def _make_track(track_id: str | None = None) -> Track:
@@ -93,11 +107,18 @@ def _make_sqlite_repo(
     track: Track | None = None,
     participant: Participant | None = None,
 ) -> AsyncMock:
-    """Build an AsyncMock SQLiteRepository with configurable return values."""
+    """Build an AsyncMock SQLiteRepository with configurable return values.
+
+    Includes all methods used by the new recommendation_service implementation:
+    - list_random (70/30 popular mix)
+    - get_tracks_by_ids (batch KNN result enrichment)
+    """
     repo = AsyncMock()
     repo.get_history_by_participant.return_value = history or []
     repo.list_popular.return_value = popular or []
+    repo.list_random.return_value = []
     repo.get_track.return_value = track
+    repo.get_tracks_by_ids.return_value = {}
     repo.get_participant.return_value = participant
     repo.update_portrait.return_value = None
     return repo
@@ -109,13 +130,17 @@ def _make_qdrant_repo(
 ) -> MagicMock:
     """Build a MagicMock QDrantRepository.
 
-    retrieve() and search() are synchronous methods called via asyncio.to_thread,
-    so they are plain MagicMocks (not AsyncMocks).
+    retrieve(), search(), upsert(), retrieve_payload(), and scroll_filtered()
+    are synchronous methods called via asyncio.to_thread, so they are plain
+    MagicMocks (not AsyncMocks).
     """
     repo = MagicMock()
     repo.retrieve.return_value = retrieve_return
     repo.search.return_value = search_return or []
     repo.upsert.return_value = None
+    # New methods required by the updated implementation.
+    repo.retrieve_payload.return_value = None  # no existing transition by default
+    repo.scroll_filtered.return_value = []     # no transition candidates by default
     return repo
 
 
@@ -132,14 +157,17 @@ from app.services.recommendation_service import RecommendationService  # noqa: E
 
 
 class TestStrategySelection:
-    """Tests for automatic strategy selection based on history length."""
+    """Tests for automatic strategy selection based on tracks_played counter."""
 
     # -- 0 tracks played → POPULAR ------------------------------------------
 
     async def test_zero_history_uses_popular_strategy(self):
-        """With no play history the service returns the POPULAR strategy."""
+        """With tracks_played=0 the service returns the POPULAR strategy."""
         popular_track = _make_track()
-        sqlite_repo = _make_sqlite_repo(history=[], popular=[popular_track])
+        participant = _make_participant("p-1", tracks_played=0)
+        sqlite_repo = _make_sqlite_repo(
+            history=[], popular=[popular_track], participant=participant
+        )
         qdrant_repo = _make_qdrant_repo()
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
@@ -148,9 +176,12 @@ class TestStrategySelection:
         assert strategy is RecommendationStrategy.POPULAR
 
     async def test_zero_history_calls_list_popular(self):
-        """With no history, list_popular is called to source results."""
+        """With tracks_played=0, list_popular is called to source results."""
         popular_track = _make_track()
-        sqlite_repo = _make_sqlite_repo(history=[], popular=[popular_track])
+        participant = _make_participant("p-1", tracks_played=0)
+        sqlite_repo = _make_sqlite_repo(
+            history=[], popular=[popular_track], participant=participant
+        )
         qdrant_repo = _make_qdrant_repo()
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
@@ -161,7 +192,10 @@ class TestStrategySelection:
     async def test_zero_history_returns_popular_tracks(self):
         """Results contain the popular track with similarity_score=0.0."""
         popular_track = _make_track()
-        sqlite_repo = _make_sqlite_repo(history=[], popular=[popular_track])
+        participant = _make_participant("p-1", tracks_played=0)
+        sqlite_repo = _make_sqlite_repo(
+            history=[], popular=[popular_track], participant=participant
+        )
         qdrant_repo = _make_qdrant_repo()
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
@@ -174,32 +208,33 @@ class TestStrategySelection:
     # -- 1 track played → LAST ----------------------------------------------
 
     async def test_one_history_uses_last_strategy(self):
-        """With exactly 1 history entry the service returns the LAST strategy."""
+        """With tracks_played=1 the service returns the LAST strategy."""
         track_id = _uid()
+        new_track_id = _uid()
         history = [_make_history_entry("p-1", track_id)]
-        sqlite_repo = _make_sqlite_repo(history=history, track=_make_track(track_id))
+        participant = _make_participant("p-1", tracks_played=1)
+        sqlite_repo = _make_sqlite_repo(
+            history=history, participant=participant
+        )
+        sqlite_repo.get_tracks_by_ids.return_value = {
+            new_track_id: _make_track(new_track_id)
+        }
         qdrant_repo = _make_qdrant_repo(
             retrieve_return=_vec(),
-            search_return=[(track_id, 0.95, {"status": "ready"})],
+            search_return=[(new_track_id, 0.95, {"status": "ready"})],
         )
-        sqlite_repo.get_track.return_value = _make_track(track_id)
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
-
-        # Exclude the played track so search results map to a fresh track
-        new_track_id = _uid()
-        qdrant_repo.search.return_value = [(new_track_id, 0.95, {"status": "ready"})]
-        sqlite_repo.get_track.return_value = _make_track(new_track_id)
-
         strategy, _ = await service.get_recommendations("p-1", "s-1", limit=5)
 
         assert strategy is RecommendationStrategy.LAST
 
     async def test_one_history_uses_last_track_vector(self):
-        """With 1 history entry, retrieve() is called with the last track id."""
+        """With tracks_played=1, retrieve() is called with the last track id."""
         track_id = _uid()
         history = [_make_history_entry("p-1", track_id)]
-        sqlite_repo = _make_sqlite_repo(history=history)
+        participant = _make_participant("p-1", tracks_played=1)
+        sqlite_repo = _make_sqlite_repo(history=history, participant=participant)
         qdrant_repo = _make_qdrant_repo(retrieve_return=_vec(), search_return=[])
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
@@ -210,10 +245,11 @@ class TestStrategySelection:
     # -- 2 tracks played → LAST_TWO_AVG ------------------------------------
 
     async def test_two_history_uses_last_two_avg_strategy(self):
-        """With exactly 2 history entries the service returns LAST_TWO_AVG."""
+        """With tracks_played=2 the service returns LAST_TWO_AVG."""
         t1, t2 = _uid(), _uid()
         history = [_make_history_entry("p-1", t1), _make_history_entry("p-1", t2)]
-        sqlite_repo = _make_sqlite_repo(history=history)
+        participant = _make_participant("p-1", tracks_played=2)
+        sqlite_repo = _make_sqlite_repo(history=history, participant=participant)
         qdrant_repo = _make_qdrant_repo(retrieve_return=_vec(), search_return=[])
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
@@ -222,10 +258,11 @@ class TestStrategySelection:
         assert strategy is RecommendationStrategy.LAST_TWO_AVG
 
     async def test_two_history_retrieves_both_vectors(self):
-        """With 2 history entries, retrieve() is called for both track IDs."""
+        """With tracks_played=2, retrieve() is called for both track IDs."""
         t1, t2 = _uid(), _uid()
         history = [_make_history_entry("p-1", t1), _make_history_entry("p-1", t2)]
-        sqlite_repo = _make_sqlite_repo(history=history)
+        participant = _make_participant("p-1", tracks_played=2)
+        sqlite_repo = _make_sqlite_repo(history=history, participant=participant)
 
         v1, v2 = _vec(0.1), _vec(0.2)
         retrieve_side = {t1: v1, t2: v2}
@@ -240,14 +277,17 @@ class TestStrategySelection:
         assert t2 in retrieved_ids
 
     async def test_two_history_knn_uses_averaged_vector(self):
-        """With 2 history entries, the KNN search uses the average of both vectors."""
+        """With tracks_played=2, the KNN search uses the L2-normalised average of both vectors."""
         t1, t2 = _uid(), _uid()
         history = [_make_history_entry("p-1", t1), _make_history_entry("p-1", t2)]
-        sqlite_repo = _make_sqlite_repo(history=history)
+        participant = _make_participant("p-1", tracks_played=2)
+        sqlite_repo = _make_sqlite_repo(history=history, participant=participant)
 
         v1 = [1.0] * _DIM
         v2 = [3.0] * _DIM
-        expected_avg = [2.0] * _DIM
+        # Average is [2.0]*DIM, then L2-normalised → [1/sqrt(45)]*DIM
+        raw_avg = [2.0] * _DIM
+        expected_avg = _l2_normalize(raw_avg)
 
         retrieve_side = {t1: v1, t2: v2}
         qdrant_repo = _make_qdrant_repo(search_return=[])
@@ -262,7 +302,7 @@ class TestStrategySelection:
     # -- 3+ tracks played → SESSION_AVG ------------------------------------
 
     async def test_three_history_uses_session_avg_strategy(self):
-        """With 3+ history entries and a portrait, SESSION_AVG is used."""
+        """With tracks_played=3 and a portrait, SESSION_AVG is used."""
         participant_id = "p-1"
         portrait = _vec(0.5)
         history = [
@@ -280,7 +320,7 @@ class TestStrategySelection:
         assert strategy is RecommendationStrategy.SESSION_AVG
 
     async def test_three_history_knn_uses_portrait_vector(self):
-        """With 3+ history entries, the KNN search uses the participant's portrait."""
+        """With tracks_played=3, the KNN search uses the participant's portrait."""
         participant_id = "p-1"
         portrait = _vec(0.77)
         history = [
@@ -315,15 +355,16 @@ class TestFilteringPlayedTracks:
         other_track = _make_track(other_id)
 
         history = [_make_history_entry("p-1", played_id)]
+        # tracks_played=1 + retrieve=None + no transitions → falls back to popular
+        participant = _make_participant("p-1", tracks_played=1)
         sqlite_repo = _make_sqlite_repo(
             history=history,
             popular=[played_track, other_track],
+            participant=participant,
         )
         qdrant_repo = _make_qdrant_repo(retrieve_return=None, search_return=[])
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
-        # With 1 history entry we'd normally use LAST, but vector is None → popular fallback
-        qdrant_repo.retrieve.return_value = None
         _, results = await service.get_recommendations("p-1", "s-1", limit=10)
 
         result_ids = {r.track.id for r in results}
@@ -336,7 +377,10 @@ class TestFilteringPlayedTracks:
         new_id = _uid()
 
         history = [_make_history_entry("p-1", played_id)]
-        sqlite_repo = _make_sqlite_repo(history=history, track=_make_track(new_id))
+        participant = _make_participant("p-1", tracks_played=1)
+        # get_tracks_by_ids returns only the new track (played_id is pre-filtered)
+        sqlite_repo = _make_sqlite_repo(history=history, participant=participant)
+        sqlite_repo.get_tracks_by_ids.return_value = {new_id: _make_track(new_id)}
 
         # QDrant returns both played and a new track
         qdrant_repo = _make_qdrant_repo(
@@ -346,8 +390,6 @@ class TestFilteringPlayedTracks:
                 (new_id, 0.90, {"status": "ready"}),
             ],
         )
-        # get_track called per hit — both IDs exist, but played_id should be filtered
-        sqlite_repo.get_track.side_effect = lambda tid: _make_track(tid)
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         _, results = await service.get_recommendations("p-1", "s-1", limit=5)
@@ -362,9 +404,14 @@ class TestFilteringPlayedTracks:
         new_ids = [_uid() for _ in range(10)]
 
         history = [_make_history_entry("p-1", played_id)]
+        participant = _make_participant("p-1", tracks_played=1)
         search_hits = [(played_id, 1.0, {})] + [(nid, 0.9, {}) for nid in new_ids]
-        sqlite_repo = _make_sqlite_repo(history=history)
-        sqlite_repo.get_track.side_effect = lambda tid: _make_track(tid)
+
+        sqlite_repo = _make_sqlite_repo(history=history, participant=participant)
+        # All new_ids are valid tracks
+        sqlite_repo.get_tracks_by_ids.return_value = {
+            nid: _make_track(nid) for nid in new_ids
+        }
         qdrant_repo = _make_qdrant_repo(retrieve_return=_vec(), search_return=search_hits)
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
@@ -382,11 +429,15 @@ class TestFallbackBehavior:
     """Tests for fallback paths when vectors or portrait data are unavailable."""
 
     async def test_last_strategy_falls_back_to_popular_when_no_vector(self):
-        """If the last track has no vector in QDrant, falls back to POPULAR."""
+        """If the last track has no vector in QDrant and no transitions, falls back to POPULAR."""
         track_id = _uid()
         popular_track = _make_track(_uid())
         history = [_make_history_entry("p-1", track_id)]
-        sqlite_repo = _make_sqlite_repo(history=history, popular=[popular_track])
+        participant = _make_participant("p-1", tracks_played=1)
+        sqlite_repo = _make_sqlite_repo(
+            history=history, popular=[popular_track], participant=participant
+        )
+        # scroll_filtered returns [] (default in _make_qdrant_repo), no transitions
         qdrant_repo = _make_qdrant_repo(retrieve_return=None)
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
@@ -401,7 +452,10 @@ class TestFallbackBehavior:
         t1, t2 = _uid(), _uid()
         popular_track = _make_track(_uid())
         history = [_make_history_entry("p-1", t1), _make_history_entry("p-1", t2)]
-        sqlite_repo = _make_sqlite_repo(history=history, popular=[popular_track])
+        participant = _make_participant("p-1", tracks_played=2)
+        sqlite_repo = _make_sqlite_repo(
+            history=history, popular=[popular_track], participant=participant
+        )
         qdrant_repo = _make_qdrant_repo(retrieve_return=None)
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
@@ -413,7 +467,10 @@ class TestFallbackBehavior:
         """If the second vector is missing, KNN uses the first vector alone."""
         t1, t2 = _uid(), _uid()
         history = [_make_history_entry("p-1", t1), _make_history_entry("p-1", t2)]
-        sqlite_repo = _make_sqlite_repo(history=history, track=_make_track(_uid()))
+        participant = _make_participant("p-1", tracks_played=2)
+        sqlite_repo = _make_sqlite_repo(
+            history=history, participant=participant, track=_make_track(_uid())
+        )
 
         v1 = _vec(0.1)
         retrieve_side = {t1: v1, t2: None}
@@ -433,7 +490,10 @@ class TestFallbackBehavior:
         """If the first vector is missing, KNN uses the second vector alone."""
         t1, t2 = _uid(), _uid()
         history = [_make_history_entry("p-1", t1), _make_history_entry("p-1", t2)]
-        sqlite_repo = _make_sqlite_repo(history=history, track=_make_track(_uid()))
+        participant = _make_participant("p-1", tracks_played=2)
+        sqlite_repo = _make_sqlite_repo(
+            history=history, participant=participant, track=_make_track(_uid())
+        )
 
         v2 = _vec(0.2)
         retrieve_side = {t1: None, t2: v2}
@@ -448,7 +508,7 @@ class TestFallbackBehavior:
         assert call_vector == pytest.approx(v2)
 
     async def test_session_avg_falls_back_to_last_two_avg_when_portrait_missing(self):
-        """With 3+ tracks but no portrait vector, falls back to LAST_TWO_AVG."""
+        """With tracks_played=3 but no portrait vector, falls back to LAST_TWO_AVG."""
         participant_id = "p-1"
         t1, t2, t3 = _uid(), _uid(), _uid()
         history = [
@@ -471,7 +531,7 @@ class TestFallbackBehavior:
         assert strategy is RecommendationStrategy.LAST_TWO_AVG
 
     async def test_session_avg_falls_back_when_participant_not_found(self):
-        """With 3+ tracks and participant row missing, falls back to LAST_TWO_AVG."""
+        """When participant row is missing, tracks_played=0 → POPULAR strategy."""
         participant_id = "p-1"
         t1, t2, t3 = _uid(), _uid(), _uid()
         history = [
@@ -479,23 +539,24 @@ class TestFallbackBehavior:
             _make_history_entry(participant_id, t2),
             _make_history_entry(participant_id, t3),
         ]
-        sqlite_repo = _make_sqlite_repo(history=history, participant=None)
-
-        v1, v2 = _vec(0.1), _vec(0.2)
-        retrieve_side = {t1: v1, t2: v2, t3: None}
+        # participant=None → tracks_played defaults to 0 → POPULAR
+        popular_track = _make_track(_uid())
+        sqlite_repo = _make_sqlite_repo(
+            history=history, participant=None, popular=[popular_track]
+        )
         qdrant_repo = _make_qdrant_repo(search_return=[])
-        qdrant_repo.retrieve.side_effect = lambda coll, tid: retrieve_side.get(tid)
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         strategy, _ = await service.get_recommendations(participant_id, "s-1", limit=5)
 
-        assert strategy is RecommendationStrategy.LAST_TWO_AVG
+        assert strategy is RecommendationStrategy.POPULAR
 
     async def test_knn_search_exception_returns_empty_results(self):
         """If QDrant search raises, the service returns an empty results list."""
         track_id = _uid()
         history = [_make_history_entry("p-1", track_id)]
-        sqlite_repo = _make_sqlite_repo(history=history)
+        participant = _make_participant("p-1", tracks_played=1)
+        sqlite_repo = _make_sqlite_repo(history=history, participant=participant)
         qdrant_repo = _make_qdrant_repo(retrieve_return=_vec())
         qdrant_repo.search.side_effect = RuntimeError("qdrant unavailable")
 
@@ -510,7 +571,10 @@ class TestFallbackBehavior:
         track_id = _uid()
         history = [_make_history_entry("p-1", track_id)]
         popular_track = _make_track(_uid())
-        sqlite_repo = _make_sqlite_repo(history=history, popular=[popular_track])
+        participant = _make_participant("p-1", tracks_played=1)
+        sqlite_repo = _make_sqlite_repo(
+            history=history, popular=[popular_track], participant=participant
+        )
         qdrant_repo = _make_qdrant_repo()
         qdrant_repo.retrieve.side_effect = ConnectionError("QDrant down")
 
@@ -522,18 +586,87 @@ class TestFallbackBehavior:
 
 
 # ===========================================================================
+# TestPopularStrategy
+# ===========================================================================
+
+
+class TestPopularStrategy:
+    """Tests specific to the _popular_strategy 70/30 mix."""
+
+    async def test_popular_strategy_calls_both_list_popular_and_list_random(self):
+        """_popular_strategy calls both list_popular and list_random for the 70/30 mix."""
+        popular_tracks = [_make_track() for _ in range(5)]
+        random_tracks = [_make_track() for _ in range(5)]
+        participant = _make_participant("p-1", tracks_played=0)
+        sqlite_repo = _make_sqlite_repo(
+            history=[], popular=popular_tracks, participant=participant
+        )
+        sqlite_repo.list_random.return_value = random_tracks
+        qdrant_repo = _make_qdrant_repo()
+
+        service = RecommendationService(sqlite_repo, qdrant_repo)
+        strategy, results = await service.get_recommendations("p-1", "s-1", limit=10)
+
+        assert strategy is RecommendationStrategy.POPULAR
+        sqlite_repo.list_popular.assert_called_once()
+        sqlite_repo.list_random.assert_called_once()
+
+    async def test_popular_strategy_mixes_popular_and_random_slots(self):
+        """Results include tracks from both popular and random buckets."""
+        # Use distinct IDs to identify which bucket each result came from
+        popular_id = _uid()
+        random_id = _uid()
+        popular_track = _make_track(popular_id)
+        random_track = _make_track(random_id)
+
+        participant = _make_participant("p-1", tracks_played=0)
+        sqlite_repo = _make_sqlite_repo(
+            history=[], popular=[popular_track], participant=participant
+        )
+        sqlite_repo.list_random.return_value = [random_track]
+        qdrant_repo = _make_qdrant_repo()
+
+        service = RecommendationService(sqlite_repo, qdrant_repo)
+        _, results = await service.get_recommendations("p-1", "s-1", limit=10)
+
+        result_ids = {r.track.id for r in results}
+        assert popular_id in result_ids
+        assert random_id in result_ids
+
+    async def test_popular_strategy_deduplicates_across_buckets(self):
+        """A track appearing in both popular and random is included only once."""
+        shared_id = _uid()
+        shared_track = _make_track(shared_id)
+        other_track = _make_track(_uid())
+
+        participant = _make_participant("p-1", tracks_played=0)
+        sqlite_repo = _make_sqlite_repo(
+            history=[], popular=[shared_track, other_track], participant=participant
+        )
+        # Same track also in random list
+        sqlite_repo.list_random.return_value = [shared_track]
+        qdrant_repo = _make_qdrant_repo()
+
+        service = RecommendationService(sqlite_repo, qdrant_repo)
+        _, results = await service.get_recommendations("p-1", "s-1", limit=10)
+
+        result_ids = [r.track.id for r in results]
+        assert result_ids.count(shared_id) == 1
+
+
+# ===========================================================================
 # TestUpdatePortrait
 # ===========================================================================
 
 
 class TestUpdatePortrait:
-    """Tests for RecommendationService.update_portrait."""
+    """Tests for RecommendationService.update_portrait (EMA + L2-renorm)."""
 
     async def test_first_track_portrait_equals_track_vector(self):
-        """When tracks_played == 1 (just incremented), portrait = track vector."""
+        """When tracks_played == 1 (just incremented), portrait = track vector (L2-normalised)."""
         participant_id = "p-1"
         track_id = _uid()
-        track_vector = _vec(0.3)
+        track_vector = _vec(0.3)  # already unit-norm
 
         participant = _make_participant(participant_id, tracks_played=1, portrait_vector=None)
         sqlite_repo = _make_sqlite_repo(participant=participant)
@@ -542,21 +675,22 @@ class TestUpdatePortrait:
         service = RecommendationService(sqlite_repo, qdrant_repo)
         result = await service.update_portrait(participant_id, track_id)
 
+        # L2-normalizing a unit vector gives back the same vector
         assert result == pytest.approx(track_vector)
-        sqlite_repo.update_portrait.assert_called_once_with(participant_id, track_vector)
+        sqlite_repo.update_portrait.assert_called_once_with(participant_id, pytest.approx(track_vector))
 
-    async def test_subsequent_track_running_average(self):
-        """After the first track, portrait is a running average (old*(n-1)+cur)/n."""
+    async def test_subsequent_track_uses_ema_formula(self):
+        """After the first track, portrait is computed with EMA: 0.3*cur + 0.7*old."""
         participant_id = "p-1"
         track_id = _uid()
 
         old_portrait = [2.0] * _DIM
         track_vector = [4.0] * _DIM
-        n = 2  # tracks_played already incremented to 2
+        # EMA: 0.3*4.0 + 0.7*2.0 = 1.2 + 1.4 = 2.6 per dimension
+        ema_raw = [0.3 * 4.0 + 0.7 * 2.0] * _DIM  # = [2.6]*45
+        expected = _l2_normalize(ema_raw)
 
-        expected = [(2.0 * (n - 1) + 4.0) / n] * _DIM  # = [3.0] * DIM
-
-        participant = _make_participant(participant_id, tracks_played=n, portrait_vector=old_portrait)
+        participant = _make_participant(participant_id, tracks_played=2, portrait_vector=old_portrait)
         sqlite_repo = _make_sqlite_repo(participant=participant)
         qdrant_repo = _make_qdrant_repo(retrieve_return=track_vector)
 
@@ -628,22 +762,21 @@ class TestUpdatePortrait:
         result = await service.update_portrait(participant_id, track_id)
 
         # The condition is: old_portrait is None OR n <= 1 → use track vector directly
+        # _vec(0.9) is already a unit vector, so L2-norm gives the same vector
         assert result == pytest.approx(track_vector)
 
-    async def test_running_average_formula_correct_for_n_equals_5(self):
-        """Verify running average math at n=5."""
+    async def test_ema_portrait_formula_with_n_equals_5(self):
+        """Verify EMA formula: 0.3*cur + 0.7*old (regardless of n), then L2-normalise."""
         participant_id = "p-1"
         track_id = _uid()
 
-        # Simple scalar vectors for easy verification
         old_portrait = [10.0] * _DIM
         track_vector = [5.0] * _DIM
-        n = 5  # tracks_played = 5
+        # EMA: 0.3*5.0 + 0.7*10.0 = 1.5 + 7.0 = 8.5 per dimension
+        ema_raw = [0.3 * 5.0 + 0.7 * 10.0] * _DIM  # = [8.5]*45
+        expected = _l2_normalize(ema_raw)
 
-        # expected = (10 * 4 + 5) / 5 = 45/5 = 9.0
-        expected = [(10.0 * 4 + 5.0) / 5] * _DIM
-
-        participant = _make_participant(participant_id, tracks_played=n, portrait_vector=old_portrait)
+        participant = _make_participant(participant_id, tracks_played=5, portrait_vector=old_portrait)
         sqlite_repo = _make_sqlite_repo(participant=participant)
         qdrant_repo = _make_qdrant_repo(retrieve_return=track_vector)
 
@@ -651,6 +784,26 @@ class TestUpdatePortrait:
         result = await service.update_portrait(participant_id, track_id)
 
         assert result == pytest.approx(expected)
+
+    async def test_portrait_is_l2_renormalized(self):
+        """The portrait returned by update_portrait has unit L2-norm."""
+        participant_id = "p-1"
+        track_id = _uid()
+
+        # Use non-unit vectors so the EMA result is not trivially normalised
+        old_portrait = [2.0] * _DIM
+        track_vector = [3.0] * _DIM
+
+        participant = _make_participant(participant_id, tracks_played=2, portrait_vector=old_portrait)
+        sqlite_repo = _make_sqlite_repo(participant=participant)
+        qdrant_repo = _make_qdrant_repo(retrieve_return=track_vector)
+
+        service = RecommendationService(sqlite_repo, qdrant_repo)
+        result = await service.update_portrait(participant_id, track_id)
+
+        assert result is not None
+        norm = _l2_norm(result)
+        assert norm == pytest.approx(1.0, abs=1e-6)
 
 
 # ===========================================================================
@@ -700,7 +853,7 @@ class TestRecordTransition:
         assert point_id == expected_id
 
     async def test_transition_payload_contains_from_to_tracks(self):
-        """Transition payload contains from_track_id, to_track_id, and weight=1."""
+        """Transition payload contains from_track_id, to_track_id, and weight=1 (new transition)."""
         participant_id = "p-1"
         prev_id = _uid()
         curr_id = _uid()
@@ -710,6 +863,8 @@ class TestRecordTransition:
         ]
         sqlite_repo = _make_sqlite_repo(history=history)
         qdrant_repo = _make_qdrant_repo(retrieve_return=_vec())
+        # retrieve_payload returns None → no existing transition → weight starts at 1
+        qdrant_repo.retrieve_payload.return_value = None
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         await service.record_transition(participant_id, curr_id)
@@ -790,11 +945,154 @@ class TestRecordTransition:
         ]
         sqlite_repo = _make_sqlite_repo(history=history)
         qdrant_repo = _make_qdrant_repo(retrieve_return=_vec())
+        # retrieve_payload succeeds but upsert raises
+        qdrant_repo.retrieve_payload.return_value = None
         qdrant_repo.upsert.side_effect = RuntimeError("qdrant failed")
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         # Must not raise
         await service.record_transition(participant_id, curr_id)
+
+    async def test_transition_weight_increments_when_existing(self):
+        """When retrieve_payload returns an existing payload with weight=3, new weight is 4."""
+        participant_id = "p-1"
+        prev_id = _uid()
+        curr_id = _uid()
+        history = [
+            _make_history_entry(participant_id, curr_id),
+            _make_history_entry(participant_id, prev_id),
+        ]
+        sqlite_repo = _make_sqlite_repo(history=history)
+        qdrant_repo = _make_qdrant_repo(retrieve_return=_vec())
+        # Simulate an existing transition with weight=3
+        qdrant_repo.retrieve_payload.return_value = {"weight": 3}
+
+        service = RecommendationService(sqlite_repo, qdrant_repo)
+        await service.record_transition(participant_id, curr_id)
+
+        _, _, _, payload = qdrant_repo.upsert.call_args.args
+        assert payload["weight"] == 4
+
+    async def test_retrieve_payload_called_before_upsert(self):
+        """retrieve_payload is called (read step) before upsert (write step)."""
+        participant_id = "p-1"
+        prev_id = _uid()
+        curr_id = _uid()
+        history = [
+            _make_history_entry(participant_id, curr_id),
+            _make_history_entry(participant_id, prev_id),
+        ]
+        sqlite_repo = _make_sqlite_repo(history=history)
+        qdrant_repo = _make_qdrant_repo(retrieve_return=_vec())
+
+        service = RecommendationService(sqlite_repo, qdrant_repo)
+        await service.record_transition(participant_id, curr_id)
+
+        qdrant_repo.retrieve_payload.assert_called_once()
+        qdrant_repo.upsert.assert_called_once()
+
+
+# ===========================================================================
+# TestTransitionCandidates
+# ===========================================================================
+
+
+class TestTransitionCandidates:
+    """Tests for the _transition_candidates helper and its use in _last_strategy."""
+
+    async def test_transition_candidates_used_in_last_strategy(self):
+        """When scroll_filtered returns transitions, they appear as top results."""
+        track_id = _uid()
+        transition_to_id = _uid()
+        history = [_make_history_entry("p-1", track_id)]
+        participant = _make_participant("p-1", tracks_played=1)
+
+        transition_track = _make_track(transition_to_id)
+        sqlite_repo = _make_sqlite_repo(history=history, participant=participant)
+        # get_tracks_by_ids used for both transition candidates and KNN results
+        sqlite_repo.get_tracks_by_ids.return_value = {
+            transition_to_id: transition_track
+        }
+
+        qdrant_repo = _make_qdrant_repo(retrieve_return=_vec(), search_return=[])
+        # Return a transition candidate from scroll_filtered
+        qdrant_repo.scroll_filtered.return_value = [
+            ("trans-point-id", 0.0, {
+                "from_track_id": track_id,
+                "to_track_id": transition_to_id,
+                "weight": 5,
+            })
+        ]
+
+        service = RecommendationService(sqlite_repo, qdrant_repo)
+        strategy, results = await service.get_recommendations("p-1", "s-1", limit=5)
+
+        assert strategy is RecommendationStrategy.LAST
+        result_ids = [r.track.id for r in results]
+        assert transition_to_id in result_ids
+
+    async def test_scroll_filtered_called_with_transitions_collection(self):
+        """_last_strategy calls scroll_filtered on the 'transitions' collection."""
+        track_id = _uid()
+        history = [_make_history_entry("p-1", track_id)]
+        participant = _make_participant("p-1", tracks_played=1)
+        sqlite_repo = _make_sqlite_repo(history=history, participant=participant)
+        qdrant_repo = _make_qdrant_repo(retrieve_return=_vec(), search_return=[])
+
+        service = RecommendationService(sqlite_repo, qdrant_repo)
+        await service.get_recommendations("p-1", "s-1", limit=5)
+
+        qdrant_repo.scroll_filtered.assert_called_once()
+        call_collection = qdrant_repo.scroll_filtered.call_args.args[0]
+        assert call_collection == "transitions"
+
+    async def test_transition_candidates_exclude_played_tracks(self):
+        """Transition candidates that were already played are excluded from results."""
+        track_id = _uid()
+        played_id = _uid()  # This is in played_ids (history)
+        history = [
+            _make_history_entry("p-1", track_id),
+            _make_history_entry("p-1", played_id),  # already played
+        ]
+        # tracks_played=2 → LAST_TWO_AVG strategy (not LAST)
+        # To test LAST strategy filtering, use tracks_played=1 with 1 history entry
+        # and set played_ids via history[0].track_id
+        track_id2 = _uid()
+        history2 = [_make_history_entry("p-1", track_id2)]
+        participant = _make_participant("p-1", tracks_played=1)
+
+        fresh_id = _uid()
+        sqlite_repo = _make_sqlite_repo(history=history2, participant=participant)
+        sqlite_repo.get_tracks_by_ids.return_value = {fresh_id: _make_track(fresh_id)}
+
+        qdrant_repo = _make_qdrant_repo(retrieve_return=_vec(), search_return=[])
+        # scroll_filtered returns transition to track_id2 (played) and fresh_id (not played)
+        qdrant_repo.scroll_filtered.return_value = [
+            ("p1", 0.0, {"from_track_id": track_id2, "to_track_id": track_id2, "weight": 2}),  # played
+            ("p2", 0.0, {"from_track_id": track_id2, "to_track_id": fresh_id, "weight": 1}),
+        ]
+
+        service = RecommendationService(sqlite_repo, qdrant_repo)
+        _, results = await service.get_recommendations("p-1", "s-1", limit=5)
+
+        result_ids = {r.track.id for r in results}
+        assert track_id2 not in result_ids  # played track excluded
+        assert fresh_id in result_ids
+
+    async def test_scroll_filtered_exception_returns_empty_candidates(self):
+        """If scroll_filtered raises, _transition_candidates returns [] (exception swallowed)."""
+        track_id = _uid()
+        history = [_make_history_entry("p-1", track_id)]
+        participant = _make_participant("p-1", tracks_played=1)
+        sqlite_repo = _make_sqlite_repo(history=history, participant=participant)
+        qdrant_repo = _make_qdrant_repo(retrieve_return=_vec(), search_return=[])
+        qdrant_repo.scroll_filtered.side_effect = RuntimeError("qdrant down")
+
+        service = RecommendationService(sqlite_repo, qdrant_repo)
+        # Should not raise; falls through to KNN only
+        strategy, results = await service.get_recommendations("p-1", "s-1", limit=5)
+
+        assert strategy is RecommendationStrategy.LAST
 
 
 # ===========================================================================

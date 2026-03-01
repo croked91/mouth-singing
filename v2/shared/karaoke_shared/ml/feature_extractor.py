@@ -1,6 +1,6 @@
 """Audio feature extractor for track recommendation.
 
-Produces a 45-dimensional L2-normalised vector from an instrumental WAV file:
+Produces a 45-dimensional L2-normalised vector from an audio file:
   - MFCC (13)
   - Chroma (12)
   - Spectral Contrast (7)
@@ -8,10 +8,19 @@ Produces a 45-dimensional L2-normalised vector from an instrumental WAV file:
   - Tempo, spectral centroid, spectral bandwidth, spectral rolloff,
     zero-crossing rate, RMS energy, spectral flatness (7)
 
+After raw feature extraction the vector undergoes:
+1. L2-normalisation (standard for cosine similarity).
+2. Z-score normalisation using pre-computed catalog statistics so that
+   every feature dimension contributes equally to cosine distance.
+3. Final L2-renormalisation.
+
 This module is synchronous. Call from async code via ``asyncio.to_thread``.
 """
 
 from __future__ import annotations
+
+import json
+from pathlib import Path
 
 import numpy as np
 import structlog
@@ -22,19 +31,47 @@ _EXPECTED_DIM = 45
 
 
 class FeatureExtractor:
-    """Extracts a 45-dimensional audio feature vector from a WAV file.
+    """Extracts a 45-dimensional audio feature vector from an audio file.
 
     Relies on ``librosa`` for all DSP operations. The resulting vector is
     L2-normalised so that cosine similarity equals dot-product similarity in
     QDrant.
+
+    Args:
+        normalization_stats_path: Optional path to a JSON file containing
+            ``{"mean": [...], "std": [...]}`` computed over the catalog.
+            When provided, the vector is z-score normalised before the
+            final L2-normalisation step.
     """
+
+    def __init__(self, normalization_stats_path: str | None = None) -> None:
+        self._norm_mean: np.ndarray | None = None
+        self._norm_std: np.ndarray | None = None
+
+        if normalization_stats_path is not None:
+            p = Path(normalization_stats_path)
+            if p.exists():
+                data = json.loads(p.read_text())
+                self._norm_mean = np.array(data["mean"], dtype=np.float64)
+                self._norm_std = np.array(data["std"], dtype=np.float64)
+                # Guard against zero-variance dimensions.
+                self._norm_std = np.where(self._norm_std < 1e-8, 1.0, self._norm_std)
+                logger.info(
+                    "feature_extractor.normalization_stats_loaded",
+                    path=normalization_stats_path,
+                )
+            else:
+                logger.warning(
+                    "feature_extractor.normalization_stats_not_found",
+                    path=normalization_stats_path,
+                )
 
     def extract(self, audio_path: str) -> list[float]:
         """Extract features from an audio file and return a 45-d vector.
 
         Args:
             audio_path: Absolute path to a WAV (or any librosa-compatible)
-                        audio file. Instrumental stem is expected.
+                        audio file.
 
         Returns:
             List of exactly 45 floats, L2-normalised. Returns a zero vector
@@ -57,6 +94,15 @@ class FeatureExtractor:
         except Exception:
             logger.exception("feature_extractor.compute_failed", path=audio_path)
             return [0.0] * _EXPECTED_DIM
+
+        # Post-hoc z-score normalisation using catalog statistics.
+        if self._norm_mean is not None and self._norm_std is not None:
+            arr = np.array(vector, dtype=np.float64)
+            arr = (arr - self._norm_mean) / self._norm_std
+            norm = np.linalg.norm(arr)
+            if norm > 1e-8:
+                arr = arr / norm
+            vector = arr.tolist()
 
         return vector
 

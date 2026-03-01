@@ -171,6 +171,32 @@ class SQLiteRepository:
         rows = await cursor.fetchall()
         return [self._track_from_row(row) for row in rows]
 
+    async def list_random(self, limit: int = 10) -> list[Track]:
+        """Return random ready tracks from the catalog."""
+        cursor = await self.db.execute(
+            "SELECT * FROM tracks"
+            " WHERE status = 'ready' ORDER BY RANDOM() LIMIT ?",
+            (limit,),
+        )
+        rows = await cursor.fetchall()
+        return [self._track_from_row(row) for row in rows]
+
+    async def get_tracks_by_ids(self, track_ids: list[str]) -> dict[str, Track]:
+        """Return a dict of ``{track_id: Track}`` for the given IDs.
+
+        Missing IDs are silently omitted.  Uses a single ``IN (...)`` query
+        instead of one query per ID.
+        """
+        if not track_ids:
+            return {}
+        placeholders = ",".join("?" * len(track_ids))
+        cursor = await self.db.execute(
+            f"SELECT * FROM tracks WHERE id IN ({placeholders})",  # noqa: S608
+            track_ids,
+        )
+        rows = await cursor.fetchall()
+        return {t.id: t for t in (self._track_from_row(r) for r in rows)}
+
     async def search_fts(
         self, query: str, limit: int = 20, offset: int = 0
     ) -> list[Track]:

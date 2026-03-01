@@ -505,7 +505,14 @@
 - [x] Multi-worker claiming: atomic `mv` для параллельной работы на нескольких GPU
 - [x] Setup/run scripts для быстрого старта на новой машине
 - [x] BS-Roformer (SDR 12.9) вместо MDX-NET (SDR ~8-9) для бутстрапа (ADR-013)
-- [ ] Полный бутстрап 4797 треков (двумя воркерами)
+- [x] MVSEP API тест (15 треков, sep_type=49 Karaoke, ~3 мин/трек, ~$0.15/трек)
+- [x] Local GPU bootstrap: 48 треков BS-Roformer на RTX 4060 (~107-148 сек/трек)
+- [x] Multi-GPU local mode (`--gpu-id N`): atomic file claiming, per-track QDrant flush, preemptible safety
+- [x] GPU сервер Selectel: 4×RTX 4090, миграция диска, настройка окружения
+- [x] Баг-фикс: torchaudio 2.8.0→2.10.0 (ABI mismatch с torch 2.10.0)
+- [x] Баг-фикс: infinite retry loop на failed tracks (добавлен `failed_ids: set`)
+- [x] Оптимизация: 2-3 воркера на GPU (8→12 воркеров, GPU util 0-20% → 93-100%)
+- [ ] Полный бутстрап ~4726 треков (12 воркерами на 4×RTX 4090)
 
 ### Хронология:
 - **2026-02-25**: Собрано 4820 уникальных MP3 из 6 источников: bootstrap (1770), batch2 (1187), ru_from_db (1067), batch3 (654), missing_batch3 (38), russian_manual (107). Грабер `grab_mp3_links.py` + `download_mp3s.py`.
@@ -531,3 +538,29 @@
 - **2026-02-26**: A/B/C сравнение моделей vocal separation: MDX-NET-Voc_FT (SDR ~8-9, 16-19s), BS-Roformer-1297 (SDR 12.9, 59-65s), Mel-Roformer-Karaoke (SDR 10.2, 28s). Тест на мужском (5sta Family) и женском (Adele) вокале.
 - **2026-02-26**: Переключение бутстрапа на BS-Roformer (SDR 12.9, SOTA). `UVRSeparator` параметризован (`model_name`), CLI: `--uvr-model`. Дефолт для бутстрапа: BS-Roformer. Продакшн-воркер: MDX-NET (обратная совместимость).
 - **2026-02-26**: Тест BS-Roformer на 5 треках: 5/5 ok, ~63-66 сек/трек UVR (vs 16-19 на MDX-NET). Качество значительно лучше — минимум вокального bleed в инструментале.
+- **2026-02-26**: MVSEP API тест: 15 треков через sep_type=49 (Karaoke), ~3 мин credits/трек, ~$0.15/трек. Результат хороший, но для бутстрапа 4800 треков слишком дорого (~$720). Решение: MVSEP для прода (on-demand), BS-Roformer для бутстрапа.
+- **2026-02-26**: Запуск массового BS-Roformer бутстрапа на RTX 4060 (WSL2). 48 треков обработано за ~1.5ч (~107-148 сек/трек). Остановлен для переноса на GPU сервер.
+- **2026-02-28**: Планирование GPU-сервера: `--gpu-id N` флаг, `_run_local_gpu()` с atomic file claiming (Path.rename), per-track QDrant flush (preemptible safety), SQLite timeout=30s, `run-gpu-server.sh` с auto-detect GPU count.
+- **2026-02-28**: ADR-014: Multi-GPU bootstrap с preemptible-safe design.
+- **2026-02-28**: GPU сервер арендован на Selectel: root@195.225.111.241 (philomena), 4×RTX 4090, 24 vCPU, 235GB RAM, CUDA 12.2 (driver 535). Диск мигрирован с lainey (130.49.170.186).
+- **2026-02-28**: Настройка окружения: miniconda на local disk, conda env на data disk (`/mnt/data/conda_envs/bootstrap`, 394GB). PyTorch cu128 (forward compat с driver 535). QDrant v1.8.0 binary (matching Docker image version) с existing data.
+- **2026-02-28**: Проблемы и фиксы:
+  - `uvr_separator.py` — symlink на локальный путь → rsync `--copy-links`
+  - torchaudio 2.8.0 ABI mismatch с torch 2.10.0 → обновлён до 2.10.0+cu128
+  - Диск `/` (20GB) 100% заполнен → удалён неиспользуемый conda env (7GB), pip cache (6.8GB), huggingface cache перенесён на data disk через symlink
+  - QDrant v1.17.0 incompatible с данными → использован v1.8.0 (из docker-compose)
+- **2026-03-01**: Баг-фикс: infinite retry loop — при ошибке трек возвращался в очередь и подхватывался тем же воркером бесконечно. Добавлен `failed_ids: set` для пропуска ранее упавших треков.
+- **2026-03-01**: Оптимизация: GPU utilization 0-20% при 4 воркерах (CPU-bound librosa/ffmpeg). Запуск 2-3 воркеров на GPU (8→12 total). GPU util выросла до 93-100%, скорость 2.8→8.0 треков/мин (×2.9).
+- **2026-03-01**: Прогресс бутстрапа: ~3337/4726 треков обработано (~71%), 12 воркеров на 4×RTX 4090, ETA ~5ч.
+- **2026-03-01**: ML-аудит рекомендательной системы (совместно с ml-sota-expert): выявлено 9 проблем (scale dominance, transition weight=1, N+1 SQL, no recency bias, portrait drift, popularity feedback loop и др.).
+- **2026-03-01**: Полное исправление рекомендательной системы (9 из 9 проблем) за один проход:
+  - Post-hoc z-score нормализация фичей (скрипт `reindex_audio_features.py`, $0 cost)
+  - FeatureExtractor: z-score трансформация для новых треков через сохранённые stats
+  - EMA (alpha=0.3) вместо running average для portrait vector + L2-renorm
+  - Transition weight: read-modify-write (retrieve_payload + upsert)
+  - Transition candidates в LAST стратегии (scroll_filtered + sort by weight)
+  - Batch SQLite запросы (get_tracks_by_ids) вместо N+1
+  - Popular стратегия: 70% top + 30% random (breaks feedback loop)
+  - QDrant payload index from_track_id для transitions
+  - tracks_played из participant (не len(history))
+  - Тесты: 85/85 pass (27 feature extractor + 58 recommendation service)

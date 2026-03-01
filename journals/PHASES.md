@@ -38,9 +38,41 @@
 | 14 | Docker Compose + Nginx + Deploy | [phase-14.md](phases/phase-14.md) | Завершена |
 | 15 | E2E тестирование и hardening | [phase-15.md](phases/phase-15.md) | Завершена (d586571, a012830) |
 
+## Фаза 16: Bootstrap pipeline v2 + массовый импорт треков
+
+- **Статус:** В процессе (~71% каталога обработано)
+- **Начало:** 2026-02-25
+- **Ключевые решения:**
+  - BS-Roformer (SDR 12.9 SOTA) для бутстрапа, MDX-NET для продакшна (ADR-013)
+  - Multi-GPU `_run_local_gpu()` с atomic claiming и per-track QDrant flush (ADR-014)
+  - 12 воркеров на 4×RTX 4090 (3 воркера/GPU) — GPU util 93-100%
+- **Инфраструктура:**
+  - GPU сервер: root@195.225.111.241 (philomena), 4×RTX 4090, 24 vCPU, 235GB RAM
+  - Диск данных: 394GB (`/mnt/data`), мигрирован с VPS lainey
+  - QDrant v1.8.0 binary, conda env на data disk
+- **Прогресс:** ~3337/4726 треков, ETA ~5ч (к ~14:00 01.03.2026)
+
+## ML-аудит и исправление рекомендательной системы (2026-03-01)
+
+- **Статус:** Код готов, ожидает z-score reindex на сервере (после bootstrap)
+- **Контекст:** ML-аудит (совместно с ml-sota-expert) выявил 9 проблем: scale dominance (tempo ~120 vs flatness ~0.001), transition weight всегда = 1, N+1 SQL запросы, no recency bias, portrait drift без L2-renorm, popularity feedback loop, transition graph не используется, tracks_played из len(history), нет payload index from_track_id.
+- **Решение:** Все 9 проблем исправлены за один проход:
+  - Post-hoc z-score + скрипт `v2/scripts/reindex_audio_features.py` (cost: $0, ~30 сек)
+  - EMA portrait (alpha=0.3) + L2-renormalization
+  - Transition weight increment (read-modify-write)
+  - Transition candidates в LAST стратегии
+  - Batch SQLite (get_tracks_by_ids)
+  - Popular: 70% top + 30% random
+  - QDrant payload index from_track_id
+- **Тесты:** 85/85 pass (27 feature extractor + 58 recommendation service)
+- **Файлы:** feature_extractor.py, recommendation_service.py, qdrant_repository.py, sqlite_repository.py, main.py + скрипт reindex + тесты
+- **TODO:** Запустить `reindex_audio_features.py` на GPU-сервере после завершения bootstrap
+
 ## Итог
 
-Все 17 фаз (1–15, включая подфазы a/b) завершены. Проект полностью реализован и протестирован:
-- **540 unit/integration тестов** — все pass
+Все 17 фаз (1–15, включая подфазы a/b) завершены. Фаза 16 (массовый импорт каталога) в процессе:
+- **540+ unit/integration тестов** — все pass (включая 85 новых для рекомендательной системы)
 - **Browser E2E** (Playwright через Docker) — все потоки проверены
 - **Архитектурное ревью** — 2 критических бага и 5 предупреждений найдены и исправлены
+- **ML-аудит рекомендательной системы** — 9 проблем найдены и исправлены
+- **Bootstrap:** ~3337/4726 треков обработано, 12 воркеров на 4×RTX 4090

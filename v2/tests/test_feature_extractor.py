@@ -351,3 +351,155 @@ class TestFeatureExtractorSync:
         result = FeatureExtractor().extract("/fake/audio.wav")
 
         assert isinstance(result, list)
+
+
+# ---------------------------------------------------------------------------
+# Tests: z-score normalization
+# ---------------------------------------------------------------------------
+
+
+class TestFeatureExtractorZScoreNormalization:
+    """Tests for post-hoc z-score normalization when stats are provided."""
+
+    def _make_stats_file(self, tmp_path, mean=None, std=None):
+        """Write a normalization stats JSON and return the path."""
+        import json
+
+        if mean is None:
+            mean = [0.0] * _EXPECTED_DIM
+        if std is None:
+            std = [1.0] * _EXPECTED_DIM
+        stats = {"mean": mean, "std": std}
+        p = tmp_path / "stats.json"
+        p.write_text(json.dumps(stats))
+        return str(p)
+
+    def test_without_stats_vector_is_unchanged(self) -> None:
+        """Without normalization_stats_path, extract returns the raw L2-normed vector."""
+        import librosa
+
+        y, sr = _make_audio()
+        librosa.load.return_value = (y, sr)
+        _configure_librosa_feature_mocks()
+
+        # Two extractions: one with stats=None, one fresh
+        ext = FeatureExtractor()
+        result1 = ext.extract("/fake/audio.wav")
+
+        ext2 = FeatureExtractor(normalization_stats_path=None)
+        result2 = ext2.extract("/fake/audio.wav")
+
+        assert result1 == pytest.approx(result2)
+
+    def test_with_identity_stats_vector_is_unchanged(self, tmp_path) -> None:
+        """With mean=0 and std=1, z-score is identity — result should be the same."""
+        import librosa
+
+        y, sr = _make_audio()
+        librosa.load.return_value = (y, sr)
+        _configure_librosa_feature_mocks()
+
+        stats_path = self._make_stats_file(
+            tmp_path,
+            mean=[0.0] * _EXPECTED_DIM,
+            std=[1.0] * _EXPECTED_DIM,
+        )
+
+        ext_no_stats = FeatureExtractor()
+        result_no_stats = ext_no_stats.extract("/fake/audio.wav")
+
+        ext_with_stats = FeatureExtractor(normalization_stats_path=stats_path)
+        result_with_stats = ext_with_stats.extract("/fake/audio.wav")
+
+        assert result_with_stats == pytest.approx(result_no_stats, abs=1e-5)
+
+    def test_with_stats_vector_is_still_unit_norm(self, tmp_path) -> None:
+        """After z-score + re-L2-norm, the vector should still have unit norm."""
+        import librosa
+
+        y, sr = _make_audio()
+        librosa.load.return_value = (y, sr)
+        _configure_librosa_feature_mocks()
+
+        # Non-trivial stats
+        rng = np.random.default_rng(99)
+        stats_path = self._make_stats_file(
+            tmp_path,
+            mean=rng.normal(0, 0.5, _EXPECTED_DIM).tolist(),
+            std=(rng.random(_EXPECTED_DIM) * 0.5 + 0.1).tolist(),
+        )
+
+        ext = FeatureExtractor(normalization_stats_path=stats_path)
+        result = ext.extract("/fake/audio.wav")
+
+        norm = np.linalg.norm(result)
+        assert pytest.approx(norm, abs=1e-5) == 1.0
+
+    def test_with_stats_vector_differs_from_no_stats(self, tmp_path) -> None:
+        """Non-trivial stats should change the vector direction."""
+        import librosa
+
+        y, sr = _make_audio()
+        librosa.load.return_value = (y, sr)
+        _configure_librosa_feature_mocks()
+
+        rng = np.random.default_rng(77)
+        stats_path = self._make_stats_file(
+            tmp_path,
+            mean=rng.normal(0.1, 0.3, _EXPECTED_DIM).tolist(),
+            std=(rng.random(_EXPECTED_DIM) * 2.0 + 0.5).tolist(),
+        )
+
+        ext_no = FeatureExtractor()
+        result_no = ext_no.extract("/fake/audio.wav")
+
+        ext_with = FeatureExtractor(normalization_stats_path=stats_path)
+        result_with = ext_with.extract("/fake/audio.wav")
+
+        # Vectors should differ (different direction after z-score)
+        assert result_with != pytest.approx(result_no, abs=0.01)
+
+    def test_with_stats_dimension_is_still_45(self, tmp_path) -> None:
+        """Z-score normalization does not change the vector dimension."""
+        import librosa
+
+        y, sr = _make_audio()
+        librosa.load.return_value = (y, sr)
+        _configure_librosa_feature_mocks()
+
+        stats_path = self._make_stats_file(tmp_path)
+        ext = FeatureExtractor(normalization_stats_path=stats_path)
+        result = ext.extract("/fake/audio.wav")
+
+        assert len(result) == _EXPECTED_DIM
+
+    def test_nonexistent_stats_file_no_crash(self) -> None:
+        """If stats file doesn't exist, constructor logs warning but doesn't crash."""
+        ext = FeatureExtractor(normalization_stats_path="/nonexistent/path.json")
+        # Should behave like no stats
+        assert ext._norm_mean is None
+        assert ext._norm_std is None
+
+    def test_zero_vector_not_affected_by_stats(self, tmp_path) -> None:
+        """Zero vectors (from failed loads) should remain zero even with stats."""
+        import librosa
+
+        librosa.load.side_effect = OSError("fail")
+
+        stats_path = self._make_stats_file(
+            tmp_path,
+            mean=[0.5] * _EXPECTED_DIM,
+            std=[0.2] * _EXPECTED_DIM,
+        )
+
+        try:
+            ext = FeatureExtractor(normalization_stats_path=stats_path)
+            result = ext.extract("/fake/audio.wav")
+            # Zero vector: _compute fails, returns [0.0]*45, z-score on zeros
+            # gives (-0.5/0.2)*45 = [-2.5]*45 → L2-normalized → unit vector
+            # Actually, the zero vector is returned BEFORE z-score because
+            # the code returns early on load failure.
+            assert len(result) == _EXPECTED_DIM
+            assert all(v == 0.0 for v in result)
+        finally:
+            librosa.load.side_effect = None

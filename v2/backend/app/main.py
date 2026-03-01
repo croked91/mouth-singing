@@ -72,6 +72,26 @@ def _ensure_qdrant_collections(client: QdrantClient) -> None:
                 field=field,
             )
 
+    # Transitions collection needs an extra index on from_track_id for
+    # efficient filtered scrolling when querying the transition graph.
+    if "transitions" in existing or "transitions" in {
+        name for name, _, _ in _QDRANT_COLLECTIONS
+    }:
+        try:
+            client.create_payload_index(
+                collection_name="transitions",
+                field_name="from_track_id",
+                field_schema=PayloadSchemaType.KEYWORD,
+            )
+            logger.info(
+                "qdrant_payload_index_created",
+                collection="transitions",
+                field="from_track_id",
+            )
+        except Exception:
+            # Index may already exist; QDrant raises on duplicate creation.
+            pass
+
 
 # ---------------------------------------------------------------------------
 # Application lifespan

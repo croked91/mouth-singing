@@ -117,6 +117,56 @@ class QDrantRepository:
             return None
         return list(result[0].vector)
 
+    def retrieve_payload(self, collection: str, point_id: str) -> dict | None:
+        """Retrieve only the payload for a single point (no vector fetch).
+
+        Args:
+            collection: Collection to look up.
+            point_id: UUID string identifying the point.
+
+        Returns:
+            The payload dict, or ``None`` if the point does not exist.
+        """
+        result = self.client.retrieve(
+            collection_name=collection,
+            ids=[point_id],
+            with_vectors=False,
+            with_payload=True,
+        )
+        if not result:
+            return None
+        return result[0].payload or {}
+
+    def scroll_filtered(
+        self,
+        collection: str,
+        filters: dict,
+        limit: int = 20,
+    ) -> list[tuple[str, float, dict]]:
+        """Scroll points matching a payload filter (no vector search).
+
+        Args:
+            collection: Collection to scroll.
+            filters: Equality filters as ``{field_name: value}``.
+            limit: Maximum number of points to return.
+
+        Returns:
+            A list of ``(id, 0.0, payload)`` tuples (score is always 0.0
+            because no vector similarity is computed).
+        """
+        conditions = [
+            FieldCondition(key=k, match=MatchValue(value=v))
+            for k, v in filters.items()
+        ]
+        result, _ = self.client.scroll(
+            collection_name=collection,
+            scroll_filter=Filter(must=conditions),
+            limit=limit,
+            with_vectors=False,
+            with_payload=True,
+        )
+        return [(str(p.id), 0.0, p.payload or {}) for p in result]
+
     def delete(self, collection: str, point_id: str) -> None:
         """Remove a single point from a collection.
 
