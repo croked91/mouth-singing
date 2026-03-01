@@ -24,8 +24,8 @@ conda create -n "${CONDA_ENV}" python="${PYTHON_VERSION}" -y
 eval "$(conda shell.bash hook)"
 conda activate "${CONDA_ENV}"
 
-echo "=== Installing PyTorch with CUDA 12.1 ==="
-pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
+echo "=== Installing PyTorch with CUDA 12.8 ==="
+pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu128
 
 echo "=== Installing project packages ==="
 pip install -e "${PROJECT_ROOT}/shared[ml]"
@@ -52,6 +52,8 @@ else:
 echo ""
 echo "=== Setup complete ==="
 echo "Next steps:"
-echo "  1. Ensure SSH access: ssh-keygen && ssh-copy-id root@130.49.170.186"
-echo "  2. Test with a few tracks: bash ${SCRIPT_DIR}/run-bootstrap.sh --limit 3"
-echo "  3. Full run: bash ${SCRIPT_DIR}/run-bootstrap.sh"
+echo "  Remote mode (WSL2 + SSH to VPS):"
+echo "    bash ${SCRIPT_DIR}/run-bootstrap.sh --limit 5"
+echo ""
+echo "  GPU server mode (disk attached locally):"
+echo "    bash ${SCRIPT_DIR}/run-gpu-server.sh /path/to/mp3s /path/to/output"

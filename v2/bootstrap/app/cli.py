@@ -166,6 +166,18 @@ def bootstrap(
         "model_bs_roformer_ep_317_sdr_12.9755.ckpt",
         help="UVR model name for vocal separation (audio-separator model identifier).",
     ),
+    mvsep_api_key: str | None = typer.Option(
+        None,
+        help="MVSEP.com API key. When set, uses cloud API instead of local UVR.",
+    ),
+    gpu_id: int | None = typer.Option(
+        None,
+        help=(
+            "GPU index for this worker (e.g. 0 or 1). Enables local GPU mode: "
+            "single-process, atomic file claiming, safe for multiple workers. "
+            "Launch one process per GPU with different --gpu-id values."
+        ),
+    ),
     no_delete_remote_source: bool = typer.Option(
         False,
         "--no-delete-remote-source",
@@ -292,6 +304,8 @@ def bootstrap(
         remote_db_path=remote_db_path if remote_host else None,
         delete_remote_source=not no_delete_remote_source if remote_host else None,
         uvr_model=uvr_model,
+        mvsep_api_key="***" if mvsep_api_key else None,
+        gpu_id=gpu_id,
     )
 
     config = BootstrapConfig(
@@ -315,6 +329,8 @@ def bootstrap(
         remote_db_path=remote_db_path,
         delete_remote_source=not no_delete_remote_source,
         uvr_model=uvr_model,
+        mvsep_api_key=mvsep_api_key,
+        gpu_id=gpu_id,
     )
 
     runner = BootstrapRunner(config)

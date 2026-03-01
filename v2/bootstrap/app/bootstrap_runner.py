@@ -100,6 +100,8 @@ class BootstrapConfig:
     remote_container_media_prefix: str = "/data/media"
     delete_remote_source: bool = True
     uvr_model: str = "model_bs_roformer_ep_317_sdr_12.9755.ckpt"
+    mvsep_api_key: str | None = None
+    gpu_id: int | None = None
 
 
 # ------------------------------------------------------------------
@@ -190,7 +192,7 @@ def _track_exists_in_db(db_path: Path, track_id: str) -> bool:
     Returns:
         True if the track already exists, False otherwise.
     """
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path), timeout=30)
     try:
         cursor = conn.execute(
             "SELECT 1 FROM tracks WHERE id = ? LIMIT 1", (track_id,)
@@ -216,7 +218,7 @@ def _read_track_from_db(db_path: Path, track_id: str) -> dict:
     Raises:
         ValueError: If no track with the given ID exists in the database.
     """
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path), timeout=30)
     conn.row_factory = sqlite3.Row
     try:
         cursor = conn.execute(
@@ -237,7 +239,7 @@ def _insert_track_sync(db_path: Path, track_data: dict) -> None:
         db_path: Path to the SQLite database file.
         track_data: Dict matching the tracks table schema.
     """
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path), timeout=30)
     try:
         conn.execute(
             """
@@ -390,18 +392,26 @@ def _process_track(args: tuple) -> dict | None:
         track_log.info("bootstrap.processing_track", artist=artist, title=title)
 
         # ----------------------------------------------------------
-        # Step 1: UVR separation
+        # Step 1: Vocal separation (MVSEP API or local UVR)
         # ----------------------------------------------------------
-        from app.pipeline.uvr_separator import UVRSeparator  # noqa: PLC0415
+        if config.mvsep_api_key:
+            from app.pipeline.mvsep_separator import MVSepSeparator  # noqa: PLC0415
 
-        model_cache_dir = str(config.output_dir / "models")
-        Path(model_cache_dir).mkdir(parents=True, exist_ok=True)
+            separator = MVSepSeparator(
+                api_key=config.mvsep_api_key,
+                media_root=str(config.output_dir),
+            )
+        else:
+            from app.pipeline.uvr_separator import UVRSeparator  # noqa: PLC0415
 
-        separator = UVRSeparator(
-            model_cache_dir=model_cache_dir,
-            media_root=str(config.output_dir),
-            model_name=config.uvr_model,
-        )
+            model_cache_dir = str(config.output_dir / "models")
+            Path(model_cache_dir).mkdir(parents=True, exist_ok=True)
+
+            separator = UVRSeparator(
+                model_cache_dir=model_cache_dir,
+                media_root=str(config.output_dir),
+                model_name=config.uvr_model,
+            )
         vocals_path, instrumental_path = separator.separate(str(mp3_path))
         separator.cleanup()
         track_log.info(
@@ -691,6 +701,8 @@ class BootstrapRunner:
         """
         if self._config.remote_host:
             self._run_remote()
+        elif self._config.gpu_id is not None:
+            self._run_local_gpu()
         else:
             self._run_local()
 
@@ -765,6 +777,166 @@ class BootstrapRunner:
             total=total,
             processed=processed,
             failed=failed,
+        )
+
+    def _run_local_gpu(self) -> None:
+        """Process local MP3s one-by-one with atomic file claiming.
+
+        Designed for multi-GPU servers: each worker runs as a separate
+        process with ``--gpu-id N``, claiming files via atomic rename so
+        multiple workers can safely share the same input directory.
+
+        Safe for preemptible (spot) instances: every track is fully
+        persisted (SQLite + QDrant) before moving to the next one, and
+        stale claims from killed processes are recovered on restart by
+        the launch script.
+        """
+        import os  # noqa: PLC0415
+
+        gpu_id = self._config.gpu_id
+        os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
+
+        log = logger.bind(gpu_id=gpu_id)
+        log.info("bootstrap.local_gpu_starting", gpu_id=gpu_id)
+
+        self._ensure_db_schema(self._config.db_path)
+
+        input_dir = self._config.input_dir
+        processing_dir = input_dir / ".processing"
+        processing_dir.mkdir(parents=True, exist_ok=True)
+
+        # Ensure output directories exist.
+        self._config.output_dir.mkdir(parents=True, exist_ok=True)
+
+        audio_batch: list[tuple[str, list[float], dict]] = []
+        lyric_batch: list[tuple[str, list[float], dict]] = []
+        processed = 0
+        failed = 0
+        skipped = 0
+        failed_ids: set[str] = set()  # track IDs that already failed — skip on rescan
+
+        # Count total available MP3s for the progress bar.
+        mp3_files = sorted(input_dir.glob("*.mp3"))
+        total = len(mp3_files)
+        if self._config.limit > 0:
+            total = min(total, self._config.limit)
+
+        log.info("bootstrap.local_gpu_found", total_available=len(mp3_files))
+
+        with tqdm(
+            total=total,
+            desc=f"GPU {gpu_id}",
+            unit="track",
+        ) as progress:
+            while True:
+                if self._config.limit > 0 and processed >= self._config.limit:
+                    break
+
+                # Rescan directory each iteration — other workers may
+                # have claimed files since last scan.
+                mp3_files = sorted(input_dir.glob("*.mp3"))
+                if not mp3_files:
+                    break
+
+                claimed = False
+                for mp3_path in mp3_files:
+                    # Skip hidden files / directories.
+                    if mp3_path.name.startswith("."):
+                        continue
+
+                    claimed_path = processing_dir / mp3_path.name
+
+                    # Atomic claim via rename.  On the same filesystem
+                    # this is an atomic operation.  If another worker
+                    # renamed it first, we get FileNotFoundError.
+                    try:
+                        mp3_path.rename(claimed_path)
+                    except (FileNotFoundError, OSError):
+                        continue
+
+                    claimed = True
+                    progress.set_postfix_str(mp3_path.name[:50])
+
+                    # Check skip_existing after claiming — this way the
+                    # file is "consumed" even if already in the DB, so
+                    # other workers don't re-check it.
+                    track_id = _track_id_from_path(claimed_path)
+
+                    if track_id in failed_ids:
+                        # Already failed in this run — unclaim and skip.
+                        try:
+                            claimed_path.rename(
+                                input_dir / claimed_path.name
+                            )
+                        except OSError:
+                            pass
+                        continue
+
+                    if self._config.skip_existing and _track_exists_in_db(
+                        self._config.db_path, track_id
+                    ):
+                        # Already processed — delete claimed file.
+                        claimed_path.unlink(missing_ok=True)
+                        skipped += 1
+                        progress.update(1)
+                        break
+
+                    # Run the full pipeline.
+                    result = _process_track((claimed_path, self._config))
+
+                    if result is None:
+                        # Pipeline failed — unclaim and remember to skip.
+                        failed_ids.add(track_id)
+                        try:
+                            claimed_path.rename(
+                                input_dir / claimed_path.name
+                            )
+                        except OSError:
+                            pass
+                        failed += 1
+                        progress.update(1)
+                        break
+
+                    # Success — remove claimed source file.
+                    claimed_path.unlink(missing_ok=True)
+
+                    # Flush QDrant immediately (preemptible safety).
+                    audio_batch.append((
+                        result["track_id"],
+                        result["audio_vector"],
+                        {
+                            "artist": result["artist"],
+                            "title": result["title"],
+                            "status": "ready",
+                        },
+                    ))
+                    lyric_batch.append((
+                        result["track_id"],
+                        result["lyric_vector"],
+                        {
+                            "artist": result["artist"],
+                            "title": result["title"],
+                            "status": "ready",
+                        },
+                    ))
+                    self._flush_qdrant(audio_batch, lyric_batch)
+                    audio_batch = []
+                    lyric_batch = []
+
+                    processed += 1
+                    progress.update(1)
+                    break
+
+                if not claimed:
+                    # No files left to claim — we're done.
+                    break
+
+        log.info(
+            "bootstrap.local_gpu_finished",
+            gpu_id=gpu_id,
+            processed=processed,
+            failed=failed,
+            skipped=skipped,
         )
 
     def _run_remote(self) -> None:
