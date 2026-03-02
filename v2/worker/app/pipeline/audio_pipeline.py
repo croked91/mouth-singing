@@ -11,6 +11,7 @@ Orchestrates the full audio processing pipeline for a single job.  Steps:
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 
 import structlog
 
@@ -152,6 +153,10 @@ class AudioPipeline:
                     syllable_count=len(syllable_timings),
                     language=transcription.language,
                 )
+
+            # Vocals stem no longer needed — delete to save disk.
+            if vocals_path:
+                Path(vocals_path).unlink(missing_ok=True)
 
             # ------------------------------------------------------------------
             # Steps 3+4: Feature extraction & lyric embedding
