@@ -1,0 +1,25 @@
+# Production overrides for deployment on a server with data on root disk.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Expected layout on host:
+#   /root/bootstrap_output/karaoke.db     — SQLite database
+#   /root/bootstrap_output/instrumental/  — stems (vocals + instrumental)
+#   /root/karaoke/v2/                     — source code
+#
+# QDrant data is in a named volume (managed by Docker).
+
+services:
+  backend:
+    volumes:
+      - /root/bootstrap_output:/data/sqlite:rw
+      - /root/bootstrap_output:/data/media:ro
+
+  worker:
+    volumes:
+      - /root/bootstrap_output:/data/sqlite:rw
+      - /root/bootstrap_output:/data/media:rw
+      - /root/models:/data/models:ro
+
+  frontend:
+    ports:
+      - "80:80"

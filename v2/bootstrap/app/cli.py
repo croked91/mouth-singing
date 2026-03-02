@@ -178,6 +178,14 @@ def bootstrap(
             "Launch one process per GPU with different --gpu-id values."
         ),
     ),
+    container_media_prefix: str | None = typer.Option(
+        None,
+        help=(
+            "Prefix for instrumental_path stored in the DB. "
+            "E.g. '/data/media' rewrites paths to '/data/media/instrumental/file.mp3'. "
+            "Required when DB will be used by a Docker container with different mount points."
+        ),
+    ),
     no_delete_remote_source: bool = typer.Option(
         False,
         "--no-delete-remote-source",
@@ -306,6 +314,7 @@ def bootstrap(
         uvr_model=uvr_model,
         mvsep_api_key="***" if mvsep_api_key else None,
         gpu_id=gpu_id,
+        container_media_prefix=container_media_prefix,
     )
 
     config = BootstrapConfig(
@@ -331,6 +340,7 @@ def bootstrap(
         uvr_model=uvr_model,
         mvsep_api_key=mvsep_api_key,
         gpu_id=gpu_id,
+        container_media_prefix=container_media_prefix,
     )
 
     runner = BootstrapRunner(config)

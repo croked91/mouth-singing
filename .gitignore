@@ -15,3 +15,6 @@ node_modules/
 *.mp3
 *.mp4
 sonoix-test-key.txt
+bootstrap_test/
+bootstrap_work/
+bootstrap_tracks.csv

@@ -30,6 +30,7 @@ QDRANT_HOST="${QDRANT_HOST:-130.49.170.186}"
 LRCLIB_URL="${LRCLIB_URL:-http://${QDRANT_HOST}:9876}"
 WHISPER_MODEL="${WHISPER_MODEL:-medium}"
 CONDA_ENV="${CONDA_ENV:-bootstrap}"
+CONTAINER_MEDIA_PREFIX="${CONTAINER_MEDIA_PREFIX:-}"
 DB_PATH="${OUTPUT_DIR}/karaoke.db"
 
 # Activate conda.
@@ -97,6 +98,7 @@ for gpu_id in "${GPU_LIST[@]}"; do
         --whisper-model "${WHISPER_MODEL}" \
         --gpu-id "${gpu_id}" \
         --qdrant-host "${QDRANT_HOST}" \
+        ${CONTAINER_MEDIA_PREFIX:+--container-media-prefix "${CONTAINER_MEDIA_PREFIX}"} \
         "$@" &
     PIDS+=($!)
     echo "Worker GPU ${gpu_id} started (PID $!)"

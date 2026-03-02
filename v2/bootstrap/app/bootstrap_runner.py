@@ -102,6 +102,7 @@ class BootstrapConfig:
     uvr_model: str = "model_bs_roformer_ep_317_sdr_12.9755.ckpt"
     mvsep_api_key: str | None = None
     gpu_id: int | None = None
+    container_media_prefix: str | None = None
 
 
 # ------------------------------------------------------------------
@@ -567,6 +568,20 @@ def _process_track(args: tuple) -> dict | None:
         now_iso = datetime.now(timezone.utc).isoformat()
         syllable_timings_json = _serialise_syllable_timings(syllable_timings)
 
+        # Rewrite paths for container visibility when deploying with
+        # different mount points (e.g. host /root/bootstrap_output →
+        # container /data/media).
+        if config.container_media_prefix:
+            db_instrumental_path = (
+                config.container_media_prefix
+                + "/instrumental/"
+                + Path(instrumental_path).name
+            )
+            db_mp3_path = None
+        else:
+            db_instrumental_path = instrumental_path
+            db_mp3_path = str(mp3_path)
+
         _insert_track_sync(
             config.db_path,
             {
@@ -574,8 +589,8 @@ def _process_track(args: tuple) -> dict | None:
                 "artist": artist,
                 "title": title,
                 "duration_sec": None,
-                "mp3_path": str(mp3_path),
-                "instrumental_path": instrumental_path,
+                "mp3_path": db_mp3_path,
+                "instrumental_path": db_instrumental_path,
                 "clip_path": None,
                 "lyrics_text": lyrics_text or None,
                 "syllable_timings": syllable_timings_json,
