@@ -606,9 +606,14 @@ def _process_track(args: tuple) -> dict | None:
         )
         track_log.info("bootstrap.sqlite_saved")
 
+        # Delete vocals stem — only needed for WhisperX alignment above,
+        # not used in production.  Saves ~50% of stem disk usage.
+        if vocals_path:
+            Path(vocals_path).unlink(missing_ok=True)
+            track_log.info("bootstrap.vocals_deleted")
+
         # Return vector data for batch QDrant upsert in the main process.
-        # The _instrumental_path and _vocals_path keys are used by
-        # _run_remote() to push files and clean up local staging area.
+        # The _instrumental_path key is used by _run_remote() to push files.
         return {
             "track_id": track_id,
             "artist": artist,
@@ -616,7 +621,7 @@ def _process_track(args: tuple) -> dict | None:
             "audio_vector": audio_vector,
             "lyric_vector": lyric_vector,
             "_instrumental_path": instrumental_path,
-            "_vocals_path": vocals_path,
+            "_vocals_path": None,
         }
 
     except Exception:
@@ -1064,7 +1069,7 @@ class BootstrapRunner:
                         continue
 
                     instrumental_path = Path(result["_instrumental_path"])
-                    vocals_path = Path(result["_vocals_path"])
+                    vocals_path = Path(result["_vocals_path"]) if result["_vocals_path"] else None
 
                     # --------------------------------------------------
                     # Step 4: Push instrumental to the remote server
@@ -1117,7 +1122,8 @@ class BootstrapRunner:
                         # Clean up locally, unclaim for retry.
                         _unlink_if_exists(local_mp3)
                         _unlink_if_exists(instrumental_path)
-                        _unlink_if_exists(vocals_path)
+                        if vocals_path:
+                            _unlink_if_exists(vocals_path)
                         syncer.unclaim_mp3(filename)
                         failed += 1
                         progress.update(1)
@@ -1176,7 +1182,8 @@ class BootstrapRunner:
                     # --------------------------------------------------
                     _unlink_if_exists(local_mp3)
                     _unlink_if_exists(instrumental_path)
-                    _unlink_if_exists(vocals_path)
+                    if vocals_path:
+                        _unlink_if_exists(vocals_path)
 
                     processed += 1
                     progress.update(1)

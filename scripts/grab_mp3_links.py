@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 """
-Граббер MP3 ссылок с rus.hitmotop.com
+Граббер MP3 ссылок с rus.hitmotop.com (многопоточный).
 Читает bootstrap CSV, для каждого трека ищет первую ссылку скачивания.
 
 Использование:
-  python3 grab_mp3_links.py bootstrap_3000_final.csv output.csv
+  python3 grab_mp3_links.py input.csv output.csv [--workers 4]
 """
 
+import argparse
 import csv
-import sys
-import time
-import re
 import os
-from pathlib import Path
+import re
+import threading
+import time
 
 import requests
 from bs4 import BeautifulSoup
@@ -28,46 +28,40 @@ HEADERS = {
     "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8",
 }
 
-REQUEST_DELAY = 0.5   # сек между запросами
-RETRY_DELAY   = 5.0   # сек при ошибке
+REQUEST_DELAY = 0.3   # сек между запросами на поток
+RETRY_DELAY   = 5.0
 MAX_RETRIES   = 3
-TIMEOUT       = 10    # сек на запрос
+TIMEOUT       = 10
 
-MP3_PATTERN   = re.compile(r'https://rus\.hitmotop\.com/get/music/[^\s"\']+\.mp3')
+MP3_PATTERN = re.compile(r'https://rus\.hitmotop\.com/get/music/[^\s"\']+\.mp3')
 
 # ─── Core ─────────────────────────────────────────────────────────────────────
 
 def get_first_mp3(search_url: str, session: requests.Session) -> str | None:
-    """Загружает страницу поиска и возвращает href первой кнопки скачивания."""
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             resp = session.get(search_url, headers=HEADERS, timeout=TIMEOUT)
             resp.raise_for_status()
 
-            # Ищем первое вхождение MP3 ссылки в HTML
             match = MP3_PATTERN.search(resp.text)
             if match:
                 return match.group(0)
 
-            # Если regex не нашел — попробуем через BeautifulSoup
             soup = BeautifulSoup(resp.text, "html.parser")
             btn = soup.find(class_="track__download-btn")
             if btn and btn.get("href"):
                 return btn["href"]
 
-            return None  # Трек не найден на сайте
+            return None
 
-        except requests.RequestException as e:
+        except requests.RequestException:
             if attempt < MAX_RETRIES:
-                print(f"    ⚠️  Ошибка (попытка {attempt}/{MAX_RETRIES}): {e}")
                 time.sleep(RETRY_DELAY)
             else:
-                print(f"    ❌ Пропускаю: {search_url} — {e}")
                 return None
 
 
 def load_done(output_path: str) -> set[str]:
-    """Читает уже обработанные поисковые URL из выходного файла (resume)."""
     done = set()
     if not os.path.exists(output_path):
         return done
@@ -81,84 +75,84 @@ def load_done(output_path: str) -> set[str]:
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
-def main(input_csv: str, output_csv: str) -> None:
-    # Читаем входной файл
+def main():
+    parser = argparse.ArgumentParser(description="Grab MP3 links from hitmotop")
+    parser.add_argument("input_csv")
+    parser.add_argument("output_csv")
+    parser.add_argument("--workers", type=int, default=4)
+    args = parser.parse_args()
+
     rows = []
-    with open(input_csv, newline="", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
+    with open(args.input_csv, newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
             rows.append(row)
 
     total = len(rows)
-    print(f"📋 Треков в файле: {total}")
 
-    # Resume: пропускаем уже обработанные
-    done_urls = load_done(output_csv)
-    print(f"✅ Уже обработано: {len(done_urls)} (resume)")
+    done_urls = load_done(args.output_csv)
+    todo = [r for r in rows if r.get("URL", "") not in done_urls]
 
-    # Открываем выходной файл (append если resume)
-    file_exists = os.path.exists(output_csv) and len(done_urls) > 0
-    out_mode = "a" if file_exists else "w"
+    print(f"Total: {total}, already done: {len(done_urls)}, todo: {len(todo)}", flush=True)
 
-    out_file = open(output_csv, out_mode, newline="", encoding="utf-8")
+    file_exists = os.path.exists(args.output_csv) and len(done_urls) > 0
+
+    lock = threading.Lock()
+    out_file = open(args.output_csv, "a" if file_exists else "w", newline="", encoding="utf-8")
     writer = csv.DictWriter(out_file, fieldnames=["Артист", "Название", "URL", "SearchURL"])
     if not file_exists:
         writer.writeheader()
 
-    session = requests.Session()
-
-    found   = 0
-    skipped = 0
+    found = 0
+    not_found = 0
     processed = 0
 
-    try:
-        for i, row in enumerate(rows, 1):
-            artist     = row.get("Артист", "")
-            title      = row.get("Название", "")
-            search_url = row.get("URL", "")
+    def process(row):
+        nonlocal found, not_found, processed
 
-            if search_url in done_urls:
-                continue
+        artist = row.get("Артист", "")
+        title = row.get("Название", "")
+        search_url = row.get("URL", "")
 
+        session = requests.Session()
+        mp3_url = get_first_mp3(search_url, session)
+        session.close()
+
+        with lock:
             processed += 1
-            pct = (i / total) * 100
-
-            print(f"[{i}/{total} {pct:.1f}%] {artist} — {title}")
-
-            mp3_url = get_first_mp3(search_url, session)
+            done_total = len(done_urls) + processed
+            pct = done_total / total * 100
 
             if mp3_url:
                 found += 1
                 writer.writerow({
-                    "Артист":    artist,
-                    "Название":  title,
-                    "URL":       mp3_url,
+                    "Артист": artist,
+                    "Название": title,
+                    "URL": mp3_url,
                     "SearchURL": search_url,
                 })
                 out_file.flush()
-                print(f"    🎵 {mp3_url}")
+                print(f"[{done_total}/{total} {pct:.1f}%] {artist} — {title}", flush=True)
             else:
-                skipped += 1
-                print(f"    ⚠️  Не найдено на hitmotop")
+                not_found += 1
+                if processed % 50 == 0:
+                    print(f"[{done_total}/{total} {pct:.1f}%] ... ({not_found} not found)", flush=True)
 
-            time.sleep(REQUEST_DELAY)
+        time.sleep(REQUEST_DELAY)
 
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    try:
+        with ThreadPoolExecutor(max_workers=args.workers) as pool:
+            futures = [pool.submit(process, row) for row in todo]
+            for f in as_completed(futures):
+                f.result()  # raise exceptions if any
     except KeyboardInterrupt:
-        print("\n⏸️  Прервано. Запусти снова — продолжит с того же места.")
-
+        print("\nInterrupted. Resume by running again.", flush=True)
     finally:
         out_file.close()
-        session.close()
 
-    print(f"\n📊 Итог:")
-    print(f"   Обработано: {processed}")
-    print(f"   Найдено MP3: {found}")
-    print(f"   Не найдено:  {skipped}")
-    print(f"   Файл: {output_csv}")
+    print(f"\nDone! Found: {found}, not found: {not_found}, file: {args.output_csv}", flush=True)
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        print("Использование: python3 grab_mp3_links.py input.csv output.csv")
-        sys.exit(1)
-    main(sys.argv[1], sys.argv[2])
+    main()
