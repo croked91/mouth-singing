@@ -9,6 +9,10 @@
 # QDrant data is in a named volume (managed by Docker).
 
 services:
+  qdrant:
+    volumes:
+      - /root/qdrant_storage:/qdrant/storage
+
   backend:
     volumes:
       - /root/bootstrap_output:/data/sqlite:rw
@@ -18,7 +22,7 @@ services:
     volumes:
       - /root/bootstrap_output:/data/sqlite:rw
       - /root/bootstrap_output:/data/media:rw
-      - /root/models:/data/models:ro
+      - /root/models:/data/models:rw
 
   frontend:
     ports:
