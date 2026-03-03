@@ -57,7 +57,12 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    client = QdrantClient(host=args.qdrant_host, port=args.qdrant_port)
+    client = QdrantClient(
+        host=args.qdrant_host,
+        port=args.qdrant_port,
+        timeout=300,
+        check_compatibility=False,
+    )
 
     # --- Step 1: Scroll all vectors ---
     print(f"Scrolling all points from '{_COLLECTION}'...")
