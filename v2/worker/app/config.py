@@ -20,6 +20,11 @@ class WorkerSettings(BaseSettings):
     poll_interval_sec: float = 2.0
     log_level: str = "INFO"
 
+    # UVR model for vocal/instrumental separation.
+    # "2_HP-UVR.pth" is fast on CPU (~1 min); "UVR-MDX-NET-Voc_FT.onnx" is
+    # higher quality but ~7 min on CPU.
+    uvr_model_name: str = "2_HP-UVR.pth"
+
     # Audio feature normalization stats (z-score).  Must point to the JSON
     # file produced by ``scripts/reindex_audio_features.py`` so that user-uploaded
     # tracks are normalised into the same vector space as the bootstrap catalog.

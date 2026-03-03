@@ -122,7 +122,11 @@ async def main() -> None:
 
         repo = SQLiteRepository(db)
         job_service = JobService(repo)
-        uvr = UVRSeparator(settings.model_cache_dir, settings.media_root)
+        uvr = UVRSeparator(
+            settings.model_cache_dir,
+            settings.media_root,
+            model_name=settings.uvr_model_name,
+        )
         sonoix: SonoixClient | None = None
 
         if settings.sonoix_api_key:
