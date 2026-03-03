@@ -72,11 +72,11 @@
   - QDrant ulimit: 1024 → 65535 (RocksDB "too many open files")
   - HuggingFace 429: `HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1`
 - **Результат:** 17 315 треков в SQLite + QDrant (audio + lyrics) + FTS. 94 трека — инструменталы/скиты (нет вокала).
-- **TODO:** Запустить `reindex_audio_features.py` для z-score нормализации. Настроить cron reindex раз в месяц для актуализации mean/std при росте каталога.
+- **Post-bootstrap:** z-score reindex выполнен (17 315 векторов, ~30 сек). Stats JSON сохранён на сервере.
 
 ## ML-аудит и исправление рекомендательной системы (2026-03-01)
 
-- **Статус:** Код готов, ожидает z-score reindex на сервере
+- **Статус:** Завершено (reindex выполнен, рекомендации верифицированы)
 - **Контекст:** ML-аудит (совместно с ml-sota-expert) выявил 9 проблем: scale dominance (tempo ~120 vs flatness ~0.001), transition weight всегда = 1, N+1 SQL запросы, no recency bias, portrait drift без L2-renorm, popularity feedback loop, transition graph не используется, tracks_played из len(history), нет payload index from_track_id.
 - **Решение:** Все 9 проблем исправлены за один проход:
   - Post-hoc z-score + скрипт `v2/scripts/reindex_audio_features.py` (cost: $0, ~30 сек)
@@ -88,7 +88,7 @@
   - QDrant payload index from_track_id
 - **Тесты:** 85/85 pass (27 feature extractor + 58 recommendation service)
 - **Файлы:** feature_extractor.py, recommendation_service.py, qdrant_repository.py, sqlite_repository.py, main.py + скрипт reindex + тесты
-- **TODO:** Запустить `reindex_audio_features.py` на сервере (bootstrap завершён)
+- **Выполнено:** z-score reindex + деплой + верификация всех стратегий рекомендаций
 
 ## Weighted fusion: Audio + Lyrics embeddings в рекомендациях (2026-03-01)
 
@@ -102,6 +102,24 @@
   - Fallback: tracks без текста → чистый audio KNN
 - **Тесты:** 98/98 pass (80 recommendation + 18 feature extractor)
 - **Файлы:** recommendation_service.py, session.py, sqlite_repository.py, init.sql, main.py + тесты
+
+## Деплой и верификация (2026-03-03)
+
+- **Статус:** Завершено. Приложение развёрнуто и работает.
+- **Сервер:** 155.212.182.210 (Ubuntu 24.04, Docker 29.2.1)
+- **Выполнено:**
+  - z-score reindex: 17 315 векторов нормализованы (~30 сек), stats JSON → `/root/models/`
+  - Фикс reindex-скрипта: `timeout=300`, `check_compatibility=False` (qdrant-client 1.17 vs server 1.8)
+  - Docker Compose деплой: `docker-compose.yml` + `docker-compose.prod.yml` (bind mounts)
+  - QDrant bind mount: `/root/qdrant_storage:/qdrant/storage` (сохранение данных бутстрапа)
+  - Worker models: `:ro` → `:rw` (UVR модель скачивается при первом запуске)
+  - QDrant upgrade: v1.8.0 → v1.13.6 (qdrant-client 1.17 использует `POST /points/query`, отсутствовавший в 1.8)
+- **Верификация рекомендаций (E2E):**
+  - После 1 трека: strategy=`last` → 5 результатов (KNN + transition candidates)
+  - После 2 треков: strategy=`last_two_avg` → 5 результатов
+  - После 3+ треков: strategy=`session_avg` → 5 результатов (EMA portrait)
+  - Граф переходов: 11 transitions записаны при тестировании, `weight` инкрементируется
+- **Контейнеры:** qdrant (healthy), backend (healthy), frontend (healthy), worker (running)
 
 ## Операционные заметки
 
@@ -119,10 +137,12 @@
 
 ## Итог
 
-Все 18 фаз (1–17) завершены:
+Все фазы (1–17) + деплой завершены:
 - **540+ unit/integration тестов** — все pass (включая 98 для рекомендательной системы)
 - **Browser E2E** (Playwright через Docker) — все потоки проверены
 - **Архитектурное ревью** — 2 критических бага и 5 предупреждений найдены и исправлены
 - **ML-аудит рекомендательной системы** — 9 проблем найдены и исправлены + weighted fusion audio+lyrics
 - **Bootstrap v1:** 4725/4727 треков за ~10ч на 4×RTX 4090 (12 воркеров)
 - **Bootstrap v2 (ре-бутстрап):** 17 315/17 409 треков за ~19ч на 8×RTX 4090 (24 воркера)
+- **Продакшн-деплой:** 4 контейнера (qdrant, backend, worker, frontend), все рекомендации работают
+- **Бета-тестирование:** Запланировано на 2026-03-04

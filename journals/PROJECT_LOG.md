@@ -601,7 +601,10 @@
 - [x] Баг-фикс QDrant ulimit: `--ulimit nofile=65535:65535`
 - [x] Баг-фикс HuggingFace 429: `HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1`
 - [x] Бутстрап 17 315/17 409 треков (~19ч)
-- [ ] z-score reindex (post-bootstrap)
+- [x] z-score reindex (post-bootstrap)
+- [x] Деплой Docker Compose (prod)
+- [x] Фикс QDrant версии (v1.8.0 → v1.13.6)
+- [x] Верификация рекомендаций (все стратегии)
 
 ### Хронология:
 - **2026-03-02**: Подготовка GPU-сервера (155.212.182.210): 8×RTX 4090, 48 vCPU, 188GB RAM. Conda env `bootstrap` (Python 3.12, torch 2.8.0+cu128, audio-separator --no-deps). MP3 библиотека: 17 409 треков, 141GB.
@@ -617,3 +620,6 @@
 - **2026-03-02**: Стабильная работа: ~14 треков/мин, 0 ошибок.
 - **2026-03-03**: Сервер прерван (preemptible). Перезапущен пользователем. QDrant recovery ~30 сек (17k+ points). Бутстрап завершён: 17 315 треков в SQLite + QDrant (audio + lyrics) + FTS. 94 трека — инструменталы/скиты без вокала.
 - **2026-03-03**: Код закоммичен: FTS fix (init.sql), QDrant flush retry (bootstrap_runner.py), multi-worker launcher (run-gpu-server.sh).
+- **2026-03-03**: z-score reindex: 17 315 векторов нормализованы за ~30 сек. Фикс скрипта: `timeout=300`, `check_compatibility=False` (qdrant-client 1.17 vs server 1.8). Stats JSON → `/root/models/feature_normalization_stats.json`.
+- **2026-03-03**: Деплой Docker Compose на 155.212.182.210. Фиксы: QDrant bind mount (`/root/qdrant_storage`), worker models `:ro`→`:rw`, QDrant image v1.8.0→v1.13.6 (фикс 404 на `/points/query` — qdrant-client 1.17 использует новый API). Все 4 контейнера healthy.
+- **2026-03-03**: Верификация рекомендаций (E2E): все 3 стратегии (last, last_two_avg, session_avg) возвращают результаты. Граф переходов наполняется (11 transitions после тестирования). Бета-тест запланирован на 2026-03-04.
