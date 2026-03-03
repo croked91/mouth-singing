@@ -1,6 +1,6 @@
 services:
   qdrant:
-    image: qdrant/qdrant:v1.8.0
+    image: qdrant/qdrant:v1.13.6
     container_name: karaoke_qdrant
     restart: unless-stopped
     volumes:
