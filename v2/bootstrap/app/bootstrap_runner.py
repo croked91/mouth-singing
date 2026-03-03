@@ -939,9 +939,12 @@ class BootstrapRunner:
                             "status": "ready",
                         },
                     ))
-                    self._flush_qdrant(audio_batch, lyric_batch)
+                    qdrant_ok = self._flush_qdrant(audio_batch, lyric_batch)
                     audio_batch = []
                     lyric_batch = []
+
+                    if qdrant_ok:
+                        self._mark_qdrant_synced(result["track_id"])
 
                     processed += 1
                     progress.update(1)
@@ -1207,36 +1210,68 @@ class BootstrapRunner:
         self,
         audio_batch: list[tuple[str, list[float], dict]],
         lyric_batch: list[tuple[str, list[float], dict]],
-    ) -> None:
+    ) -> bool:
         """Batch-upsert accumulated vectors into QDrant.
 
-        Errors are logged but do not raise so that the overall run can
-        continue even if QDrant is temporarily unavailable.
+        Retries up to 3 times with exponential backoff on failure.
 
         Args:
             audio_batch: List of ``(track_id, vector, payload)`` for audio features.
             lyric_batch: List of ``(track_id, vector, payload)`` for lyric embeddings.
+
+        Returns:
+            True if upsert succeeded, False otherwise.
         """
+        import time  # noqa: PLC0415
+
         from qdrant_client import QdrantClient  # noqa: PLC0415
 
         from karaoke_shared.repositories.qdrant_repository import (  # noqa: PLC0415
             QDrantRepository,
         )
 
+        for attempt in range(3):
+            try:
+                client = QdrantClient(
+                    host=self._config.qdrant_host,
+                    port=self._config.qdrant_port,
+                )
+                repo = QDrantRepository(client)
+                repo.batch_upsert(_AUDIO_COLLECTION, audio_batch)
+                repo.batch_upsert(_LYRIC_COLLECTION, lyric_batch)
+                logger.info("bootstrap.qdrant_flushed", count=len(audio_batch))
+                return True
+            except Exception:
+                if attempt < 2:
+                    delay = 2 ** (attempt + 1)
+                    logger.warning(
+                        "bootstrap.qdrant_flush_retry",
+                        attempt=attempt + 1,
+                        delay=delay,
+                        count=len(audio_batch),
+                    )
+                    time.sleep(delay)
+                else:
+                    logger.exception(
+                        "bootstrap.qdrant_flush_failed",
+                        count=len(audio_batch),
+                    )
+        return False
+
+    def _mark_qdrant_synced(self, track_id: str) -> None:
+        """Set qdrant_synced=1 for a track in SQLite."""
+        import sqlite3  # noqa: PLC0415
+
         try:
-            client = QdrantClient(
-                host=self._config.qdrant_host,
-                port=self._config.qdrant_port,
+            conn = sqlite3.connect(str(self._config.db_path))
+            conn.execute(
+                "UPDATE tracks SET qdrant_synced = 1 WHERE id = ?",
+                (track_id,),
             )
-            repo = QDrantRepository(client)
-            repo.batch_upsert(_AUDIO_COLLECTION, audio_batch)
-            repo.batch_upsert(_LYRIC_COLLECTION, lyric_batch)
-            logger.info("bootstrap.qdrant_flushed", count=len(audio_batch))
+            conn.commit()
+            conn.close()
         except Exception:
-            logger.exception(
-                "bootstrap.qdrant_flush_failed",
-                count=len(audio_batch),
-            )
+            logger.exception("bootstrap.qdrant_synced_update_failed", track_id=track_id)
 
 
 # ------------------------------------------------------------------

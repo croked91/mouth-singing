@@ -1,7 +1,7 @@
 # Журнал проекта: Караоке-приложение
 
 ## Статус проекта
-**Текущая фаза:** 16 — Bootstrap pipeline v2 + массовый импорт треков
+**Текущая фаза:** 17 — Ре-бутстрап каталога (17 409 треков) — Завершена
 **Дата начала:** 2026-02-22
 **Последний коммит:** (pending) Recommendation system audit bugfixes
 **Структура:** Реализация в `v2/`, документация в корне
@@ -588,3 +588,32 @@
   2. Defensive guards в get_recommendations: при рассинхроне tracks_played и history (len(history) < tracks_played) — безопасная деградация к более простой стратегии вместо IndexError.
   3. Cold start diversity: `list_popular` ORDER BY `play_count DESC, RANDOM()` — треки с одинаковым play_count перемешиваются, ломая positive feedback loop при бутстрапе (все play_count=0).
   - Тесты: 132/132 pass (0 новых — существующие тесты покрывают все изменённые пути)
+
+## Фаза 17: Ре-бутстрап каталога (17 409 треков)
+
+### Задачи фазы:
+- [x] Подготовка GPU-сервера: 8×RTX 4090, conda env, CUDA, зависимости
+- [x] Pre-init SQLite (полная схема из init.sql с FTS-триггерами)
+- [x] Pre-init QDrant (init-qdrant.py — 3 коллекции + payload indexes)
+- [x] Запуск 24 воркеров (3/GPU × 8 GPU) с BS-Roformer
+- [x] Баг-фикс FTS: `track_id` → `id` в tracks_fts (content-sync column mismatch)
+- [x] Баг-фикс qdrant_synced: `_flush_qdrant()` returns bool + 3 retries
+- [x] Баг-фикс QDrant ulimit: `--ulimit nofile=65535:65535`
+- [x] Баг-фикс HuggingFace 429: `HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1`
+- [x] Бутстрап 17 315/17 409 треков (~19ч)
+- [ ] z-score reindex (post-bootstrap)
+
+### Хронология:
+- **2026-03-02**: Подготовка GPU-сервера (155.212.182.210): 8×RTX 4090, 48 vCPU, 188GB RAM. Conda env `bootstrap` (Python 3.12, torch 2.8.0+cu128, audio-separator --no-deps). MP3 библиотека: 17 409 треков, 141GB.
+- **2026-03-02**: Pre-init: `sqlite3 karaoke.db < init.sql` + `python init-qdrant.py`. QDrant Docker с `--ulimit nofile=65535:65535`.
+- **2026-03-02**: Первый запуск: 8 воркеров (1/GPU), ~7.4 треков/мин. Переключено на 24 (3/GPU).
+- **2026-03-02**: Обнаружены баги при проверке данных:
+  1. **FTS content-sync**: столбец `track_id` в tracks_fts не совпадал с `id` в tracks → FTS пустой. Фикс: переименование + rebuild.
+  2. **qdrant_synced всегда 0**: не было кода для обновления после flush. Фикс: новый `_mark_qdrant_synced()`.
+  3. **qdrant_synced=1 при failed flush**: `_flush_qdrant()` ловил исключение молча. 185 в SQLite vs 147 в QDrant. Фикс: return bool + retry.
+  4. **QDrant "too many open files"**: 24 воркера исчерпали ulimit 1024. Фикс: `--ulimit nofile=65535:65535`.
+  5. **HuggingFace 429 rate limit**: 24 воркера одновременно проверяли версии моделей. 371 ошибка за один прогон. Фикс: `HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1`.
+- **2026-03-02**: Все баги исправлены. Данные очищены (46 orphan tracks удалены, sync reset+rebuild). Перезапуск с 24 воркерами.
+- **2026-03-02**: Стабильная работа: ~14 треков/мин, 0 ошибок.
+- **2026-03-03**: Сервер прерван (preemptible). Перезапущен пользователем. QDrant recovery ~30 сек (17k+ points). Бутстрап завершён: 17 315 треков в SQLite + QDrant (audio + lyrics) + FTS. 94 трека — инструменталы/скиты без вокала.
+- **2026-03-03**: Код закоммичен: FTS fix (init.sql), QDrant flush retry (bootstrap_runner.py), multi-worker launcher (run-gpu-server.sh).

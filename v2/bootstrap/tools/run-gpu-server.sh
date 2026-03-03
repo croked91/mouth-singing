@@ -31,6 +31,7 @@ LRCLIB_URL="${LRCLIB_URL:-http://${QDRANT_HOST}:9876}"
 WHISPER_MODEL="${WHISPER_MODEL:-medium}"
 CONDA_ENV="${CONDA_ENV:-bootstrap}"
 CONTAINER_MEDIA_PREFIX="${CONTAINER_MEDIA_PREFIX:-}"
+WORKERS_PER_GPU="${WORKERS_PER_GPU:-3}"
 DB_PATH="${OUTPUT_DIR}/karaoke.db"
 
 # Activate conda.
@@ -79,6 +80,7 @@ echo "DB path:       ${DB_PATH}"
 echo "QDrant host:   ${QDRANT_HOST}"
 echo "lrclib URL:    ${LRCLIB_URL}"
 echo "GPUs:          ${GPU_LIST[*]}"
+echo "Workers/GPU:   ${WORKERS_PER_GPU}"
 echo "Extra args:    $*"
 echo ""
 
@@ -88,24 +90,30 @@ echo ""
 cd "${BOOTSTRAP_DIR}"
 
 PIDS=()
+WORKER_DELAY="${WORKER_DELAY:-5}"
 for gpu_id in "${GPU_LIST[@]}"; do
-    python -m app.cli \
-        "${MP3_DIR}" \
-        --output-dir "${OUTPUT_DIR}" \
-        --db-path "${DB_PATH}" \
-        --lrclib-url "${LRCLIB_URL}" \
-        --device cuda \
-        --whisper-model "${WHISPER_MODEL}" \
-        --gpu-id "${gpu_id}" \
-        --qdrant-host "${QDRANT_HOST}" \
-        ${CONTAINER_MEDIA_PREFIX:+--container-media-prefix "${CONTAINER_MEDIA_PREFIX}"} \
-        "$@" &
-    PIDS+=($!)
-    echo "Worker GPU ${gpu_id} started (PID $!)"
+    for w in $(seq 1 "${WORKERS_PER_GPU}"); do
+        CUDA_VISIBLE_DEVICES="${gpu_id}" python -m app.cli \
+            "${MP3_DIR}" \
+            --output-dir "${OUTPUT_DIR}" \
+            --db-path "${DB_PATH}" \
+            --lrclib-url "${LRCLIB_URL}" \
+            --device cuda \
+            --whisper-model "${WHISPER_MODEL}" \
+            --gpu-id "${gpu_id}" \
+            --qdrant-host "${QDRANT_HOST}" \
+            ${CONTAINER_MEDIA_PREFIX:+--container-media-prefix "${CONTAINER_MEDIA_PREFIX}"} \
+            "$@" &
+        PIDS+=($!)
+        echo "Worker GPU ${gpu_id}/${w} started (PID $!)"
+        sleep "${WORKER_DELAY}"
+    done
 done
 
 echo ""
-echo "All ${#GPU_LIST[@]} worker(s) running. Waiting..."
+TOTAL_WORKERS=$((${#GPU_LIST[@]} * WORKERS_PER_GPU))
+echo ""
+echo "All ${TOTAL_WORKERS} worker(s) running (${#GPU_LIST[@]} GPUs × ${WORKERS_PER_GPU}). Waiting..."
 
 # ---------------------------------------------------------------
 # 4. Wait for all workers, report exit codes

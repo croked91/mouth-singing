@@ -52,6 +52,28 @@
   - QDrant v1.8.0 binary, conda env на data disk
 - **Результат:** 4725/4727 треков в SQLite + QDrant за ~10 часов
 
+## Фаза 17: Ре-бутстрап каталога (17 409 треков)
+
+- **Статус:** Завершена (17 315/17 409 треков, ~19ч на 8×RTX 4090)
+- **Начало:** 2026-03-02
+- **Ключевые решения:**
+  - Чистый ре-бутстрап вместо патчинга (ADR-016)
+  - 24 воркера (3/GPU × 8 GPU), `WORKER_DELAY=10`, `HF_HUB_OFFLINE=1`
+  - Pre-init DB из `init.sql` (FTS-триггеры срабатывают при INSERT)
+  - QDrant Docker с `--ulimit nofile=65535:65535`
+- **Инфраструктура:**
+  - GPU сервер: root@155.212.182.210, 8×RTX 4090, 48 vCPU, 188GB RAM, 394GB SSD
+  - Conda env `bootstrap` (Python 3.12, torch 2.8.0+cu128)
+  - MP3 библиотека: 17 409 треков, 141GB
+- **Баги найдены и исправлены в процессе:**
+  - FTS: `track_id` → `id` в tracks_fts (column name mismatch с content table)
+  - `_flush_qdrant()`: returns bool + 3 retries с exponential backoff
+  - `_mark_qdrant_synced()`: вызывается только при успешном flush
+  - QDrant ulimit: 1024 → 65535 (RocksDB "too many open files")
+  - HuggingFace 429: `HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1`
+- **Результат:** 17 315 треков в SQLite + QDrant (audio + lyrics) + FTS. 94 трека — инструменталы/скиты (нет вокала).
+- **TODO:** Запустить `reindex_audio_features.py` для z-score нормализации. Настроить cron reindex раз в месяц для актуализации mean/std при росте каталога.
+
 ## ML-аудит и исправление рекомендательной системы (2026-03-01)
 
 - **Статус:** Код готов, ожидает z-score reindex на сервере
@@ -81,11 +103,26 @@
 - **Тесты:** 98/98 pass (80 recommendation + 18 feature extractor)
 - **Файлы:** recommendation_service.py, session.py, sqlite_repository.py, init.sql, main.py + тесты
 
+## Операционные заметки
+
+### Reindex audio_features (z-score нормализация)
+- **Скрипт:** `v2/scripts/reindex_audio_features.py`
+- **Когда запускать:**
+  - Однократно после каждого полного бутстрапа
+  - Раз в месяц по cron при активном росте каталога (пользовательские загрузки)
+  - Не нужен, если каталог стабилен (stats не устаревают)
+- **Что делает:** Вычисляет mean/std по всем 45-d векторам → z-score → L2-renorm → upsert обратно. Сохраняет stats JSON для worker (production нормализация новых треков).
+- **Пример cron (1-е число каждого месяца, 4:00):**
+  ```
+  0 4 1 * * docker exec karaoke-worker python /app/scripts/reindex_audio_features.py --qdrant-host qdrant --stats-path /data/models/feature_normalization_stats.json --sqlite-path /data/sqlite/karaoke.db
+  ```
+
 ## Итог
 
-Все 17 фаз (1–15, включая подфазы a/b) завершены. Фаза 16 (массовый импорт каталога) завершена:
+Все 18 фаз (1–17) завершены:
 - **540+ unit/integration тестов** — все pass (включая 98 для рекомендательной системы)
 - **Browser E2E** (Playwright через Docker) — все потоки проверены
 - **Архитектурное ревью** — 2 критических бага и 5 предупреждений найдены и исправлены
 - **ML-аудит рекомендательной системы** — 9 проблем найдены и исправлены + weighted fusion audio+lyrics
-- **Bootstrap:** 4725/4727 треков обработано за ~10ч на 4×RTX 4090 (12 воркеров)
+- **Bootstrap v1:** 4725/4727 треков за ~10ч на 4×RTX 4090 (12 воркеров)
+- **Bootstrap v2 (ре-бутстрап):** 17 315/17 409 треков за ~19ч на 8×RTX 4090 (24 воркера)

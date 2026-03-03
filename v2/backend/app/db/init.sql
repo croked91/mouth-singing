@@ -31,7 +31,7 @@ CREATE INDEX IF NOT EXISTS idx_tracks_artist_title ON tracks(artist, title);
 
 -- FTS5 virtual table
 CREATE VIRTUAL TABLE IF NOT EXISTS tracks_fts USING fts5(
-    track_id UNINDEXED,
+    id UNINDEXED,
     artist,
     title,
     lyrics_text,
@@ -42,14 +42,14 @@ CREATE VIRTUAL TABLE IF NOT EXISTS tracks_fts USING fts5(
 
 -- FTS sync triggers
 CREATE TRIGGER IF NOT EXISTS tracks_ai AFTER INSERT ON tracks BEGIN
-    INSERT INTO tracks_fts(rowid, track_id, artist, title, lyrics_text)
+    INSERT INTO tracks_fts(rowid, id, artist, title, lyrics_text)
     VALUES (new.rowid, new.id, new.artist, new.title, new.lyrics_text);
 END;
 
 CREATE TRIGGER IF NOT EXISTS tracks_au AFTER UPDATE ON tracks BEGIN
-    INSERT INTO tracks_fts(tracks_fts, rowid, track_id, artist, title, lyrics_text)
+    INSERT INTO tracks_fts(tracks_fts, rowid, id, artist, title, lyrics_text)
     VALUES ('delete', old.rowid, old.id, old.artist, old.title, old.lyrics_text);
-    INSERT INTO tracks_fts(rowid, track_id, artist, title, lyrics_text)
+    INSERT INTO tracks_fts(rowid, id, artist, title, lyrics_text)
     VALUES (new.rowid, new.id, new.artist, new.title, new.lyrics_text);
 END;
 
