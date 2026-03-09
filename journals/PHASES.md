@@ -135,9 +135,28 @@
   0 4 1 * * docker exec karaoke-worker python /app/scripts/reindex_audio_features.py --qdrant-host qdrant --stats-path /data/models/feature_normalization_stats.json --sqlite-path /data/sqlite/karaoke.db
   ```
 
+## Исследование M3: Оптимизация слоговой разметки (2026-03-06 — 2026-03-07)
+
+- **Статус:** Завершено
+- **Контекст:** Бета-тест выявил разброс качества слоговых таймингов. 7 методов протестировано на 5 треках.
+- **Результат:** CTC Hybrid — лучший метод (MAE 0.240с, hit rate 71%, CPU-only, ~22с/трек)
+- **ADR-017:** Принят — CTC Hybrid для нового pipeline загрузки треков
+- **Файлы:** `m3_test/` (эксперименты), `m3_test/RESULTS.md` (сводка)
+
+## Фаза 18: v3-rc1 — Новый worker pipeline (GPU-сервер)
+
+- **Статус:** В работе
+- **Начало:** 2026-03-07
+- **Целевое железо:** Intel Core i3-14100, 32 GB DDR5, Tesla T4 16 GB, 2 TB NVMe
+- **План:** `v3-rc1/PLAN.md` (~1540 строк)
+- **Суть:** Замена Sonoix ASR на CTC Hybrid alignment + LLM поиск текста
+- **Новые компоненты:** VADProcessor, WhisperTranscriber, LyricsSearcher, CTCAligner, новый AudioPipeline
+- **Единственный внешний API:** OpenAI gpt-4o-mini (~$0.001/трек)
+- **Альтернатива:** v3-rc2 (VPS + API) — план готов, реализация отложена
+
 ## Итог
 
-Все фазы (1–17) + деплой завершены:
+Все фазы (1–17) + деплой завершены. Фаза 18 в работе:
 - **540+ unit/integration тестов** — все pass (включая 98 для рекомендательной системы)
 - **Browser E2E** (Playwright через Docker) — все потоки проверены
 - **Архитектурное ревью** — 2 критических бага и 5 предупреждений найдены и исправлены

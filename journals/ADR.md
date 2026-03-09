@@ -124,3 +124,17 @@
 - **Решение:** Чистый ре-бутстрап каталога на новом GPU-сервере. Код подготовлен для прямой записи в production-базы: `--container-media-prefix` в CLI перезаписывает `instrumental_path` на контейнерный путь, DB инициализируется полной схемой из `init.sql` (FTS-триггеры срабатывают при INSERT), QDrant-коллекции создаются скриптом `init-qdrant.py`. Деплой через `docker-compose.prod.yml` с bind mounts вместо named volumes.
 - **Обоснование:** Патчинг требовал множества ручных шагов с высоким риском ошибки (разные пути в старой/новой БД, отсутствие FTS, необходимость пересборки QDrant из stems). Чистый подход гарантирует консистентность и занимает ~10 часов на 4×RTX 4090.
 - **Последствия:** Нужен временный GPU-сервер для ре-бутстрапа (~$5-10). Все данные (SQLite + QDrant) готовы к production-деплою без постобработки. `docker-compose.prod.yml` обеспечивает bind mounts для серверов с данными на root-диске.
+
+### ADR-017: CTC Hybrid для слоговой разметки при загрузке треков
+- **Статус:** Принято
+- **Контекст:** Эксперимент M3 (5 треков, 7 методов) показал, что текущий ASR-based pipeline даёт плохие тайминги при отсутствии LRC (MAE 4.5с, hit rate 56%). WhisperX force_align (V2) требует GPU и двух проходов ASR. Sonoix+LLM коррекция не работает (MAE 13-54с). CTC Forced Aligner (MMS-300m ONNX) с гибридным word+char подходом показал лучшие результаты: MAE 0.240с, hit rate 71%, один проход на CPU за ~22с.
+- **Решение:** Новый флоу загрузки: UVR → VAD (librosa) на вокале → Whisper tiny (идентификация песни) → LLM поиск текста в интернете → CTC word-level align → CTC char-level align внутри слов → слоговые тайминги. ASR используется только для идентификации, не для таймингов. Текст берётся из проверенного источника (lyrics-сайты).
+- **Обоснование:** CTC Hybrid не зависит от качества ASR, работает на CPU, даёт тайминги на уровне WhisperX force_align (71% vs 72% hit rate) без GPU. Ключевой инсайт: pyphen proportional split — главный bottleneck word-level методов; char-level CTC внутри слов решает эту проблему.
+- **Последствия:** Новая зависимость `ctc-forced-aligner` (~300MB модель). Нужен LLM API для поиска текста (~$0.001/трек). Fallback при ненайденном тексте — запрос к пользователю. Односложные слова пропускают char-level (pre-check на количество emission frames).
+
+### ADR-018: v3-rc1 — GPU worker на выделенном сервере
+- **Статус:** Принято
+- **Контекст:** v2 worker работал на CPU (MDX-NET UVR ~7 мин/трек, Sonoix для ASR). Нужен переход на GPU pipeline (BS-Roformer + faster-whisper + CTC) для качества и независимости от Sonoix API. Два варианта: rc1 (выделенный GPU-сервер, ~$50/мес) vs rc2 (дешёвый VPS + внешние API, ~$15/мес + $0.30/трек). Выбран rc1.
+- **Решение:** Выделенный сервер Xeon E-2236 + Tesla T4 16GB + 32GB DDR5. Docker Compose с 4 контейнерами (QDrant, backend, worker, frontend). Worker образ на CUDA 12.1 + cuDNN 8 + Python 3.11. GPU passthrough через nvidia-container-toolkit. Модели предзагружаются при старте (entrypoint.sh → download_models.py).
+- **Обоснование:** Полный контроль над pipeline, нет зависимости от внешних API (кроме OpenAI для идентификации ~$0.0005/трек). T4 16GB достаточно для BS-Roformer + faster-whisper. Фиксированная стоимость вместо per-track.
+- **Последствия:** Требуется "Above 4G Decoding" в BIOS для T4 (PCI BAR allocation). Dockerfile сложный (7 шагов, ~15 зависимостей). sentence-transformers<3 и transformers<5 из-за совместимости с torch 2.3.1. QDrant v1.16.2+ для qdrant-client 1.17. Сервер v2 (155.212.182.210) остаётся для текущего production, v3-rc1 на 212.41.1.108.

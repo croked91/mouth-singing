@@ -1,0 +1,34 @@
+Experiment: Sonoix + LLM (GPT-4o-mini) vs Sonoix + difflib
+============================================================
+
+Tracks processed: 5/5 successful
+
+  Track Artist/Title                        Lang   LLM MAE  LLM Hit%  LLM WER   LLM $ |  dif MAE  dif Hit%  dif WER
+  --------------------------------------------------------------------------------------------------------------
+  1     Слава КПСС — Владимир Путин         ru     13.1306     1.2%   32.2% $0.0082 |  10.7393     0.4%   10.4%
+  2     Григорий Лепс — Орлы или вороны     ru     30.1594     1.4%   73.7% $0.0042 |  21.3697     0.3%    1.2%
+  3     Red Hot Chili Peppers — Bullet Pro  en      1.8890     7.7%   20.0% $0.0014 |   2.5611     8.8%   34.7%
+  4     Дима Билан — Я просто люблю тебя    ru     46.4156     0.0%   60.7% $0.0044 |  19.6084     0.3%    7.6%
+  5     Король и Шут — Помнят с горечью др  ru     54.0707     0.6%   30.5% $0.0037 |  25.4420     0.7%   13.4%
+
+Averages:
+  LLM:     MAE=29.1331s  Hit=2.2%  WER=43.4%  Cost/track=$0.0044
+  difflib: MAE=15.9441s  Hit=2.1%  WER=13.5%
+
+Cost projection (LLM method):
+    1000 tracks: $4.38
+    5000 tracks: $21.89
+   17000 tracks: $74.42
+
+Sonoix WER (raw ASR, before any correction):
+  Track 1: 17.8%
+  Track 2: 3.5%
+  Track 3: 72.0%
+  Track 4: 9.2%
+  Track 5: 14.5%
+
+Interpretation:
+  MAE < 0.1s  = good timing (karaoke usable)
+  MAE < 0.05s = excellent timing
+  WER < 2%    = text nearly perfect (Variant 3 target)
+  WER < 5%    = text acceptable

@@ -1,0 +1,807 @@
+[
+  {
+    "track_id": 1,
+    "artist": "Слава КПСС",
+    "title": "Владимир Путин",
+    "language": "ru",
+    "sonoix_token_count": 674,
+    "sonoix_word_count": 290,
+    "sonoix_wer_raw": 0.1783,
+    "sonoix_elapsed_sec": 14.7,
+    "reference_syllable_count": 531,
+    "difflib": {
+      "syllable_count": 646,
+      "mae": 10.7393,
+      "hit_rate_01s": 0.0038,
+      "alignment_count": 531,
+      "wer": 0.1042,
+      "elapsed_sec": 0.0,
+      "comparison_table": [
+        {
+          "syllable_ref": "Сла",
+          "syllable_pred": "Слава",
+          "ref_start": 4.05,
+          "pred_start": 2.1,
+          "delta": 1.95
+        },
+        {
+          "syllable_ref": "ва",
+          "syllable_pred": " КПСС",
+          "ref_start": 4.599,
+          "pred_start": 4.1,
+          "delta": 0.499
+        },
+        {
+          "syllable_ref": " КПСС",
+          "syllable_pred": " Ты",
+          "ref_start": 4.762,
+          "pred_start": 6.06,
+          "delta": 1.298
+        },
+        {
+          "syllable_ref": "\nТы",
+          "syllable_pred": "\nз",
+          "ref_start": 5.88,
+          "pred_start": 6.18,
+          "delta": 0.3
+        },
+        {
+          "syllable_ref": " зна",
+          "syllable_pred": "н",
+          "ref_start": 6.122,
+          "pred_start": 6.24,
+          "delta": 0.118
+        },
+        {
+          "syllable_ref": "ешь",
+          "syllable_pred": "а",
+          "ref_start": 6.283,
+          "pred_start": 6.36,
+          "delta": 0.077
+        },
+        {
+          "syllable_ref": " кто",
+          "syllable_pred": "е",
+          "ref_start": 6.425,
+          "pred_start": 6.42,
+          "delta": 0.005
+        },
+        {
+          "syllable_ref": " я",
+          "syllable_pred": "шь",
+          "ref_start": 6.727,
+          "pred_start": 6.48,
+          "delta": 0.247
+        },
+        {
+          "syllable_ref": "\nВла",
+          "syllable_pred": " к",
+          "ref_start": 9.39,
+          "pred_start": 6.54,
+          "delta": 2.85
+        },
+        {
+          "syllable_ref": "ди",
+          "syllable_pred": "то",
+          "ref_start": 9.737,
+          "pred_start": 6.66,
+          "delta": 3.077
+        },
+        {
+          "syllable_ref": "мир",
+          "syllable_pred": " я",
+          "ref_start": 9.961,
+          "pred_start": 6.78,
+          "delta": 3.181
+        },
+        {
+          "syllable_ref": " Пу",
+          "syllable_pred": " Влад",
+          "ref_start": 10.267,
+          "pred_start": 9.66,
+          "delta": 0.607
+        },
+        {
+          "syllable_ref": "тин",
+          "syllable_pred": "имир",
+          "ref_start": 10.634,
+          "pred_start": 10.08,
+          "delta": 0.554
+        },
+        {
+          "syllable_ref": "\nВла",
+          "syllable_pred": "\nП",
+          "ref_start": 11.45,
+          "pred_start": 10.44,
+          "delta": 1.01
+        },
+        {
+          "syllable_ref": "ди",
+          "syllable_pred": "у",
+          "ref_start": 11.876,
+          "pred_start": 10.68,
+          "delta": 1.196
+        },
+        {
+          "syllable_ref": "мир",
+          "syllable_pred": "тин",
+          "ref_start": 12.12,
+          "pred_start": 10.92,
+          "delta": 1.2
+        },
+        {
+          "syllable_ref": " Пу",
+          "syllable_pred": " Влад",
+          "ref_start": 12.424,
+          "pred_start": 11.7,
+          "delta": 0.724
+        },
+        {
+          "syllable_ref": "тин",
+          "syllable_pred": "имир",
+          "ref_start": 12.769,
+          "pred_start": 12.12,
+          "delta": 0.649
+        },
+        {
+          "syllable_ref": "\nВла",
+          "syllable_pred": "\nП",
+          "ref_start": 13.54,
+          "pred_start": 12.54,
+          "delta": 1.0
+        },
+        {
+          "syllable_ref": "ди",
+          "syllable_pred": "у",
+          "ref_start": 14.116,
+          "pred_start": 12.78,
+          "delta": 1.336
+        }
+      ]
+    }
+  },
+  {
+    "track_id": 2,
+    "artist": "Григорий Лепс",
+    "title": "Орлы или вороны",
+    "language": "ru",
+    "sonoix_token_count": 379,
+    "sonoix_word_count": 171,
+    "sonoix_wer_raw": 0.0345,
+    "sonoix_elapsed_sec": 24.4,
+    "reference_syllable_count": 301,
+    "difflib": {
+      "syllable_count": 376,
+      "mae": 21.3697,
+      "hit_rate_01s": 0.0033,
+      "alignment_count": 301,
+      "wer": 0.0117,
+      "elapsed_sec": 0.0,
+      "comparison_table": [
+        {
+          "syllable_ref": "Ска",
+          "syllable_pred": "С",
+          "ref_start": 14.05,
+          "pred_start": 14.16,
+          "delta": 0.11
+        },
+        {
+          "syllable_ref": "жи",
+          "syllable_pred": "к",
+          "ref_start": 14.211,
+          "pred_start": 14.28,
+          "delta": 0.069
+        },
+        {
+          "syllable_ref": " мне,",
+          "syllable_pred": "ажи",
+          "ref_start": 14.553,
+          "pred_start": 14.4,
+          "delta": 0.153
+        },
+        {
+          "syllable_ref": " что",
+          "syllable_pred": " мн",
+          "ref_start": 15.178,
+          "pred_start": 14.7,
+          "delta": 0.478
+        },
+        {
+          "syllable_ref": " я",
+          "syllable_pred": "е,",
+          "ref_start": 15.459,
+          "pred_start": 14.82,
+          "delta": 0.639
+        },
+        {
+          "syllable_ref": " не",
+          "syllable_pred": " что",
+          "ref_start": 15.621,
+          "pred_start": 15.18,
+          "delta": 0.441
+        },
+        {
+          "syllable_ref": " знаю.",
+          "syllable_pred": " я",
+          "ref_start": 15.782,
+          "pred_start": 15.36,
+          "delta": 0.422
+        },
+        {
+          "syllable_ref": " По",
+          "syllable_pred": " не",
+          "ref_start": 16.809,
+          "pred_start": 15.6,
+          "delta": 1.209
+        },
+        {
+          "syllable_ref": "кой",
+          "syllable_pred": " зн",
+          "ref_start": 16.99,
+          "pred_start": 15.84,
+          "delta": 1.15
+        },
+        {
+          "syllable_ref": " про",
+          "syllable_pred": "аю.",
+          "ref_start": 17.211,
+          "pred_start": 16.14,
+          "delta": 1.071
+        },
+        {
+          "syllable_ref": "лей",
+          "syllable_pred": " По",
+          "ref_start": 17.393,
+          "pred_start": 16.92,
+          "delta": 0.473
+        },
+        {
+          "syllable_ref": " в",
+          "syllable_pred": "кой",
+          "ref_start": 17.695,
+          "pred_start": 17.04,
+          "delta": 0.655
+        },
+        {
+          "syllable_ref": " мою",
+          "syllable_pred": " про",
+          "ref_start": 17.815,
+          "pred_start": 17.34,
+          "delta": 0.475
+        },
+        {
+          "syllable_ref": " ду",
+          "syllable_pred": "лей",
+          "ref_start": 18.198,
+          "pred_start": 17.52,
+          "delta": 0.678
+        },
+        {
+          "syllable_ref": "шу",
+          "syllable_pred": " в",
+          "ref_start": 18.581,
+          "pred_start": 17.7,
+          "delta": 0.881
+        },
+        {
+          "syllable_ref": "\nВедь",
+          "syllable_pred": " м",
+          "ref_start": 19.99,
+          "pred_start": 17.82,
+          "delta": 2.17
+        },
+        {
+          "syllable_ref": " сча",
+          "syllable_pred": "ою",
+          "ref_start": 20.492,
+          "pred_start": 18.0,
+          "delta": 2.492
+        },
+        {
+          "syllable_ref": "стье",
+          "syllable_pred": " д",
+          "ref_start": 20.894,
+          "pred_start": 18.18,
+          "delta": 2.714
+        },
+        {
+          "syllable_ref": " не",
+          "syllable_pred": "у",
+          "ref_start": 21.538,
+          "pred_start": 18.42,
+          "delta": 3.118
+        },
+        {
+          "syllable_ref": " за",
+          "syllable_pred": "шу",
+          "ref_start": 21.739,
+          "pred_start": 18.9,
+          "delta": 2.839
+        }
+      ]
+    }
+  },
+  {
+    "track_id": 3,
+    "artist": "Red Hot Chili Peppers",
+    "title": "Bullet Proof",
+    "language": "en",
+    "sonoix_token_count": 110,
+    "sonoix_word_count": 66,
+    "sonoix_wer_raw": 0.72,
+    "sonoix_elapsed_sec": 11.5,
+    "reference_syllable_count": 80,
+    "difflib": {
+      "syllable_count": 87,
+      "mae": 2.5611,
+      "hit_rate_01s": 0.0875,
+      "alignment_count": 80,
+      "wer": 0.3467,
+      "elapsed_sec": 0.0,
+      "comparison_table": [
+        {
+          "syllable_ref": "All",
+          "syllable_pred": "All",
+          "ref_start": 7.58,
+          "pred_start": 8.4,
+          "delta": 0.82
+        },
+        {
+          "syllable_ref": " around",
+          "syllable_pred": " around",
+          "ref_start": 8.17,
+          "pred_start": 8.7,
+          "delta": 0.53
+        },
+        {
+          "syllable_ref": " the",
+          "syllable_pred": " the",
+          "ref_start": 8.456,
+          "pred_start": 8.94,
+          "delta": 0.484
+        },
+        {
+          "syllable_ref": " world",
+          "syllable_pred": " wo",
+          "ref_start": 8.618,
+          "pred_start": 9.12,
+          "delta": 0.502
+        },
+        {
+          "syllable_ref": "\nI'd",
+          "syllable_pred": "rld",
+          "ref_start": 9.27,
+          "pred_start": 9.3,
+          "delta": 0.03
+        },
+        {
+          "syllable_ref": " rather",
+          "syllable_pred": "I'd",
+          "ref_start": 10.313,
+          "pred_start": 9.42,
+          "delta": 0.893
+        },
+        {
+          "syllable_ref": " be",
+          "syllable_pred": "\nrather",
+          "ref_start": 10.62,
+          "pred_start": 9.636,
+          "delta": 0.984
+        },
+        {
+          "syllable_ref": " in",
+          "syllable_pred": " be",
+          "ref_start": 10.682,
+          "pred_start": 10.284,
+          "delta": 0.398
+        },
+        {
+          "syllable_ref": " a",
+          "syllable_pred": " in",
+          "ref_start": 10.743,
+          "pred_start": 10.62,
+          "delta": 0.123
+        },
+        {
+          "syllable_ref": " band",
+          "syllable_pred": " a",
+          "ref_start": 10.784,
+          "pred_start": 10.71,
+          "delta": 0.074
+        },
+        {
+          "syllable_ref": "\nPlayin'",
+          "syllable_pred": " band",
+          "ref_start": 11.05,
+          "pred_start": 10.74,
+          "delta": 0.31
+        },
+        {
+          "syllable_ref": " my",
+          "syllable_pred": " Playin'",
+          "ref_start": 11.836,
+          "pred_start": 10.77,
+          "delta": 1.066
+        },
+        {
+          "syllable_ref": " funky",
+          "syllable_pred": "\nmy",
+          "ref_start": 11.957,
+          "pred_start": 10.8,
+          "delta": 1.157
+        },
+        {
+          "syllable_ref": " mu",
+          "syllable_pred": "funky",
+          "ref_start": 12.381,
+          "pred_start": 11.1,
+          "delta": 1.281
+        },
+        {
+          "syllable_ref": "sic",
+          "syllable_pred": " music",
+          "ref_start": 12.643,
+          "pred_start": 11.233,
+          "delta": 1.41
+        },
+        {
+          "syllable_ref": " as",
+          "syllable_pred": " as",
+          "ref_start": 12.865,
+          "pred_start": 11.366,
+          "delta": 1.499
+        },
+        {
+          "syllable_ref": " loud",
+          "syllable_pred": " loud",
+          "ref_start": 12.925,
+          "pred_start": 11.419,
+          "delta": 1.506
+        },
+        {
+          "syllable_ref": " as",
+          "syllable_pred": " as",
+          "ref_start": 13.348,
+          "pred_start": 11.526,
+          "delta": 1.822
+        },
+        {
+          "syllable_ref": " I",
+          "syllable_pred": " I",
+          "ref_start": 13.51,
+          "pred_start": 11.64,
+          "delta": 1.87
+        },
+        {
+          "syllable_ref": " can",
+          "syllable_pred": "can",
+          "ref_start": 13.772,
+          "pred_start": 11.76,
+          "delta": 2.012
+        }
+      ]
+    }
+  },
+  {
+    "track_id": 4,
+    "artist": "Дима Билан",
+    "title": "Я просто люблю тебя",
+    "language": "ru",
+    "sonoix_token_count": 406,
+    "sonoix_word_count": 181,
+    "sonoix_wer_raw": 0.0924,
+    "sonoix_elapsed_sec": 20.0,
+    "reference_syllable_count": 315,
+    "difflib": {
+      "syllable_count": 385,
+      "mae": 19.6084,
+      "hit_rate_01s": 0.0032,
+      "alignment_count": 315,
+      "wer": 0.0765,
+      "elapsed_sec": 0.0,
+      "comparison_table": [
+        {
+          "syllable_ref": "Ве",
+          "syllable_pred": "В",
+          "ref_start": 18.74,
+          "pred_start": 20.28,
+          "delta": 1.54
+        },
+        {
+          "syllable_ref": "чер",
+          "syllable_pred": "е",
+          "ref_start": 20.126,
+          "pred_start": 20.4,
+          "delta": 0.274
+        },
+        {
+          "syllable_ref": "няя",
+          "syllable_pred": "ч",
+          "ref_start": 20.467,
+          "pred_start": 20.52,
+          "delta": 0.053
+        },
+        {
+          "syllable_ref": " грусть",
+          "syllable_pred": "е",
+          "ref_start": 21.07,
+          "pred_start": 20.82,
+          "delta": 0.25
+        },
+        {
+          "syllable_ref": " в",
+          "syllable_pred": "рняя",
+          "ref_start": 22.275,
+          "pred_start": 21.0,
+          "delta": 1.275
+        },
+        {
+          "syllable_ref": " ок",
+          "syllable_pred": " гру",
+          "ref_start": 22.375,
+          "pred_start": 21.54,
+          "delta": 0.835
+        },
+        {
+          "syllable_ref": "но",
+          "syllable_pred": "сть",
+          "ref_start": 22.576,
+          "pred_start": 21.72,
+          "delta": 0.856
+        },
+        {
+          "syllable_ref": " по",
+          "syllable_pred": " в",
+          "ref_start": 22.837,
+          "pred_start": 22.44,
+          "delta": 0.397
+        },
+        {
+          "syllable_ref": "сту",
+          "syllable_pred": " ок",
+          "ref_start": 23.058,
+          "pred_start": 22.56,
+          "delta": 0.498
+        },
+        {
+          "syllable_ref": "чит",
+          "syllable_pred": "но",
+          "ref_start": 23.46,
+          "pred_start": 22.68,
+          "delta": 0.78
+        },
+        {
+          "syllable_ref": " ко",
+          "syllable_pred": " по",
+          "ref_start": 24.022,
+          "pred_start": 23.1,
+          "delta": 0.922
+        },
+        {
+          "syllable_ref": " мне",
+          "syllable_pred": "ст",
+          "ref_start": 24.203,
+          "pred_start": 23.28,
+          "delta": 0.923
+        },
+        {
+          "syllable_ref": "\nНо",
+          "syllable_pred": "уч",
+          "ref_start": 28.36,
+          "pred_start": 23.64,
+          "delta": 4.72
+        },
+        {
+          "syllable_ref": " я",
+          "syllable_pred": "ит",
+          "ref_start": 29.644,
+          "pred_start": 23.82,
+          "delta": 5.824
+        },
+        {
+          "syllable_ref": " не",
+          "syllable_pred": " ко",
+          "ref_start": 29.925,
+          "pred_start": 24.18,
+          "delta": 5.745
+        },
+        {
+          "syllable_ref": " бо",
+          "syllable_pred": " м",
+          "ref_start": 30.206,
+          "pred_start": 24.36,
+          "delta": 5.846
+        },
+        {
+          "syllable_ref": "юсь,",
+          "syllable_pred": "не",
+          "ref_start": 30.547,
+          "pred_start": 24.72,
+          "delta": 5.827
+        },
+        {
+          "syllable_ref": " я",
+          "syllable_pred": "\nНо",
+          "ref_start": 31.711,
+          "pred_start": 29.34,
+          "delta": 2.371
+        },
+        {
+          "syllable_ref": " сам",
+          "syllable_pred": " я",
+          "ref_start": 31.972,
+          "pred_start": 29.64,
+          "delta": 2.332
+        },
+        {
+          "syllable_ref": " ее",
+          "syllable_pred": " не",
+          "ref_start": 32.473,
+          "pred_start": 30.06,
+          "delta": 2.413
+        }
+      ]
+    }
+  },
+  {
+    "track_id": 5,
+    "artist": "Король и Шут",
+    "title": "Помнят с горечью древляне",
+    "language": "ru",
+    "sonoix_token_count": 382,
+    "sonoix_word_count": 157,
+    "sonoix_wer_raw": 0.1455,
+    "sonoix_elapsed_sec": 15.3,
+    "reference_syllable_count": 287,
+    "difflib": {
+      "syllable_count": 354,
+      "mae": 25.442,
+      "hit_rate_01s": 0.007,
+      "alignment_count": 287,
+      "wer": 0.1341,
+      "elapsed_sec": 0.0,
+      "comparison_table": [
+        {
+          "syllable_ref": "По",
+          "syllable_pred": "П",
+          "ref_start": 6.5,
+          "pred_start": 7.44,
+          "delta": 0.94
+        },
+        {
+          "syllable_ref": "мнят",
+          "syllable_pred": "о",
+          "ref_start": 7.383,
+          "pred_start": 7.56,
+          "delta": 0.177
+        },
+        {
+          "syllable_ref": " с",
+          "syllable_pred": "м",
+          "ref_start": 7.745,
+          "pred_start": 7.74,
+          "delta": 0.005
+        },
+        {
+          "syllable_ref": " го",
+          "syllable_pred": "нят",
+          "ref_start": 7.865,
+          "pred_start": 7.92,
+          "delta": 0.055
+        },
+        {
+          "syllable_ref": "ре",
+          "syllable_pred": " с",
+          "ref_start": 8.307,
+          "pred_start": 8.04,
+          "delta": 0.267
+        },
+        {
+          "syllable_ref": "чью",
+          "syllable_pred": " г",
+          "ref_start": 8.648,
+          "pred_start": 8.34,
+          "delta": 0.308
+        },
+        {
+          "syllable_ref": " дре",
+          "syllable_pred": "о",
+          "ref_start": 9.15,
+          "pred_start": 8.58,
+          "delta": 0.57
+        },
+        {
+          "syllable_ref": "вля",
+          "syllable_pred": "р",
+          "ref_start": 9.512,
+          "pred_start": 8.82,
+          "delta": 0.692
+        },
+        {
+          "syllable_ref": "не,",
+          "syllable_pred": "ечью",
+          "ref_start": 9.974,
+          "pred_start": 9.06,
+          "delta": 0.914
+        },
+        {
+          "syllable_ref": " хоть",
+          "syllable_pred": " др",
+          "ref_start": 10.677,
+          "pred_start": 9.42,
+          "delta": 1.257
+        },
+        {
+          "syllable_ref": " про",
+          "syllable_pred": "ев",
+          "ref_start": 11.118,
+          "pred_start": 9.54,
+          "delta": 1.578
+        },
+        {
+          "syllable_ref": "шло",
+          "syllable_pred": "ля",
+          "ref_start": 11.46,
+          "pred_start": 9.78,
+          "delta": 1.68
+        },
+        {
+          "syllable_ref": " не",
+          "syllable_pred": "не,",
+          "ref_start": 12.182,
+          "pred_start": 10.14,
+          "delta": 2.042
+        },
+        {
+          "syllable_ref": "ма",
+          "syllable_pred": " хо",
+          "ref_start": 12.624,
+          "pred_start": 10.98,
+          "delta": 1.644
+        },
+        {
+          "syllable_ref": "ло",
+          "syllable_pred": "ть",
+          "ref_start": 12.905,
+          "pred_start": 11.1,
+          "delta": 1.805
+        },
+        {
+          "syllable_ref": " лет",
+          "syllable_pred": " пр",
+          "ref_start": 13.327,
+          "pred_start": 11.4,
+          "delta": 1.927
+        },
+        {
+          "syllable_ref": "\nО",
+          "syllable_pred": "ош",
+          "ref_start": 14.09,
+          "pred_start": 11.64,
+          "delta": 2.45
+        },
+        {
+          "syllable_ref": " ро",
+          "syllable_pred": "ло",
+          "ref_start": 14.893,
+          "pred_start": 11.82,
+          "delta": 3.073
+        },
+        {
+          "syllable_ref": "ман",
+          "syllable_pred": " не",
+          "ref_start": 15.235,
+          "pred_start": 12.66,
+          "delta": 2.575
+        },
+        {
+          "syllable_ref": "ти",
+          "syllable_pred": "ма",
+          "ref_start": 15.857,
+          "pred_start": 13.02,
+          "delta": 2.837
+        }
+      ]
+    }
+  }
+]

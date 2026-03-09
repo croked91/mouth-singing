@@ -1,0 +1,15 @@
+Variant CTC Experiment Summary (char-level)
+===========================================================================
+
+Approach: CTC Forced Aligner (known text, char-level) -> pyphen syllable boundaries from char timestamps
+
+Track  | Artist/Title                           | Lang |      MAE |    Hit% |   Matched
+--------------------------------------------------------------------------------
+1      | Слава КПСС - Владимир Путин            |   ru |   3.211s |    6.0% |   531/531
+2      | Григорий Лепс - Орлы или вороны        |   ru |   4.854s |    0.7% |   301/301
+3      | Red Hot Chili Peppers - Bullet Proof   |   en |  23.912s |    0.0% |     80/80
+4      | Дима Билан - Я просто люблю тебя       |   ru |   2.285s |    4.1% |   315/315
+5      | Король и Шут - Помнят с горечью древл  |   ru |   3.264s |    2.1% |   287/287
+
+Average MAE: 7.505s
+Tracks with MAE < 0.15s: 0/5

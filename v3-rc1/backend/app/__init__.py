@@ -1,0 +1,1 @@
+# Karaoke backend application package.

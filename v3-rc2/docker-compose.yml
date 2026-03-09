@@ -1,0 +1,109 @@
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.13.6
+    container_name: karaoke_qdrant
+    restart: unless-stopped
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      QDRANT__SERVICE__HTTP_PORT: 6333
+    networks:
+      - karaoke_net
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/6333'"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: karaoke_backend
+    restart: unless-stopped
+    depends_on:
+      qdrant:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: /data/sqlite/karaoke.db
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: "6333"
+      MEDIA_ROOT: /data/media
+      ADMIN_SECRET: ${ADMIN_SECRET:-changeme}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - sqlite_data:/data/sqlite
+      - media_data:/data/media
+    networks:
+      - karaoke_net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  worker:
+    build:
+      context: .
+      dockerfile: worker/Dockerfile
+    container_name: karaoke_worker
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: /data/sqlite/karaoke.db
+      MEDIA_ROOT: /data/media
+      MODEL_CACHE_DIR: /data/models
+      WORKER_ID: worker-1
+      POLL_INTERVAL_SEC: ${WORKER_POLL_INTERVAL:-2}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # QDrant
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: "6333"
+      NORMALIZATION_STATS_PATH: ${NORMALIZATION_STATS_PATH:-/data/models/feature_normalization_stats.json}
+      # MVSEP
+      MVSEP_API_KEY: ${MVSEP_API_KEY:?err}
+      MVSEP_SEP_TYPE: "49"
+      MVSEP_POLL_INTERVAL_SEC: "10"
+      MVSEP_TIMEOUT_SEC: "600"
+      # OpenAI (Whisper API + LyricsSearcher + optional Embedder)
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?err}
+      OPENAI_MODEL: "gpt-4o-mini"
+      WHISPER_MODEL: "whisper-1"
+      # Genius API (for LyricsSearcher)
+      GENIUS_TOKEN: ${GENIUS_TOKEN:?err}
+      # Embedder (local by default)
+      LYRIC_EMBEDDER_BACKEND: ${LYRIC_EMBEDDER_BACKEND:-local}
+      # CTC model cache
+      HF_HOME: /data/models/huggingface
+    volumes:
+      - sqlite_data:/data/sqlite
+      - media_data:/data/media
+      - models_data:/data/models
+    networks:
+      - karaoke_net
+
+  frontend:
+    build:
+      context: frontend
+      dockerfile: Dockerfile
+    container_name: karaoke_frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "${APP_PORT:-80}:80"
+    networks:
+      - karaoke_net
+
+volumes:
+  qdrant_data:
+  sqlite_data:
+  media_data:
+  models_data:
+
+networks:
+  karaoke_net:
+    driver: bridge

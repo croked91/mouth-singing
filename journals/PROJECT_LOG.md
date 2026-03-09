@@ -1,10 +1,10 @@
 # Журнал проекта: Караоке-приложение
 
 ## Статус проекта
-**Текущая фаза:** 17 — Ре-бутстрап каталога (17 409 треков) — Завершена
+**Текущая фаза:** 18 — v3-rc1 Worker Pipeline (GPU-сервер) — Задеплоен
 **Дата начала:** 2026-02-22
-**Последний коммит:** (pending) Recommendation system audit bugfixes
-**Структура:** Реализация в `v2/`, документация в корне
+**Последний коммит:** (pending) v3-rc1 deployment fixes
+**Структура:** Реализация в `v2/` (prod), `v3-rc1/` (new GPU pipeline), документация в корне
 
 ## Фаза 1: Анализ и проектирование
 **Коммит:** 43bb7dc
@@ -623,3 +623,143 @@
 - **2026-03-03**: z-score reindex: 17 315 векторов нормализованы за ~30 сек. Фикс скрипта: `timeout=300`, `check_compatibility=False` (qdrant-client 1.17 vs server 1.8). Stats JSON → `/root/models/feature_normalization_stats.json`.
 - **2026-03-03**: Деплой Docker Compose на 155.212.182.210. Фиксы: QDrant bind mount (`/root/qdrant_storage`), worker models `:ro`→`:rw`, QDrant image v1.8.0→v1.13.6 (фикс 404 на `/points/query` — qdrant-client 1.17 использует новый API). Все 4 контейнера healthy.
 - **2026-03-03**: Верификация рекомендаций (E2E): все 3 стратегии (last, last_two_avg, session_avg) возвращают результаты. Граф переходов наполняется (11 transitions после тестирования). Бета-тест запланирован на 2026-03-04.
+
+## Исследование M3: Оптимизация слоговой разметки
+
+### Контекст
+Бета-тестирование выявило, что качество слоговой разметки сильно варьируется между треками. Причина — два пути в бутстрапе: Path 1 (LRC найден → syllabify → WhisperX force_align → точные тайминги) vs Path 2 (LRC не найден → WhisperX ASR → pyphen proportional split → плохие тайминги). Задача: найти способ получать качественные тайминги без LRC.
+
+### Тестовая выборка
+5 треков: Слава КПСС, Григорий Лепс, RHCP, Дима Билан, Король и Шут. Эталон — syllable_timings из БД (Path 1).
+
+### Протестированные методы (7 вариантов)
+1. **Baseline** — WhisperX ASR → pyphen proportional split
+2. **V2** — WhisperX ASR → difflib fuzzy match с известным текстом → force_align слогов
+3. **V3b** — WhisperX ASR → difflib alignment → pyphen (без force_align)
+4. **V3 Sonoix+LLM** — Sonoix API → BPE-токены → GPT-4o-mini коррекция текста
+5. **CTC Word** — CTC Forced Aligner (MMS-300m ONNX) word-level → pyphen
+6. **CTC Char** — CTC char-level на весь трек
+7. **CTC Hybrid** — CTC word-level → char-level CTC внутри каждого слова → слоги из char-таймингов
+
+### Результаты (средние по русским трекам 1,2,4,5)
+
+| Метод | MAE | Hit rate (<0.1с) | ASR? | Время/трек |
+|-------|-----|-------------------|------|------------|
+| Baseline | 4.467с | 56.4% | да | ~15с (GPU) |
+| V3b (difflib) | 0.351с | 57.0% | да | ~15с (GPU) |
+| CTC Word | 0.276с | 53.2% | нет | ~22с (CPU) |
+| V2 (WhisperX) | 0.341с | 72.2% | да (×2) | ~30с (GPU) |
+| **CTC Hybrid** | **0.240с** | **71.0%** | **нет** | **~22с (CPU)** |
+
+### Провалы
+- **V3 Sonoix+LLM**: MAE 13-54с — GPT-4o-mini не умеет переписывать BPE-токены с сохранением таймингов
+- **CTC Char (full track)**: MAE 2-24с — накапливающийся дрейф на 1700+ символах
+- **RHCP (трек 3)**: провал у всех методов — в БД обработан как language="ru"
+
+### faster-whisper CPU benchmark (трек 1, 2:34)
+tiny=30с, base=57с, small=94с, medium=372с — все медленнее CTC Hybrid (22с).
+
+### Выводы
+1. **CTC Hybrid — лучший подход**: лучший MAE (0.240с), hit rate на уровне WhisperX (71% vs 72%)
+2. **Не требует ASR** — текст подаётся напрямую, нет зависимости от качества распознавания
+3. **Один проход** лёгкой ONNX-модели (MMS-300m, ~300MB), работает на CPU за ~22с/трек
+4. **Pyphen proportional split** — главный bottleneck всех word-level методов
+5. **LLM-коррекция BPE-токенов не работает** — задача слишком сложна для языковой модели
+
+### Предложенный новый флоу загрузки треков
+1. Пользователь присылает трек
+2. UVR → извлечение аудиофичей (параллельно)
+3. librosa VAD на вокале (удаление тишины)
+4. Whisper tiny (ASR) — только для идентификации песни (пусть с ошибками)
+5. LLM (gpt-4o-mini / deepseek-v3) — поиск правильного текста в интернете
+6. CTC force-align word-level с найденным текстом
+7. CTC force-align char-level внутри каждого слова (>1 слога)
+8. Эмбеддинги, z-score, строки — как прежде
+
+### Подводные камни и решения
+- **LLM не найдёт текст** → fallback: показать пользователю текст для ручной вставки; AcoustID/Shazam fingerprinting как альтернатива
+- **Текст не совпадает с аудио** (другая версия) → проверка CTC confidence score + difflib WER ASR vs найденный текст
+- **CTC падает на коротких словах** (1-2 символа) → пропуск char-level для односложных слов (pre-check emissions frames vs tokens)
+
+### Файлы экспериментов
+- `m3_test/RESULTS.md` — полная сводка
+- `m3_test/variant2/` — V2 (WhisperX force_align)
+- `m3_test/variant3/` — V3, V3b (Sonoix+LLM, difflib)
+- `m3_test/variant_ctc/` — CTC Word, Char, Hybrid
+
+### Библиотека
+- `ctc-forced-aligner` v1.0.2 (pip)
+- Модель: MMS-300m (ONNX, ~300MB)
+- API: `AlignmentSingleton`, `generate_emissions`, `get_alignments`, `preprocess_text`
+
+### Хронология
+- **2026-03-06**: Анализ двух путей бутстрапа, выявление причин разброса качества
+- **2026-03-06**: Подготовка тестовых данных (5 треков, эталонные тайминги из БД)
+- **2026-03-06**: Эксперименты V2 (WhisperX fuzzy+force_align), V3b (difflib+pyphen), V3 (Sonoix+LLM)
+- **2026-03-06**: Открытие CTC Forced Aligner (MMS-300m ONNX). Эксперименты CTC Word, Char, Hybrid
+- **2026-03-06**: Фикс ONNX Runtime crash: emissions считаются 1 раз на весь трек, слайсятся по словам
+- **2026-03-06**: Фикс CTC short words: pre-check `emissions.shape[0] < n_tokens * 2` → fallback
+- **2026-03-07**: Benchmark faster-whisper CPU (tiny→medium). Итоговая сводка результатов
+- **2026-03-07**: Проектирование нового флоу загрузки треков
+- **2026-03-07**: Оценка двух вариантов деплоя: rc1 (GPU-сервер i3-14100 + T4 16GB) vs rc2 (дешёвый VPS + API)
+- **2026-03-07**: Подготовка детальных планов реализации: v3-rc1/PLAN.md (~1540 строк) и v3-rc2/PLAN.md (~1850 строк)
+- **2026-03-07**: Решение: реализация rc1 первым (меньше внешних зависимостей, тестируется на RTX 4060)
+
+## Фаза 18: v3-rc1 — Новый worker pipeline (GPU-сервер)
+
+### Контекст
+Полная переработка worker-пайплайна для загрузки пользовательских треков. Замена Sonoix ASR (BPE-токены) на CTC Hybrid alignment с поиском текста через LLM. Результат исследования M3 (ADR-017).
+
+### Целевое железо
+Intel Core i3-14100, 32 GB DDR5, Tesla T4 16 GB, 2 TB NVMe
+
+### Задачи фазы
+- [x] Скопировать shared/, backend/, frontend/ из v2 в v3-rc1/
+- [x] VADProcessor — librosa VAD на вокале
+- [x] WhisperTranscriber — faster-whisper (tiny/base) на GPU для идентификации
+- [x] LyricsSearcher — OpenAI gpt-4o-mini для поиска текста + Genius scraping
+- [x] CTCAligner — гибридный word+char CTC alignment (из experiment_hybrid.py)
+- [x] Новый AudioPipeline — оркестрация 10 шагов
+- [x] UVRSeparator — BS-Roformer на GPU (torch_device через env)
+- [x] Новый config.py — env vars для всех компонентов
+- [x] Новый main.py — wire-up компонентов
+- [x] Dockerfile (CUDA 12.1 + cuDNN 8 + Python 3.11 + все зависимости)
+- [x] docker-compose.yml + docker-compose.prod.yml с GPU passthrough
+- [x] download_models.py — предзагрузка 4 моделей при старте
+- [x] Unit-тесты (44 passed)
+- [x] Деплой на выделенный GPU-сервер (212.41.1.108)
+- [x] Исправление runtime-ошибок при деплое (6+ итераций Dockerfile)
+
+### Ключевые решения
+- Единственный внешний API — OpenAI (gpt-4o-mini) для идентификации + поиска текста (~$0.0005/трек)
+- Genius API — скрейпинг текстов песен (бесплатно, fallback: web search + CSS/LLM extract)
+- CTC alignment на CPU (~22с/трек), не требует GPU
+- UVR BS-Roformer на T4 GPU (~60-90с/трек, SDR 12.9)
+- faster-whisper tiny на T4 (~5-10с, только для идентификации)
+- QDrant v1.16.2 (совместимость с qdrant-client 1.17)
+- Fallback при ненайденном тексте: трек получает status="error", user вводит текст вручную
+- IMPORTANT: OpenAI content_filter блокирует тексты с ненормативной лексикой — CSS-селекторы как primary fallback
+
+### Хронология
+- **2026-03-07**: План написан (v3-rc1/PLAN.md, ~1540 строк), начало реализации
+- **2026-03-07**: Реализация всех компонентов worker pipeline: VADProcessor, WhisperTranscriber, LyricsSearcher, CTCAligner, AudioPipeline, config, main
+- **2026-03-07**: Скопированы shared/, backend/, frontend/ из v2, адаптированы для v3-rc1
+- **2026-03-07**: Dockerfile с CUDA 12.1 + cuDNN 8, docker-compose.yml/prod.yml
+- **2026-03-07**: 44 unit-теста passed
+- **2026-03-08**: Подготовка к деплою на новый сервер root@212.41.1.108 (Xeon E-2236 + T4 16GB)
+- **2026-03-08**: Установка NVIDIA driver 550 + Docker 29 + nvidia-container-toolkit на сервере
+- **2026-03-08**: Проблема PCI BAR allocation для T4 — «can't assign; no space» в dmesg
+- **2026-03-08**: Попытка `pci=realloc=on` — не помогло. Попытка `pci=nocrs` — сломала загрузку
+- **2026-03-08**: Переустановка ОС, обращение к хостеру для включения "Above 4G Decoding" в BIOS
+- **2026-03-08**: BIOS настроен, `pci=realloc=on` + nvidia-smi заработал, T4 видна
+- **2026-03-08**: Полная установка: NVIDIA driver + Docker + nvidia-container-toolkit
+- **2026-03-08**: rsync кода на сервер, создание .env с API ключами
+- **2026-03-08**: Сборка Docker образов (4 контейнера), множественные исправления Dockerfile:
+  - Добавлен g++ для сборки ctc-forced-aligner
+  - Пиннинг sentence-transformers<3, transformers<5 (v5.x несовместим с torch 2.3.1)
+  - Upgrade pip/setuptools/wheel перед установкой shared/ (old setuptools → UNKNOWN package)
+  - COPY только pyproject.toml + karaoke_shared/ (без stale build/ артефактов)
+  - Явные runtime deps (aiosqlite, structlog, httpx и др.) в отдельном шаге
+  - Удалён torch_device из Separator() в download_models.py (API изменился)
+- **2026-03-08**: Обновление QDrant v1.13.6 → v1.16.2 (совместимость с qdrant-client 1.17)
+- **2026-03-08**: Все 4 контейнера запущены и healthy. Worker polling for jobs

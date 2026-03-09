@@ -1,0 +1,414 @@
+
+============================================================
+  Processing track 1: /home/croked/karaoke/m3_test/test_data/1
+============================================================
+  Artist: Слава КПСС — Владимир Путин
+  Language: ru
+  Known words: 314, reference syllables: 531
+
+  [A] Running WhisperX ASR (medium) ...
+2026-03-06 12:58:19 [info     ] whisperx.loading_align_model   device=cuda language=ru
+2026-03-06 12:58:26 [info     ] whisperx.align_model_ready
+2026-03-06 12:58:26 [info     ] whisperx.loading_asr_model     device=cuda model=medium
+[0;93m2026-03-06 12:58:27.092754883 [W:onnxruntime:Default, device_discovery.cc:211 DiscoverDevicesForPlatform] GPU device discovery failed: device_discovery.cc:91 ReadFileContents Failed to open file: "/sys/class/drm/card0/device/vendor"[m
+/home/croked/miniforge3/envs/bootstrap/lib/python3.12/site-packages/pyannote/audio/core/io.py:47: UserWarning: 
+torchcodec is not installed correctly so built-in audio decoding will fail. Solutions are:
+* use audio preloaded in-memory as a {'waveform': (channel, time) torch.Tensor, 'sample_rate': int} dictionary;
+* fix torchcodec installation. Error message was:
+
+Could not load libtorchcodec. Likely causes:
+          1. FFmpeg is not properly installed in your environment. We support
+             versions 4, 5, 6, 7, and 8, and we attempt to load libtorchcodec
+             for each of those versions. Errors for versions not installed on
+             your system are expected; only the error for your installed FFmpeg
+             version is relevant. On Windows, ensure you've installed the
+             "full-shared" version which ships DLLs.
+          2. The PyTorch version (2.8.0+cu128) is not compatible with
+             this version of TorchCodec. Refer to the version compatibility
+             table:
+             https://github.com/pytorch/torchcodec?tab=readme-ov-file#installing-torchcodec.
+          3. Another runtime dependency; see exceptions below.
+
+        The following exceptions were raised as we tried to load libtorchcodec:
+        
+[start of libtorchcodec loading traceback]
+FFmpeg version 8:
+Traceback (most recent call last):
+  File "/home/croked/miniforge3/envs/bootstrap/lib/python3.12/site-packages/torchcodec/_core/ops.py", line 57, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/home/croked/miniforge3/envs/bootstrap/lib/python3.12/site-packages/torch/_ops.py", line 1478, in load_library
+    ctypes.CDLL(path)
+  File "/home/croked/miniforge3/envs/bootstrap/lib/python3.12/ctypes/__init__.py", line 379, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: /home/croked/miniforge3/envs/bootstrap/lib/python3.12/site-packages/torchcodec/libtorchcodec_core8.so: undefined symbol: _ZN3c1013MessageLogger6streamB5cxx11Ev
+
+FFmpeg version 7:
+Traceback (most recent call last):
+  File "/home/croked/miniforge3/envs/bootstrap/lib/python3.12/site-packages/torchcodec/_core/ops.py", line 57, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/home/croked/miniforge3/envs/bootstrap/lib/python3.12/site-packages/torch/_ops.py", line 1478, in load_library
+    ctypes.CDLL(path)
+  File "/home/croked/miniforge3/envs/bootstrap/lib/python3.12/ctypes/__init__.py", line 379, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libavutil.so.59: cannot open shared object file: No such file or directory
+
+FFmpeg version 6:
+Traceback (most recent call last):
+  File "/home/croked/miniforge3/envs/bootstrap/lib/python3.12/site-packages/torchcodec/_core/ops.py", line 57, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/home/croked/miniforge3/envs/bootstrap/lib/python3.12/site-packages/torch/_ops.py", line 1478, in load_library
+    ctypes.CDLL(path)
+  File "/home/croked/miniforge3/envs/bootstrap/lib/python3.12/ctypes/__init__.py", line 379, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libavutil.so.58: cannot open shared object file: No such file or directory
+
+FFmpeg version 5:
+Traceback (most recent call last):
+  File "/home/croked/miniforge3/envs/bootstrap/lib/python3.12/site-packages/torchcodec/_core/ops.py", line 57, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/home/croked/miniforge3/envs/bootstrap/lib/python3.12/site-packages/torch/_ops.py", line 1478, in load_library
+    ctypes.CDLL(path)
+  File "/home/croked/miniforge3/envs/bootstrap/lib/python3.12/ctypes/__init__.py", line 379, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libavutil.so.57: cannot open shared object file: No such file or directory
+
+FFmpeg version 4:
+Traceback (most recent call last):
+  File "/home/croked/miniforge3/envs/bootstrap/lib/python3.12/site-packages/torchcodec/_core/ops.py", line 57, in load_torchcodec_shared_libraries
+    torch.ops.load_library(core_library_path)
+  File "/home/croked/miniforge3/envs/bootstrap/lib/python3.12/site-packages/torch/_ops.py", line 1478, in load_library
+    ctypes.CDLL(path)
+  File "/home/croked/miniforge3/envs/bootstrap/lib/python3.12/ctypes/__init__.py", line 379, in __init__
+    self._handle = _dlopen(self._name, mode)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+OSError: libavdevice.so.58: cannot open shared object file: No such file or directory
+[end of libtorchcodec loading traceback].
+  warnings.warn(
+2026-03-06 12:58:29 - whisperx.vads.pyannote - INFO - Performing voice activity detection using Pyannote...
+Lightning automatically upgraded your loaded checkpoint from v1.5.4 to v2.6.1. To apply the upgrade to your files permanently, run `python -m lightning.pytorch.utilities.upgrade_checkpoint ../miniforge3/envs/bootstrap/lib/python3.12/site-packages/whisperx/assets/pytorch_model.bin`
+2026-03-06 12:58:29 [info     ] whisperx.asr_model_ready       model=medium
+2026-03-06 12:58:29 [info     ] whisperx.transcribing          audio_path=/home/croked/karaoke/m3_test/test_data/1/vocals.wav
+/home/croked/miniforge3/envs/bootstrap/lib/python3.12/site-packages/pyannote/audio/utils/reproducibility.py:74: ReproducibilityWarning: TensorFloat-32 (TF32) has been disabled as it might lead to reproducibility issues and lower accuracy.
+It can be re-enabled by calling
+   >>> import torch
+   >>> torch.backends.cuda.matmul.allow_tf32 = True
+   >>> torch.backends.cudnn.allow_tf32 = True
+See https://github.com/pyannote/pyannote-audio/issues/1370 for more details.
+
+  warnings.warn(
+2026-03-06 12:58:35 [info     ] whisperx.cleanup_done
+  [A] Done: 279 ASR words in 15.8s
+
+  [B] Aligning 279 ASR words to 314 known words ...
+  [B] Assigned: 314/314 words
+
+  [C] Splitting to syllables ...
+  [C] Predicted syllables: 531
+
+  [EVAL] MAE: 0.0975s, Hit rate: 70.4%, Compared: 531 syllables
+  [EVAL] WER: 0.0% (pred 307 words vs ref 307 words)
+  [EVAL] ASR WER (before alignment): 16.9%
+
+  First 20 syllables comparison:
+  Ref syllable    Pred syllable    Ref start Pred start    Delta
+  --------------- --------------- ---------- ---------- --------
+  'Сла'           'Сла'                4.050      4.251    0.201
+  'ва'            'ва'                 4.599      4.540    0.059
+  ' КПСС'         ' КПСС'              4.762      4.752    0.010
+  '\nТы'          '\nТы'               5.880      5.974    0.094
+  ' зна'          ' зна'               6.122      6.074    0.048
+  'ешь'           'ешь'                6.283      6.214    0.069
+  ' кто'          ' кто'               6.425      6.474    0.049
+  ' я'            ' я'                 6.727      6.755    0.028
+  '\nВла'         '\nВла'              9.390      9.438    0.048
+  'ди'            'ди'                 9.737      9.708    0.029
+  'мир'           'мир'                9.961      9.889    0.072
+  ' Пу'           ' Пу'               10.267     10.279    0.012
+  'тин'           'тин'               10.634     10.776    0.142
+  '\nВла'         '\nВла'             11.450     11.581    0.131
+  'ди'            'ди'                11.876     11.859    0.017
+  'мир'           'мир'               12.120     12.044    0.076
+  ' Пу'           ' Пу'               12.424     12.442    0.018
+  'тин'           'тин'               12.769     12.938    0.169
+  '\nВла'         '\nВла'             13.540     13.763    0.223
+  'ди'            'ди'                14.116     14.056    0.060
+
+============================================================
+  Processing track 2: /home/croked/karaoke/m3_test/test_data/2
+============================================================
+  Artist: Григорий Лепс — Орлы или вороны
+  Language: ru
+  Known words: 174, reference syllables: 301
+
+  [A] Running WhisperX ASR (medium) ...
+2026-03-06 12:58:35 [info     ] whisperx.loading_align_model   device=cuda language=ru
+2026-03-06 12:58:38 [info     ] whisperx.align_model_ready
+2026-03-06 12:58:38 [info     ] whisperx.loading_asr_model     device=cuda model=medium
+2026-03-06 12:58:40 - whisperx.vads.pyannote - INFO - Performing voice activity detection using Pyannote...
+Lightning automatically upgraded your loaded checkpoint from v1.5.4 to v2.6.1. To apply the upgrade to your files permanently, run `python -m lightning.pytorch.utilities.upgrade_checkpoint ../miniforge3/envs/bootstrap/lib/python3.12/site-packages/whisperx/assets/pytorch_model.bin`
+2026-03-06 12:58:40 [info     ] whisperx.asr_model_ready       model=medium
+2026-03-06 12:58:40 [info     ] whisperx.transcribing          audio_path=/home/croked/karaoke/m3_test/test_data/2/vocals.wav
+2026-03-06 12:58:45 [info     ] whisperx.cleanup_done
+  [A] Done: 172 ASR words in 10.7s
+
+  [B] Aligning 172 ASR words to 174 known words ...
+  [B] Assigned: 174/174 words
+
+  [C] Splitting to syllables ...
+  [C] Predicted syllables: 301
+
+  [EVAL] MAE: 0.4437s, Hit rate: 54.8%, Compared: 301 syllables
+  [EVAL] WER: 0.0% (pred 171 words vs ref 171 words)
+  [EVAL] ASR WER (before alignment): 7.6%
+
+  First 20 syllables comparison:
+  Ref syllable    Pred syllable    Ref start Pred start    Delta
+  --------------- --------------- ---------- ---------- --------
+  'Ска'           'Ска'               14.050     13.750    0.300
+  'жи'            'жи'                14.211     14.183    0.028
+  ' мне,'         ' мне,'             14.553     14.531    0.022
+  ' что'          ' что'              15.178     15.131    0.047
+  ' я'            ' я'                15.459     15.412    0.047
+  ' не'           ' не'               15.621     15.572    0.049
+  ' знаю.'        ' знаю.'            15.782     15.732    0.050
+  ' По'           ' По'               16.809     16.753    0.056
+  'кой'           'кой'               16.990     16.897    0.093
+  ' про'          ' про'              17.211     17.173    0.038
+  'лей'           'лей'               17.393     17.404    0.011
+  ' в'            ' в'                17.695     17.654    0.041
+  ' мою'          ' мою'              17.815     17.774    0.041
+  ' ду'           ' ду'               18.198     18.154    0.044
+  'шу'            'шу'                18.581     19.195    0.614
+  '\nВедь'        '\nВедь'            19.990     20.297    0.307
+  ' сча'          ' сча'              20.492     20.726    0.234
+  'стье'          'стье'              20.894     21.049    0.155
+  ' не'           ' не'               21.538     21.538    0.000
+  ' за'           ' за'               21.739     21.718    0.021
+
+============================================================
+  Processing track 3: /home/croked/karaoke/m3_test/test_data/3
+============================================================
+  Artist: Red Hot Chili Peppers — Bullet Proof
+  Language: en
+  Known words: 75, reference syllables: 80
+
+  [A] Running WhisperX ASR (medium) ...
+2026-03-06 12:58:46 [info     ] whisperx.loading_align_model   device=cuda language=en
+Downloading: "https://download.pytorch.org/torchaudio/models/wav2vec2_fairseq_base_ls960_asr_ls960.pth" to /home/croked/.cache/torch/hub/checkpoints/wav2vec2_fairseq_base_ls960_asr_ls960.pth
+  0%|          | 0.00/360M [00:00<?, ?B/s]  0%|          | 256k/360M [00:00<03:11, 1.97MB/s]  0%|          | 1.25M/360M [00:00<00:59, 6.35MB/s]  2%|▏         | 6.12M/360M [00:00<00:14, 25.0MB/s]  3%|▎         | 11.8M/360M [00:00<00:11, 32.5MB/s]  5%|▍         | 17.4M/360M [00:00<00:08, 40.5MB/s]  7%|▋         | 23.6M/360M [00:00<00:07, 48.0MB/s]  8%|▊         | 30.1M/360M [00:00<00:06, 54.1MB/s] 10%|▉         | 35.5M/360M [00:00<00:07, 45.7MB/s] 11%|█         | 40.2M/360M [00:01<00:09, 36.1MB/s] 12%|█▏        | 44.2M/360M [00:01<00:09, 34.8MB/s] 14%|█▎        | 49.4M/360M [00:01<00:08, 38.4MB/s] 15%|█▍        | 53.4M/360M [00:01<00:08, 36.8MB/s] 16%|█▌        | 57.1M/360M [00:01<00:08, 36.0MB/s] 17%|█▋        | 61.2M/360M [00:01<00:08, 37.2MB/s] 18%|█▊        | 65.6M/360M [00:01<00:07, 39.3MB/s] 20%|█▉        | 70.4M/360M [00:01<00:07, 41.5MB/s] 21%|██        | 74.5M/360M [00:02<00:07, 38.3MB/s] 22%|██▏       | 78.2M/360M [00:02<00:08, 34.4MB/s] 23%|██▎       | 83.0M/360M [00:02<00:07, 38.1MB/s] 24%|██▍       | 87.6M/360M [00:02<00:07, 40.0MB/s] 25%|██▌       | 91.6M/360M [00:02<00:07, 38.0MB/s] 26%|██▋       | 95.4M/360M [00:02<00:08, 32.5MB/s] 28%|██▊       | 100M/360M [00:02<00:07, 36.2MB/s]  29%|██▉       | 104M/360M [00:02<00:07, 35.8MB/s] 30%|██▉       | 107M/360M [00:03<00:08, 31.4MB/s] 31%|███       | 112M/360M [00:03<00:07, 36.4MB/s] 33%|███▎      | 117M/360M [00:03<00:06, 40.2MB/s] 34%|███▍      | 122M/360M [00:03<00:06, 41.5MB/s] 35%|███▌      | 127M/360M [00:03<00:05, 43.9MB/s] 37%|███▋      | 132M/360M [00:03<00:05, 45.9MB/s] 38%|███▊      | 136M/360M [00:03<00:05, 45.7MB/s] 39%|███▉      | 141M/360M [00:03<00:05, 44.9MB/s] 41%|████      | 146M/360M [00:03<00:04, 46.2MB/s] 42%|████▏     | 151M/360M [00:04<00:04, 47.2MB/s] 43%|████▎     | 155M/360M [00:04<00:04, 46.5MB/s] 44%|████▍     | 160M/360M [00:04<00:04, 47.3MB/s] 46%|████▌     | 165M/360M [00:04<00:04, 44.0MB/s] 47%|████▋     | 169M/360M [00:04<00:05, 39.4MB/s] 48%|████▊     | 173M/360M [00:04<00:04, 40.0MB/s] 49%|████▉     | 178M/360M [00:04<00:04, 41.9MB/s] 50%|█████     | 182M/360M [00:04<00:05, 37.2MB/s] 52%|█████▏    | 186M/360M [00:04<00:04, 38.5MB/s] 53%|█████▎    | 190M/360M [00:05<00:04, 41.2MB/s] 54%|█████▍    | 195M/360M [00:05<00:04, 42.7MB/s] 55%|█████▌    | 200M/360M [00:05<00:03, 42.9MB/s] 57%|█████▋    | 204M/360M [00:05<00:04, 37.6MB/s] 58%|█████▊    | 208M/360M [00:05<00:04, 36.0MB/s] 59%|█████▉    | 214M/360M [00:05<00:03, 40.2MB/s] 60%|██████    | 218M/360M [00:05<00:03, 39.1MB/s] 62%|██████▏   | 222M/360M [00:05<00:03, 40.2MB/s] 63%|██████▎   | 226M/360M [00:06<00:03, 36.4MB/s] 64%|██████▍   | 230M/360M [00:06<00:03, 34.1MB/s] 65%|██████▌   | 235M/360M [00:06<00:03, 38.2MB/s] 66%|██████▋   | 239M/360M [00:06<00:03, 35.9MB/s] 68%|██████▊   | 244M/360M [00:06<00:03, 40.4MB/s] 69%|██████▉   | 249M/360M [00:06<00:02, 42.0MB/s] 70%|███████   | 253M/360M [00:06<00:03, 37.4MB/s] 72%|███████▏  | 258M/360M [00:06<00:02, 41.5MB/s] 73%|███████▎  | 262M/360M [00:07<00:02, 35.5MB/s] 74%|███████▍  | 266M/360M [00:07<00:02, 33.8MB/s] 75%|███████▍  | 270M/360M [00:07<00:02, 31.6MB/s] 76%|███████▋  | 275M/360M [00:07<00:02, 36.9MB/s] 77%|███████▋  | 279M/360M [00:07<00:02, 36.1MB/s] 78%|███████▊  | 282M/360M [00:07<00:02, 32.7MB/s] 80%|███████▉  | 286M/360M [00:07<00:02, 35.0MB/s] 81%|████████  | 291M/360M [00:07<00:02, 35.6MB/s] 82%|████████▏ | 295M/360M [00:08<00:02, 32.8MB/s] 83%|████████▎ | 300M/360M [00:08<00:01, 33.8MB/s] 85%|████████▍ | 305M/360M [00:08<00:01, 37.8MB/s] 86%|████████▌ | 309M/360M [00:08<00:01, 36.0MB/s] 87%|████████▋ | 313M/360M [00:08<00:01, 38.3MB/s] 88%|████████▊ | 317M/360M [00:08<00:01, 34.1MB/s] 89%|████████▉ | 322M/360M [00:08<00:01, 33.4MB/s] 91%|█████████ | 327M/360M [00:08<00:00, 38.8MB/s] 92%|█████████▏| 331M/360M [00:09<00:00, 35.8MB/s] 93%|█████████▎| 335M/360M [00:09<00:00, 35.0MB/s] 94%|█████████▍| 340M/360M [00:09<00:00, 38.7MB/s] 95%|█████████▌| 344M/360M [00:09<00:00, 38.6MB/s] 97%|█████████▋| 348M/360M [00:09<00:00, 39.0MB/s] 98%|█████████▊| 352M/360M [00:09<00:00, 37.2MB/s] 99%|█████████▊| 355M/360M [00:09<00:00, 32.9MB/s]100%|██████████| 360M/360M [00:09<00:00, 38.0MB/s]
+2026-03-06 12:58:57 [info     ] whisperx.align_model_ready
+2026-03-06 12:58:57 [info     ] whisperx.loading_asr_model     device=cuda model=medium
+2026-03-06 12:58:59 - whisperx.vads.pyannote - INFO - Performing voice activity detection using Pyannote...
+Lightning automatically upgraded your loaded checkpoint from v1.5.4 to v2.6.1. To apply the upgrade to your files permanently, run `python -m lightning.pytorch.utilities.upgrade_checkpoint ../miniforge3/envs/bootstrap/lib/python3.12/site-packages/whisperx/assets/pytorch_model.bin`
+2026-03-06 12:58:59 [info     ] whisperx.asr_model_ready       model=medium
+2026-03-06 12:58:59 [info     ] whisperx.transcribing          audio_path=/home/croked/karaoke/m3_test/test_data/3/vocals.wav
+2026-03-06 12:59:03 [info     ] whisperx.cleanup_done
+  [A] Done: 52 ASR words in 17.0s
+
+  [B] Aligning 52 ASR words to 75 known words ...
+  [B] Assigned: 75/75 words
+
+  [C] Splitting to syllables ...
+  [C] Predicted syllables: 80
+
+  [EVAL] MAE: 12.2461s, Hit rate: 20.0%, Compared: 80 syllables
+  [EVAL] WER: 0.0% (pred 75 words vs ref 75 words)
+  [EVAL] ASR WER (before alignment): 93.3%
+
+  First 20 syllables comparison:
+  Ref syllable    Pred syllable    Ref start Pred start    Delta
+  --------------- --------------- ---------- ---------- --------
+  'All'           'All'                7.580     56.397   48.817
+  ' around'       ' around'            8.170     55.156   46.986
+  ' the'          ' the'               8.456     53.915   45.459
+  ' world'        ' world'             8.618     52.674   44.056
+  "\nI'd"         "\nI'd"              9.270     51.433   42.163
+  ' rather'       ' rather'           10.313     50.192   39.879
+  ' be'           ' be'               10.620     48.951   38.331
+  ' in'           ' in'               10.682     47.710   37.028
+  ' a'            ' a'                10.743     46.469   35.726
+  ' band'         ' band'             10.784     45.227   34.444
+  "\nPlayin'"     "\nPlayin'"         11.050     43.986   32.936
+  ' my'           ' my'               11.836     42.745   30.909
+  ' funky'        ' funky'            11.957     41.504   29.547
+  ' mu'           ' mu'               12.381     40.263   27.882
+  'sic'           'sic'               12.643     39.767   27.124
+  ' as'           ' as'               12.865     39.022   26.157
+  ' loud'         ' loud'             12.925     37.781   24.856
+  ' as'           ' as'               13.348     36.540   23.192
+  ' I'            ' I'                13.510     35.299   21.789
+  ' can'          ' can'              13.772     34.058   20.286
+
+============================================================
+  Processing track 4: /home/croked/karaoke/m3_test/test_data/4
+============================================================
+  Artist: Дима Билан — Я просто люблю тебя
+  Language: ru
+  Known words: 184, reference syllables: 315
+
+  [A] Running WhisperX ASR (medium) ...
+2026-03-06 12:59:03 [info     ] whisperx.loading_align_model   device=cuda language=ru
+2026-03-06 12:59:06 [info     ] whisperx.align_model_ready
+2026-03-06 12:59:06 [info     ] whisperx.loading_asr_model     device=cuda model=medium
+2026-03-06 12:59:08 - whisperx.vads.pyannote - INFO - Performing voice activity detection using Pyannote...
+Lightning automatically upgraded your loaded checkpoint from v1.5.4 to v2.6.1. To apply the upgrade to your files permanently, run `python -m lightning.pytorch.utilities.upgrade_checkpoint ../miniforge3/envs/bootstrap/lib/python3.12/site-packages/whisperx/assets/pytorch_model.bin`
+2026-03-06 12:59:08 [info     ] whisperx.asr_model_ready       model=medium
+2026-03-06 12:59:08 [info     ] whisperx.transcribing          audio_path=/home/croked/karaoke/m3_test/test_data/4/vocals.wav
+2026-03-06 12:59:17 [info     ] whisperx.cleanup_done
+  [A] Done: 176 ASR words in 14.8s
+
+  [B] Aligning 176 ASR words to 184 known words ...
+  [B] Assigned: 184/184 words
+
+  [C] Splitting to syllables ...
+  [C] Predicted syllables: 315
+
+  [EVAL] MAE: 0.4207s, Hit rate: 52.7%, Compared: 315 syllables
+  [EVAL] WER: 0.0% (pred 183 words vs ref 183 words)
+  [EVAL] ASR WER (before alignment): 9.8%
+
+  First 20 syllables comparison:
+  Ref syllable    Pred syllable    Ref start Pred start    Delta
+  --------------- --------------- ---------- ---------- --------
+  'Ве'            'Ве'                18.740      6.190   12.550
+  'чер'           'чер'               20.126      9.825   10.301
+  'няя'           'няя'               20.467     15.277    5.190
+  ' грусть'       ' грусть'           21.070     21.069    0.001
+  ' в'            ' в'                22.275     22.271    0.004
+  ' ок'           ' ок'               22.375     22.351    0.024
+  'но'            'но'                22.576     22.561    0.015
+  ' по'           ' по'               22.837     22.852    0.015
+  'сту'           'сту'               23.058     23.127    0.069
+  'чит'           'чит'               23.460     23.540    0.080
+  ' ко'           ' ко'               24.022     24.013    0.009
+  ' мне'          ' мне'              24.203     24.213    0.010
+  '\nНо'          '\nНо'              28.360     29.340    0.980
+  ' я'            ' я'                29.644     29.500    0.144
+  ' не'           ' не'               29.925     29.961    0.036
+  ' бо'           ' бо'               30.206     30.221    0.015
+  'юсь,'          'юсь,'              30.547     30.708    0.161
+  ' я'            ' я'                31.711     31.743    0.032
+  ' сам'          ' сам'              31.972     31.983    0.011
+  ' ее'           ' ее'               32.473     32.384    0.089
+
+============================================================
+  Processing track 5: /home/croked/karaoke/m3_test/test_data/5
+============================================================
+  Artist: Король и Шут — Помнят с горечью древляне
+  Language: ru
+  Known words: 165, reference syllables: 287
+
+  [A] Running WhisperX ASR (medium) ...
+2026-03-06 12:59:17 [info     ] whisperx.loading_align_model   device=cuda language=ru
+2026-03-06 12:59:21 [info     ] whisperx.align_model_ready
+2026-03-06 12:59:21 [info     ] whisperx.loading_asr_model     device=cuda model=medium
+2026-03-06 12:59:23 - whisperx.vads.pyannote - INFO - Performing voice activity detection using Pyannote...
+Lightning automatically upgraded your loaded checkpoint from v1.5.4 to v2.6.1. To apply the upgrade to your files permanently, run `python -m lightning.pytorch.utilities.upgrade_checkpoint ../miniforge3/envs/bootstrap/lib/python3.12/site-packages/whisperx/assets/pytorch_model.bin`
+2026-03-06 12:59:23 [info     ] whisperx.asr_model_ready       model=medium
+2026-03-06 12:59:23 [info     ] whisperx.transcribing          audio_path=/home/croked/karaoke/m3_test/test_data/5/vocals.wav
+2026-03-06 12:59:28 [info     ] whisperx.cleanup_done
+  [A] Done: 162 ASR words in 10.8s
+
+  [B] Aligning 162 ASR words to 165 known words ...
+  [B] Assigned: 165/165 words
+
+  [C] Splitting to syllables ...
+  [C] Predicted syllables: 287
+
+  [EVAL] MAE: 0.4386s, Hit rate: 50.2%, Compared: 287 syllables
+  [EVAL] WER: 0.0% (pred 164 words vs ref 164 words)
+  [EVAL] ASR WER (before alignment): 27.4%
+
+  First 20 syllables comparison:
+  Ref syllable    Pred syllable    Ref start Pred start    Delta
+  --------------- --------------- ---------- ---------- --------
+  'По'            'По'                 6.500      6.916    0.416
+  'мнят'          'мнят'               7.383      7.176    0.207
+  ' с'            ' с'                 7.745      7.737    0.008
+  ' го'           ' го'                7.865      7.857    0.008
+  'ре'            'ре'                 8.307      8.233    0.074
+  'чью'           'чью'                8.648      8.610    0.038
+  ' дре'          ' дре'               9.150      9.174    0.024
+  'вля'           'вля'                9.512      9.676    0.164
+  'не,'           'не,'                9.974     10.178    0.204
+  ' хоть'         ' хоть'             10.677     10.700    0.023
+  ' про'          ' про'              11.118     11.100    0.018
+  'шло'           'шло'               11.460     11.581    0.120
+  ' не'           ' не'               12.182     12.141    0.041
+  'ма'            'ма'                12.624     12.528    0.096
+  'ло'            'ло'                12.905     12.915    0.010
+  ' лет'          ' лет'              13.327     13.322    0.005
+  '\nО'           '\nО'               14.090     14.563    0.473
+  ' ро'           ' ро'               14.893     14.904    0.011
+  'ман'           'ман'               15.235     15.313    0.078
+  'ти'            'ти'                15.857     15.927    0.070
+
+Results saved to /home/croked/karaoke/m3_test/variant3/results/results.json
+Summary saved to /home/croked/karaoke/m3_test/variant3/results/summary.txt
+
+Experiment 3b: WhisperX + difflib alignment
+==================================================
+
+Tracks processed: 5/5 successful
+
+Per-track results:
+
+  Track 1: Слава КПСС — Владимир Путин
+    Language:      ru
+    MAE:           0.0975s
+    Hit rate <0.1s: 70.4%
+    WER (ASR raw): 16.9%
+    WER (aligned): 0.0%
+    ASR time:      15.8s
+    Syllables:     pred=531 ref=531
+
+  Track 2: Григорий Лепс — Орлы или вороны
+    Language:      ru
+    MAE:           0.4437s
+    Hit rate <0.1s: 54.8%
+    WER (ASR raw): 7.6%
+    WER (aligned): 0.0%
+    ASR time:      10.7s
+    Syllables:     pred=301 ref=301
+
+  Track 3: Red Hot Chili Peppers — Bullet Proof
+    Language:      en
+    MAE:           12.2461s
+    Hit rate <0.1s: 20.0%
+    WER (ASR raw): 93.3%
+    WER (aligned): 0.0%
+    ASR time:      17.0s
+    Syllables:     pred=80 ref=80
+
+  Track 4: Дима Билан — Я просто люблю тебя
+    Language:      ru
+    MAE:           0.4207s
+    Hit rate <0.1s: 52.7%
+    WER (ASR raw): 9.8%
+    WER (aligned): 0.0%
+    ASR time:      14.8s
+    Syllables:     pred=315 ref=315
+
+  Track 5: Король и Шут — Помнят с горечью древляне
+    Language:      ru
+    MAE:           0.4386s
+    Hit rate <0.1s: 50.2%
+    WER (ASR raw): 27.4%
+    WER (aligned): 0.0%
+    ASR time:      10.8s
+    Syllables:     pred=287 ref=287
+
+Averages across successful tracks:
+  MAE:               2.7293s
+  Hit rate <0.1s:    49.6%
+  WER before align:  31.0%
+  WER after align:   0.0%
+
+Interpretation:
+  MAE < 0.1s  = good timing (karaoke usable)
+  MAE < 0.05s = excellent timing
+  WER < 5%    = text is nearly correct

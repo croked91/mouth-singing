@@ -1,0 +1,62 @@
+Experiment 3b: WhisperX + difflib alignment
+==================================================
+
+Tracks processed: 5/5 successful
+
+Per-track results:
+
+  Track 1: Слава КПСС — Владимир Путин
+    Language:      ru
+    MAE:           0.0975s
+    Hit rate <0.1s: 70.4%
+    WER (ASR raw): 16.9%
+    WER (aligned): 0.0%
+    ASR time:      15.8s
+    Syllables:     pred=531 ref=531
+
+  Track 2: Григорий Лепс — Орлы или вороны
+    Language:      ru
+    MAE:           0.4437s
+    Hit rate <0.1s: 54.8%
+    WER (ASR raw): 7.6%
+    WER (aligned): 0.0%
+    ASR time:      10.7s
+    Syllables:     pred=301 ref=301
+
+  Track 3: Red Hot Chili Peppers — Bullet Proof
+    Language:      en
+    MAE:           12.2461s
+    Hit rate <0.1s: 20.0%
+    WER (ASR raw): 93.3%
+    WER (aligned): 0.0%
+    ASR time:      17.0s
+    Syllables:     pred=80 ref=80
+
+  Track 4: Дима Билан — Я просто люблю тебя
+    Language:      ru
+    MAE:           0.4207s
+    Hit rate <0.1s: 52.7%
+    WER (ASR raw): 9.8%
+    WER (aligned): 0.0%
+    ASR time:      14.8s
+    Syllables:     pred=315 ref=315
+
+  Track 5: Король и Шут — Помнят с горечью древляне
+    Language:      ru
+    MAE:           0.4386s
+    Hit rate <0.1s: 50.2%
+    WER (ASR raw): 27.4%
+    WER (aligned): 0.0%
+    ASR time:      10.8s
+    Syllables:     pred=287 ref=287
+
+Averages across successful tracks:
+  MAE:               2.7293s
+  Hit rate <0.1s:    49.6%
+  WER before align:  31.0%
+  WER after align:   0.0%
+
+Interpretation:
+  MAE < 0.1s  = good timing (karaoke usable)
+  MAE < 0.05s = excellent timing
+  WER < 5%    = text is nearly correct

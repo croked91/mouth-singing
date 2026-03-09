@@ -1,0 +1,8282 @@
+{
+  "1": {
+    "meta": {
+      "artist": "Слава КПСС",
+      "title": "Владимир Путин",
+      "language": "ru"
+    },
+    "syllable_count": 531,
+    "char_timestamp_count": 1732,
+    "lyrics_char_count": 1419,
+    "lyrics_word_count": 314,
+    "ctc_char": {
+      "label": "ctc_char",
+      "mae": 3.2106082862523544,
+      "hit_rate_01s": 0.060263653483992465,
+      "matched_count": 531,
+      "total_ref": 531,
+      "first_20": [
+        {
+          "syllable": "Сла",
+          "ref_start": 4.05,
+          "pred_start": 4.22,
+          "delta": 0.16999999999999993
+        },
+        {
+          "syllable": "ва",
+          "ref_start": 4.599,
+          "pred_start": 4.48,
+          "delta": -0.11899999999999977
+        },
+        {
+          "syllable": "КПСС",
+          "ref_start": 4.762,
+          "pred_start": 4.6,
+          "delta": -0.16199999999999992
+        },
+        {
+          "syllable": "Ты",
+          "ref_start": 5.88,
+          "pred_start": 5.96,
+          "delta": 0.08000000000000007
+        },
+        {
+          "syllable": "зна",
+          "ref_start": 6.122,
+          "pred_start": 6.08,
+          "delta": -0.041999999999999815
+        },
+        {
+          "syllable": "ешь",
+          "ref_start": 6.283,
+          "pred_start": 6.28,
+          "delta": -0.0030000000000001137
+        },
+        {
+          "syllable": "кто",
+          "ref_start": 6.425,
+          "pred_start": 6.46,
+          "delta": 0.03500000000000014
+        },
+        {
+          "syllable": "я",
+          "ref_start": 6.727,
+          "pred_start": 6.7,
+          "delta": -0.027000000000000135
+        },
+        {
+          "syllable": "Вла",
+          "ref_start": 9.39,
+          "pred_start": 9.38,
+          "delta": -0.009999999999999787
+        },
+        {
+          "syllable": "ди",
+          "ref_start": 9.737,
+          "pred_start": 9.7,
+          "delta": -0.03700000000000081
+        },
+        {
+          "syllable": "мир",
+          "ref_start": 9.961,
+          "pred_start": 9.96,
+          "delta": -0.0009999999999994458
+        },
+        {
+          "syllable": "Пу",
+          "ref_start": 10.267,
+          "pred_start": 10.26,
+          "delta": -0.006999999999999673
+        },
+        {
+          "syllable": "тин",
+          "ref_start": 10.634,
+          "pred_start": 10.52,
+          "delta": -0.11400000000000077
+        },
+        {
+          "syllable": "Вла",
+          "ref_start": 11.45,
+          "pred_start": 11.54,
+          "delta": 0.08999999999999986
+        },
+        {
+          "syllable": "ди",
+          "ref_start": 11.876,
+          "pred_start": 11.86,
+          "delta": -0.016000000000000014
+        },
+        {
+          "syllable": "мир",
+          "ref_start": 12.12,
+          "pred_start": 12.12,
+          "delta": 0.0
+        },
+        {
+          "syllable": "Пу",
+          "ref_start": 12.424,
+          "pred_start": 12.4,
+          "delta": -0.023999999999999133
+        },
+        {
+          "syllable": "тин",
+          "ref_start": 12.769,
+          "pred_start": 12.68,
+          "delta": -0.08900000000000041
+        },
+        {
+          "syllable": "Вла",
+          "ref_start": 13.54,
+          "pred_start": 13.72,
+          "delta": 0.1800000000000015
+        },
+        {
+          "syllable": "ди",
+          "ref_start": 14.116,
+          "pred_start": 14.06,
+          "delta": -0.05599999999999916
+        }
+      ]
+    },
+    "ctc_char_timings": [
+      {
+        "syllable": "Сла",
+        "start": 4.22,
+        "end": 4.4
+      },
+      {
+        "syllable": "ва",
+        "start": 4.48,
+        "end": 4.52
+      },
+      {
+        "syllable": " КПСС",
+        "start": 4.6,
+        "end": 5.36
+      },
+      {
+        "syllable": "\nТы",
+        "start": 5.96,
+        "end": 6.0
+      },
+      {
+        "syllable": " зна",
+        "start": 6.08,
+        "end": 6.2
+      },
+      {
+        "syllable": "ешь",
+        "start": 6.28,
+        "end": 6.38
+      },
+      {
+        "syllable": " кто",
+        "start": 6.46,
+        "end": 6.58
+      },
+      {
+        "syllable": " я",
+        "start": 6.7,
+        "end": 6.74
+      },
+      {
+        "syllable": "\nВла",
+        "start": 9.38,
+        "end": 9.54
+      },
+      {
+        "syllable": "ди",
+        "start": 9.7,
+        "end": 9.82
+      },
+      {
+        "syllable": "мир",
+        "start": 9.96,
+        "end": 10.1
+      },
+      {
+        "syllable": " Пу",
+        "start": 10.26,
+        "end": 10.34
+      },
+      {
+        "syllable": "тин",
+        "start": 10.52,
+        "end": 10.8
+      },
+      {
+        "syllable": "\nВла",
+        "start": 11.54,
+        "end": 11.7
+      },
+      {
+        "syllable": "ди",
+        "start": 11.86,
+        "end": 11.96
+      },
+      {
+        "syllable": "мир",
+        "start": 12.12,
+        "end": 12.26
+      },
+      {
+        "syllable": " Пу",
+        "start": 12.4,
+        "end": 12.5
+      },
+      {
+        "syllable": "тин",
+        "start": 12.68,
+        "end": 12.98
+      },
+      {
+        "syllable": "\nВла",
+        "start": 13.72,
+        "end": 13.9
+      },
+      {
+        "syllable": "ди",
+        "start": 14.06,
+        "end": 14.18
+      },
+      {
+        "syllable": "мир",
+        "start": 14.3,
+        "end": 14.48
+      },
+      {
+        "syllable": " Пу",
+        "start": 14.58,
+        "end": 14.66
+      },
+      {
+        "syllable": "тин",
+        "start": 14.84,
+        "end": 14.98
+      },
+      {
+        "syllable": "\nВ",
+        "start": 15.06,
+        "end": 15.110000000000001
+      },
+      {
+        "syllable": " рус",
+        "start": 15.14,
+        "end": 15.24
+      },
+      {
+        "syllable": "ском",
+        "start": 15.28,
+        "end": 15.46
+      },
+      {
+        "syllable": " рэ",
+        "start": 15.54,
+        "end": 15.62
+      },
+      {
+        "syllable": "пе",
+        "start": 15.74,
+        "end": 15.8
+      },
+      {
+        "syllable": " Вла",
+        "start": 15.88,
+        "end": 16.02
+      },
+      {
+        "syllable": "ди",
+        "start": 16.18,
+        "end": 16.3
+      },
+      {
+        "syllable": "мир",
+        "start": 16.46,
+        "end": 16.6
+      },
+      {
+        "syllable": " Пу",
+        "start": 16.72,
+        "end": 16.84
+      },
+      {
+        "syllable": "тин",
+        "start": 17.0,
+        "end": 17.18
+      },
+      {
+        "syllable": "\nАй,",
+        "start": 17.4,
+        "end": 17.58
+      },
+      {
+        "syllable": " Вла",
+        "start": 17.6,
+        "end": 18.14
+      },
+      {
+        "syllable": "ди",
+        "start": 18.22,
+        "end": 18.36
+      },
+      {
+        "syllable": "мир",
+        "start": 18.48,
+        "end": 18.7
+      },
+      {
+        "syllable": " Пу",
+        "start": 18.78,
+        "end": 18.9
+      },
+      {
+        "syllable": "тин",
+        "start": 18.98,
+        "end": 19.32
+      },
+      {
+        "syllable": "\nВла",
+        "start": 19.46,
+        "end": 20.26
+      },
+      {
+        "syllable": "ди",
+        "start": 20.36,
+        "end": 20.52
+      },
+      {
+        "syllable": "мир",
+        "start": 20.62,
+        "end": 20.88
+      },
+      {
+        "syllable": " Пу",
+        "start": 20.94,
+        "end": 21.04
+      },
+      {
+        "syllable": "тин",
+        "start": 21.14,
+        "end": 21.48
+      },
+      {
+        "syllable": "\nВла",
+        "start": 21.62,
+        "end": 22.44
+      },
+      {
+        "syllable": "ди",
+        "start": 22.52,
+        "end": 22.68
+      },
+      {
+        "syllable": "мир",
+        "start": 22.78,
+        "end": 23.02
+      },
+      {
+        "syllable": " Пу",
+        "start": 23.1,
+        "end": 23.22
+      },
+      {
+        "syllable": "тин",
+        "start": 23.32,
+        "end": 23.56
+      },
+      {
+        "syllable": "\nВ",
+        "start": 23.62,
+        "end": 23.67
+      },
+      {
+        "syllable": " рус",
+        "start": 23.7,
+        "end": 23.82
+      },
+      {
+        "syllable": "ском",
+        "start": 23.88,
+        "end": 24.06
+      },
+      {
+        "syllable": " рэ",
+        "start": 24.1,
+        "end": 24.18
+      },
+      {
+        "syllable": "пе",
+        "start": 24.26,
+        "end": 24.38
+      },
+      {
+        "syllable": " Вла",
+        "start": 24.44,
+        "end": 24.6
+      },
+      {
+        "syllable": "ди",
+        "start": 24.68,
+        "end": 24.84
+      },
+      {
+        "syllable": "мир",
+        "start": 24.94,
+        "end": 25.16
+      },
+      {
+        "syllable": " Пу",
+        "start": 25.26,
+        "end": 25.38
+      },
+      {
+        "syllable": "тин",
+        "start": 25.48,
+        "end": 25.76
+      },
+      {
+        "syllable": "\nЭй,",
+        "start": 25.8,
+        "end": 26.04
+      },
+      {
+        "syllable": " Вла",
+        "start": 26.22,
+        "end": 26.66
+      },
+      {
+        "syllable": "ди",
+        "start": 26.76,
+        "end": 26.84
+      },
+      {
+        "syllable": "мир",
+        "start": 27.0,
+        "end": 27.28
+      },
+      {
+        "syllable": " Пу",
+        "start": 27.36,
+        "end": 27.42
+      },
+      {
+        "syllable": "тин",
+        "start": 27.56,
+        "end": 27.84
+      },
+      {
+        "syllable": "\nВла",
+        "start": 27.96,
+        "end": 28.88
+      },
+      {
+        "syllable": "ди",
+        "start": 28.94,
+        "end": 29.02
+      },
+      {
+        "syllable": "мир",
+        "start": 29.18,
+        "end": 29.46
+      },
+      {
+        "syllable": " Пу",
+        "start": 29.54,
+        "end": 29.6
+      },
+      {
+        "syllable": "тин",
+        "start": 29.74,
+        "end": 30.02
+      },
+      {
+        "syllable": "\nВла",
+        "start": 30.16,
+        "end": 31.0
+      },
+      {
+        "syllable": "ди",
+        "start": 31.06,
+        "end": 31.16
+      },
+      {
+        "syllable": "мир",
+        "start": 31.32,
+        "end": 31.6
+      },
+      {
+        "syllable": " Пу",
+        "start": 31.68,
+        "end": 31.74
+      },
+      {
+        "syllable": "тин",
+        "start": 31.88,
+        "end": 32.14
+      },
+      {
+        "syllable": "\nВ",
+        "start": 32.24,
+        "end": 32.29
+      },
+      {
+        "syllable": " рус",
+        "start": 32.3,
+        "end": 32.46
+      },
+      {
+        "syllable": "ском",
+        "start": 32.5,
+        "end": 32.66
+      },
+      {
+        "syllable": " рэ",
+        "start": 32.72,
+        "end": 32.76
+      },
+      {
+        "syllable": "пе",
+        "start": 32.84,
+        "end": 32.9
+      },
+      {
+        "syllable": " Вла",
+        "start": 33.04,
+        "end": 33.2
+      },
+      {
+        "syllable": "ди",
+        "start": 33.24,
+        "end": 33.34
+      },
+      {
+        "syllable": "мир",
+        "start": 33.5,
+        "end": 33.64
+      },
+      {
+        "syllable": " Пу",
+        "start": 33.7,
+        "end": 33.74
+      },
+      {
+        "syllable": "тин",
+        "start": 34.08,
+        "end": 34.22
+      },
+      {
+        "syllable": "\nЕ,",
+        "start": 34.26,
+        "end": 34.309999999999995
+      },
+      {
+        "syllable": " что",
+        "start": 34.3,
+        "end": 34.44
+      },
+      {
+        "syllable": " ты",
+        "start": 34.52,
+        "end": 34.6
+      },
+      {
+        "syllable": " мо",
+        "start": 34.68,
+        "end": 34.84
+      },
+      {
+        "syllable": "жешь",
+        "start": 34.9,
+        "end": 35.14
+      },
+      {
+        "syllable": " рас",
+        "start": 35.18,
+        "end": 35.28
+      },
+      {
+        "syllable": "ска",
+        "start": 35.36,
+        "end": 35.44
+      },
+      {
+        "syllable": "зать",
+        "start": 35.48,
+        "end": 35.66
+      },
+      {
+        "syllable": " за",
+        "start": 35.76,
+        "end": 35.8
+      },
+      {
+        "syllable": " рэп",
+        "start": 35.84,
+        "end": 36.0
+      },
+      {
+        "syllable": " (а)?",
+        "start": 36.08,
+        "end": 36.129999999999995
+      },
+      {
+        "syllable": "\nНе",
+        "start": 36.16,
+        "end": 36.24
+      },
+      {
+        "syllable": " смей",
+        "start": 36.28,
+        "end": 36.44
+      },
+      {
+        "syllable": " при",
+        "start": 36.56,
+        "end": 36.68
+      },
+      {
+        "syllable": " мне",
+        "start": 36.76,
+        "end": 36.9
+      },
+      {
+        "syllable": " го",
+        "start": 36.98,
+        "end": 37.02
+      },
+      {
+        "syllable": "во",
+        "start": 37.06,
+        "end": 37.14
+      },
+      {
+        "syllable": "рить",
+        "start": 37.2,
+        "end": 37.46
+      },
+      {
+        "syllable": " за",
+        "start": 37.56,
+        "end": 37.66
+      },
+      {
+        "syllable": " рэп",
+        "start": 37.8,
+        "end": 37.92
+      },
+      {
+        "syllable": " (нет)",
+        "start": 37.96,
+        "end": 38.14
+      },
+      {
+        "syllable": "\nЯ",
+        "start": 38.22,
+        "end": 38.269999999999996
+      },
+      {
+        "syllable": " ебал",
+        "start": 38.32,
+        "end": 38.5
+      },
+      {
+        "syllable": " твой",
+        "start": 38.54,
+        "end": 38.76
+      },
+      {
+        "syllable": " про",
+        "start": 38.84,
+        "end": 38.94
+      },
+      {
+        "syllable": "тест",
+        "start": 38.98,
+        "end": 39.14
+      },
+      {
+        "syllable": " —",
+        "start": 39.18,
+        "end": 39.23
+      },
+      {
+        "syllable": " Ан",
+        "start": 39.26,
+        "end": 39.3
+      },
+      {
+        "syllable": "ти",
+        "start": 39.34,
+        "end": 39.38
+      },
+      {
+        "syllable": "хайп",
+        "start": 39.42,
+        "end": 39.58
+      },
+      {
+        "syllable": " на",
+        "start": 39.66,
+        "end": 39.7
+      },
+      {
+        "syllable": " ве",
+        "start": 39.74,
+        "end": 39.78
+      },
+      {
+        "syllable": "ка",
+        "start": 39.82,
+        "end": 39.88
+      },
+      {
+        "syllable": " (ха",
+        "start": 39.92,
+        "end": 39.96
+      },
+      {
+        "syllable": "ха)",
+        "start": 40.04,
+        "end": 40.08
+      },
+      {
+        "syllable": "\nМоя",
+        "start": 40.16,
+        "end": 40.24
+      },
+      {
+        "syllable": " мать",
+        "start": 40.28,
+        "end": 40.5
+      },
+      {
+        "syllable": " —",
+        "start": 40.52,
+        "end": 40.54
+      },
+      {
+        "syllable": " глинт",
+        "start": 40.58,
+        "end": 40.86
+      },
+      {
+        "syllable": "вейн,",
+        "start": 40.92,
+        "end": 41.12
+      },
+      {
+        "syllable": " мой",
+        "start": 41.16,
+        "end": 41.32
+      },
+      {
+        "syllable": " отец",
+        "start": 41.36,
+        "end": 41.54
+      },
+      {
+        "syllable": " из",
+        "start": 41.62,
+        "end": 41.7
+      },
+      {
+        "syllable": " ЧК",
+        "start": 41.74,
+        "end": 41.78
+      },
+      {
+        "syllable": " (су",
+        "start": 41.8,
+        "end": 41.92
+      },
+      {
+        "syllable": "ка)",
+        "start": 41.98,
+        "end": 42.02
+      },
+      {
+        "syllable": "\nЧтоб",
+        "start": 42.1,
+        "end": 42.24
+      },
+      {
+        "syllable": " ты",
+        "start": 42.32,
+        "end": 42.36
+      },
+      {
+        "syllable": " знал,",
+        "start": 42.44,
+        "end": 42.62
+      },
+      {
+        "syllable": " му",
+        "start": 42.66,
+        "end": 42.7
+      },
+      {
+        "syllable": "дак,",
+        "start": 42.74,
+        "end": 42.88
+      },
+      {
+        "syllable": " как",
+        "start": 42.92,
+        "end": 43.0
+      },
+      {
+        "syllable": " ме",
+        "start": 43.08,
+        "end": 43.12
+      },
+      {
+        "syllable": "ня",
+        "start": 43.2,
+        "end": 43.28
+      },
+      {
+        "syllable": " ебёт",
+        "start": 43.34,
+        "end": 43.56
+      },
+      {
+        "syllable": " мир",
+        "start": 43.6,
+        "end": 43.72
+      },
+      {
+        "syllable": "\nМо",
+        "start": 43.76,
+        "end": 43.8
+      },
+      {
+        "syllable": "е",
+        "start": 43.88,
+        "end": 43.93
+      },
+      {
+        "syllable": "го",
+        "start": 43.96,
+        "end": 44.04
+      },
+      {
+        "syllable": " ко",
+        "start": 44.14,
+        "end": 44.18
+      },
+      {
+        "syllable": "реш",
+        "start": 44.24,
+        "end": 44.44
+      },
+      {
+        "syllable": "ка",
+        "start": 44.56,
+        "end": 44.66
+      },
+      {
+        "syllable": " убил",
+        "start": 44.76,
+        "end": 45.0
+      },
+      {
+        "syllable": " ге",
+        "start": 45.1,
+        "end": 45.18
+      },
+      {
+        "syllable": "ро",
+        "start": 45.3,
+        "end": 45.38
+      },
+      {
+        "syllable": "ин",
+        "start": 45.46,
+        "end": 45.6
+      },
+      {
+        "syllable": " (да)",
+        "start": 45.66,
+        "end": 45.72
+      },
+      {
+        "syllable": "\nДру",
+        "start": 45.78,
+        "end": 45.96
+      },
+      {
+        "syllable": "гой",
+        "start": 46.06,
+        "end": 46.44
+      },
+      {
+        "syllable": " в",
+        "start": 46.52,
+        "end": 46.57
+      },
+      {
+        "syllable": " ре",
+        "start": 46.56,
+        "end": 46.64
+      },
+      {
+        "syllable": "а",
+        "start": 46.7,
+        "end": 46.75
+      },
+      {
+        "syllable": "ни",
+        "start": 46.76,
+        "end": 46.84
+      },
+      {
+        "syllable": "маш",
+        "start": 46.88,
+        "end": 47.0
+      },
+      {
+        "syllable": "ке,",
+        "start": 47.04,
+        "end": 47.08
+      },
+      {
+        "syllable": " Хрю",
+        "start": 47.1,
+        "end": 47.24
+      },
+      {
+        "syllable": "ша,",
+        "start": 47.28,
+        "end": 47.34
+      },
+      {
+        "syllable": " Сте",
+        "start": 47.38,
+        "end": 47.5
+      },
+      {
+        "syllable": "паш",
+        "start": 47.58,
+        "end": 47.7
+      },
+      {
+        "syllable": "ка",
+        "start": 47.8,
+        "end": 47.86
+      },
+      {
+        "syllable": "\nКук",
+        "start": 47.96,
+        "end": 48.18
+      },
+      {
+        "syllable": "ла",
+        "start": 48.24,
+        "end": 48.32
+      },
+      {
+        "syllable": " с",
+        "start": 48.34,
+        "end": 48.36
+      },
+      {
+        "syllable": " ру",
+        "start": 48.52,
+        "end": 48.58
+      },
+      {
+        "syllable": "кой",
+        "start": 48.62,
+        "end": 48.74
+      },
+      {
+        "syllable": " в",
+        "start": 48.76,
+        "end": 48.78
+      },
+      {
+        "syllable": " жо",
+        "start": 48.86,
+        "end": 48.9
+      },
+      {
+        "syllable": "пе",
+        "start": 48.94,
+        "end": 49.04
+      },
+      {
+        "syllable": " —",
+        "start": 49.12,
+        "end": 49.169999999999995
+      },
+      {
+        "syllable": " Алек",
+        "start": 49.22,
+        "end": 49.42
+      },
+      {
+        "syllable": "сей",
+        "start": 49.5,
+        "end": 49.64
+      },
+      {
+        "syllable": " На",
+        "start": 49.68,
+        "end": 49.76
+      },
+      {
+        "syllable": "валь",
+        "start": 49.84,
+        "end": 49.98
+      },
+      {
+        "syllable": "ный",
+        "start": 50.02,
+        "end": 50.22
+      },
+      {
+        "syllable": " (лох)",
+        "start": 50.3,
+        "end": 50.38
+      },
+      {
+        "syllable": "\nТы",
+        "start": 50.42,
+        "end": 50.54
+      },
+      {
+        "syllable": " не",
+        "start": 50.64,
+        "end": 50.7
+      },
+      {
+        "syllable": " по",
+        "start": 50.74,
+        "end": 50.82
+      },
+      {
+        "syllable": "нял,",
+        "start": 50.86,
+        "end": 51.0
+      },
+      {
+        "syllable": " Ма",
+        "start": 51.04,
+        "end": 51.08
+      },
+      {
+        "syllable": "ня,",
+        "start": 51.12,
+        "end": 51.16
+      },
+      {
+        "syllable": " этот",
+        "start": 51.2,
+        "end": 51.32
+      },
+      {
+        "syllable": " мир",
+        "start": 51.36,
+        "end": 51.48
+      },
+      {
+        "syllable": " не",
+        "start": 51.52,
+        "end": 51.58
+      },
+      {
+        "syllable": " сказ",
+        "start": 51.66,
+        "end": 51.82
+      },
+      {
+        "syllable": "ка",
+        "start": 51.92,
+        "end": 51.96
+      },
+      {
+        "syllable": "\nЕсли",
+        "start": 52.06,
+        "end": 52.22
+      },
+      {
+        "syllable": " Сла",
+        "start": 52.3,
+        "end": 52.48
+      },
+      {
+        "syllable": "ва",
+        "start": 52.52,
+        "end": 52.58
+      },
+      {
+        "syllable": " Гной",
+        "start": 52.66,
+        "end": 52.84
+      },
+      {
+        "syllable": "ный",
+        "start": 52.94,
+        "end": 53.08
+      },
+      {
+        "syllable": " Крем",
+        "start": 53.16,
+        "end": 53.36
+      },
+      {
+        "syllable": "лю",
+        "start": 53.44,
+        "end": 53.54
+      },
+      {
+        "syllable": " про",
+        "start": 53.62,
+        "end": 53.74
+      },
+      {
+        "syllable": "дал",
+        "start": 53.82,
+        "end": 53.94
+      },
+      {
+        "syllable": "ся,",
+        "start": 54.02,
+        "end": 54.1
+      },
+      {
+        "syllable": " е",
+        "start": 54.16,
+        "end": 54.209999999999994
+      },
+      {
+        "syllable": "\nЯ",
+        "start": 54.26,
+        "end": 54.309999999999995
+      },
+      {
+        "syllable": " за",
+        "start": 54.3,
+        "end": 54.38
+      },
+      {
+        "syllable": "знал",
+        "start": 54.46,
+        "end": 54.64
+      },
+      {
+        "syllable": "ся",
+        "start": 54.68,
+        "end": 54.72
+      },
+      {
+        "syllable": " рань",
+        "start": 54.8,
+        "end": 55.0
+      },
+      {
+        "syllable": "ше,",
+        "start": 55.08,
+        "end": 55.16
+      },
+      {
+        "syllable": " чем",
+        "start": 55.28,
+        "end": 55.42
+      },
+      {
+        "syllable": " ты",
+        "start": 55.58,
+        "end": 55.68
+      },
+      {
+        "syllable": " на",
+        "start": 55.78,
+        "end": 55.86
+      },
+      {
+        "syllable": "чал",
+        "start": 55.94,
+        "end": 56.2
+      },
+      {
+        "syllable": " де",
+        "start": 56.88,
+        "end": 57.02
+      },
+      {
+        "syllable": "лать",
+        "start": 57.1,
+        "end": 57.36
+      },
+      {
+        "syllable": " рэп,",
+        "start": 57.46,
+        "end": 57.6
+      },
+      {
+        "syllable": " су",
+        "start": 57.68,
+        "end": 57.76
+      },
+      {
+        "syllable": "ка",
+        "start": 57.84,
+        "end": 57.88
+      },
+      {
+        "syllable": " (у)",
+        "start": 57.92,
+        "end": 57.94
+      },
+      {
+        "syllable": "\nАй,",
+        "start": 57.98,
+        "end": 58.02
+      },
+      {
+        "syllable": " Вла",
+        "start": 58.1,
+        "end": 58.24
+      },
+      {
+        "syllable": "ди",
+        "start": 58.34,
+        "end": 58.4
+      },
+      {
+        "syllable": "мир",
+        "start": 58.5,
+        "end": 58.7
+      },
+      {
+        "syllable": " Пу",
+        "start": 58.76,
+        "end": 58.82
+      },
+      {
+        "syllable": "тин",
+        "start": 58.94,
+        "end": 59.12
+      },
+      {
+        "syllable": "\nЭй,",
+        "start": 59.2,
+        "end": 59.3
+      },
+      {
+        "syllable": " Вла",
+        "start": 59.36,
+        "end": 59.58
+      },
+      {
+        "syllable": "ди",
+        "start": 59.72,
+        "end": 59.76
+      },
+      {
+        "syllable": "мир",
+        "start": 59.94,
+        "end": 60.22
+      },
+      {
+        "syllable": " Пу",
+        "start": 60.34,
+        "end": 60.52
+      },
+      {
+        "syllable": "тин",
+        "start": 60.58,
+        "end": 60.7
+      },
+      {
+        "syllable": "\nЭй,",
+        "start": 60.88,
+        "end": 61.12
+      },
+      {
+        "syllable": " Вла",
+        "start": 61.38,
+        "end": 61.5
+      },
+      {
+        "syllable": "ди",
+        "start": 61.64,
+        "end": 61.78
+      },
+      {
+        "syllable": "мир",
+        "start": 61.92,
+        "end": 62.08
+      },
+      {
+        "syllable": " Пу",
+        "start": 62.18,
+        "end": 62.28
+      },
+      {
+        "syllable": "тин",
+        "start": 62.48,
+        "end": 62.68
+      },
+      {
+        "syllable": "\nВ",
+        "start": 63.2,
+        "end": 63.25
+      },
+      {
+        "syllable": " рус",
+        "start": 63.32,
+        "end": 63.5
+      },
+      {
+        "syllable": "ском",
+        "start": 63.56,
+        "end": 63.92
+      },
+      {
+        "syllable": " рэ",
+        "start": 64.08,
+        "end": 64.16
+      },
+      {
+        "syllable": "пе",
+        "start": 64.22,
+        "end": 64.36
+      },
+      {
+        "syllable": " Вла",
+        "start": 64.46,
+        "end": 64.76
+      },
+      {
+        "syllable": "ди",
+        "start": 64.84,
+        "end": 65.18
+      },
+      {
+        "syllable": "мир",
+        "start": 65.42,
+        "end": 65.68
+      },
+      {
+        "syllable": " Пу",
+        "start": 65.74,
+        "end": 65.82
+      },
+      {
+        "syllable": "тин,",
+        "start": 65.98,
+        "end": 66.24
+      },
+      {
+        "syllable": " су",
+        "start": 66.32,
+        "end": 66.38
+      },
+      {
+        "syllable": "ка",
+        "start": 66.52,
+        "end": 66.62
+      },
+      {
+        "syllable": "\nВла",
+        "start": 66.78,
+        "end": 66.92
+      },
+      {
+        "syllable": "ди",
+        "start": 67.0,
+        "end": 67.08
+      },
+      {
+        "syllable": "мир",
+        "start": 67.12,
+        "end": 67.22
+      },
+      {
+        "syllable": " Пу",
+        "start": 67.3,
+        "end": 67.36
+      },
+      {
+        "syllable": "тин",
+        "start": 67.4,
+        "end": 67.54
+      },
+      {
+        "syllable": "\nЯ",
+        "start": 67.68,
+        "end": 67.73
+      },
+      {
+        "syllable": " Вла",
+        "start": 67.74,
+        "end": 67.88
+      },
+      {
+        "syllable": "ди",
+        "start": 67.96,
+        "end": 68.12
+      },
+      {
+        "syllable": "мир",
+        "start": 68.24,
+        "end": 68.48
+      },
+      {
+        "syllable": " Пу",
+        "start": 68.54,
+        "end": 68.68
+      },
+      {
+        "syllable": "тин",
+        "start": 68.78,
+        "end": 69.04
+      },
+      {
+        "syllable": "\nЯ",
+        "start": 69.08,
+        "end": 69.13
+      },
+      {
+        "syllable": " Вла",
+        "start": 69.1,
+        "end": 69.3
+      },
+      {
+        "syllable": "ди",
+        "start": 69.48,
+        "end": 69.8
+      },
+      {
+        "syllable": "мир",
+        "start": 70.02,
+        "end": 70.14
+      },
+      {
+        "syllable": " Пу",
+        "start": 70.3,
+        "end": 70.4
+      },
+      {
+        "syllable": "тин",
+        "start": 70.56,
+        "end": 70.72
+      },
+      {
+        "syllable": "\nВ",
+        "start": 70.86,
+        "end": 70.91
+      },
+      {
+        "syllable": " рус",
+        "start": 70.94,
+        "end": 71.22
+      },
+      {
+        "syllable": "ском",
+        "start": 71.32,
+        "end": 72.26
+      },
+      {
+        "syllable": " рэ",
+        "start": 72.3,
+        "end": 72.46
+      },
+      {
+        "syllable": "пе",
+        "start": 72.58,
+        "end": 72.74
+      },
+      {
+        "syllable": " Вла",
+        "start": 72.82,
+        "end": 73.02
+      },
+      {
+        "syllable": "ди",
+        "start": 73.1,
+        "end": 73.32
+      },
+      {
+        "syllable": "мир",
+        "start": 73.44,
+        "end": 74.26
+      },
+      {
+        "syllable": " Пу",
+        "start": 74.34,
+        "end": 74.38
+      },
+      {
+        "syllable": "тин",
+        "start": 74.46,
+        "end": 74.76
+      },
+      {
+        "syllable": "\nЧто",
+        "start": 74.9,
+        "end": 75.04
+      },
+      {
+        "syllable": " ты",
+        "start": 75.18,
+        "end": 75.28
+      },
+      {
+        "syllable": " мо",
+        "start": 75.44,
+        "end": 75.54
+      },
+      {
+        "syllable": "жешь",
+        "start": 75.6,
+        "end": 75.8
+      },
+      {
+        "syllable": " рас",
+        "start": 75.84,
+        "end": 75.94
+      },
+      {
+        "syllable": "ска",
+        "start": 76.0,
+        "end": 76.14
+      },
+      {
+        "syllable": "зать",
+        "start": 76.2,
+        "end": 76.48
+      },
+      {
+        "syllable": " за",
+        "start": 76.56,
+        "end": 76.64
+      },
+      {
+        "syllable": " рэп",
+        "start": 76.78,
+        "end": 77.04
+      },
+      {
+        "syllable": " (ха",
+        "start": 77.14,
+        "end": 77.2
+      },
+      {
+        "syllable": "ха)?",
+        "start": 77.34,
+        "end": 77.42
+      },
+      {
+        "syllable": "\nНе",
+        "start": 77.58,
+        "end": 77.64
+      },
+      {
+        "syllable": " смей",
+        "start": 77.68,
+        "end": 77.88
+      },
+      {
+        "syllable": " при",
+        "start": 78.02,
+        "end": 78.18
+      },
+      {
+        "syllable": " мне",
+        "start": 78.24,
+        "end": 78.38
+      },
+      {
+        "syllable": " го",
+        "start": 78.42,
+        "end": 78.5
+      },
+      {
+        "syllable": "во",
+        "start": 78.58,
+        "end": 78.62
+      },
+      {
+        "syllable": "рить",
+        "start": 78.66,
+        "end": 78.78
+      },
+      {
+        "syllable": " за",
+        "start": 78.88,
+        "end": 78.96
+      },
+      {
+        "syllable": " рэп",
+        "start": 79.0,
+        "end": 79.12
+      },
+      {
+        "syllable": " (не",
+        "start": 79.16,
+        "end": 79.24
+      },
+      {
+        "syllable": " смей)",
+        "start": 79.28,
+        "end": 79.46
+      },
+      {
+        "syllable": "\nЯ",
+        "start": 79.5,
+        "end": 79.55
+      },
+      {
+        "syllable": " чи",
+        "start": 79.52,
+        "end": 79.6
+      },
+      {
+        "syllable": "тал",
+        "start": 79.64,
+        "end": 79.72
+      },
+      {
+        "syllable": " его",
+        "start": 79.8,
+        "end": 79.92
+      },
+      {
+        "syllable": " в",
+        "start": 79.96,
+        "end": 80.00999999999999
+      },
+      {
+        "syllable": " са",
+        "start": 80.02,
+        "end": 80.08
+      },
+      {
+        "syllable": "мый",
+        "start": 80.16,
+        "end": 80.26
+      },
+      {
+        "syllable": " дешё",
+        "start": 80.34,
+        "end": 80.6
+      },
+      {
+        "syllable": "вый",
+        "start": 80.66,
+        "end": 80.86
+      },
+      {
+        "syllable": " ми",
+        "start": 81.0,
+        "end": 81.08
+      },
+      {
+        "syllable": "кро",
+        "start": 81.12,
+        "end": 81.24
+      },
+      {
+        "syllable": " (ео)",
+        "start": 81.32,
+        "end": 81.42
+      },
+      {
+        "syllable": "\nТе",
+        "start": 81.48,
+        "end": 81.52
+      },
+      {
+        "syllable": "бя",
+        "start": 81.56,
+        "end": 81.64
+      },
+      {
+        "syllable": " не",
+        "start": 81.68,
+        "end": 81.76
+      },
+      {
+        "syllable": "ту",
+        "start": 81.8,
+        "end": 81.84
+      },
+      {
+        "syllable": " на",
+        "start": 81.88,
+        "end": 81.92
+      },
+      {
+        "syllable": " ай",
+        "start": 82.02,
+        "end": 82.14
+      },
+      {
+        "syllable": "тюнс",
+        "start": 82.18,
+        "end": 82.3
+      },
+      {
+        "syllable": " ты",
+        "start": 82.4,
+        "end": 82.44
+      },
+      {
+        "syllable": " как",
+        "start": 82.5,
+        "end": 82.66
+      },
+      {
+        "syllable": " mc",
+        "start": 82.74,
+        "end": 82.82
+      },
+      {
+        "syllable": " ни",
+        "start": 82.88,
+        "end": 82.94
+      },
+      {
+        "syllable": "кто",
+        "start": 83.02,
+        "end": 83.2
+      },
+      {
+        "syllable": "\nПошёл",
+        "start": 83.24,
+        "end": 83.56
+      },
+      {
+        "syllable": " на",
+        "start": 83.6,
+        "end": 83.64
+      },
+      {
+        "syllable": " хуй,",
+        "start": 83.68,
+        "end": 83.8
+      },
+      {
+        "syllable": " хо",
+        "start": 83.84,
+        "end": 83.88
+      },
+      {
+        "syllable": "хол",
+        "start": 83.9,
+        "end": 84.04
+      },
+      {
+        "syllable": " (на",
+        "start": 84.08,
+        "end": 84.16
+      },
+      {
+        "syllable": " хуй),",
+        "start": 84.24,
+        "end": 84.36
+      },
+      {
+        "syllable": " ты",
+        "start": 84.4,
+        "end": 84.48
+      },
+      {
+        "syllable": " в",
+        "start": 84.54,
+        "end": 84.59
+      },
+      {
+        "syllable": " мо",
+        "start": 84.62,
+        "end": 84.68
+      },
+      {
+        "syllable": "ей",
+        "start": 84.76,
+        "end": 84.84
+      },
+      {
+        "syllable": " стра",
+        "start": 84.88,
+        "end": 85.08
+      },
+      {
+        "syllable": "не",
+        "start": 85.16,
+        "end": 85.22
+      },
+      {
+        "syllable": "\nСел",
+        "start": 85.32,
+        "end": 85.56
+      },
+      {
+        "syllable": " на",
+        "start": 85.7,
+        "end": 85.76
+      },
+      {
+        "syllable": " батл,",
+        "start": 85.82,
+        "end": 86.06
+      },
+      {
+        "syllable": " но",
+        "start": 86.14,
+        "end": 86.24
+      },
+      {
+        "syllable": " по",
+        "start": 86.28,
+        "end": 86.36
+      },
+      {
+        "syllable": " ка",
+        "start": 86.44,
+        "end": 86.52
+      },
+      {
+        "syllable": "кой",
+        "start": 86.64,
+        "end": 86.74
+      },
+      {
+        "syllable": " ста",
+        "start": 86.76,
+        "end": 86.94
+      },
+      {
+        "syllable": "тье",
+        "start": 86.98,
+        "end": 87.1
+      },
+      {
+        "syllable": "\nВо",
+        "start": 87.14,
+        "end": 87.22
+      },
+      {
+        "syllable": "об",
+        "start": 87.26,
+        "end": 87.36
+      },
+      {
+        "syllable": "ще,",
+        "start": 87.46,
+        "end": 87.56
+      },
+      {
+        "syllable": " мне",
+        "start": 87.58,
+        "end": 87.72
+      },
+      {
+        "syllable": " похуй",
+        "start": 87.76,
+        "end": 88.02
+      },
+      {
+        "syllable": " по",
+        "start": 88.08,
+        "end": 88.16
+      },
+      {
+        "syllable": " ка",
+        "start": 88.2,
+        "end": 88.24
+      },
+      {
+        "syllable": "кой",
+        "start": 88.38,
+        "end": 88.46
+      },
+      {
+        "syllable": " ста",
+        "start": 88.58,
+        "end": 88.74
+      },
+      {
+        "syllable": "тье",
+        "start": 88.82,
+        "end": 88.94
+      },
+      {
+        "syllable": " (лох)",
+        "start": 89.04,
+        "end": 89.18
+      },
+      {
+        "syllable": "\nВспо",
+        "start": 89.2,
+        "end": 89.42
+      },
+      {
+        "syllable": "ми",
+        "start": 89.46,
+        "end": 89.54
+      },
+      {
+        "syllable": "най,",
+        "start": 89.58,
+        "end": 89.76
+      },
+      {
+        "syllable": " ты",
+        "start": 89.84,
+        "end": 89.92
+      },
+      {
+        "syllable": " в",
+        "start": 89.96,
+        "end": 90.00999999999999
+      },
+      {
+        "syllable": " мо",
+        "start": 90.04,
+        "end": 90.18
+      },
+      {
+        "syllable": "ей",
+        "start": 90.26,
+        "end": 90.3
+      },
+      {
+        "syllable": " стра",
+        "start": 90.44,
+        "end": 90.7
+      },
+      {
+        "syllable": "не",
+        "start": 90.74,
+        "end": 90.84
+      },
+      {
+        "syllable": " (е)",
+        "start": 90.86,
+        "end": 90.88
+      },
+      {
+        "syllable": "\nМо",
+        "start": 90.96,
+        "end": 91.0
+      },
+      {
+        "syllable": "ло",
+        "start": 91.04,
+        "end": 91.16
+      },
+      {
+        "syllable": "дой",
+        "start": 91.24,
+        "end": 91.4
+      },
+      {
+        "syllable": " Вла",
+        "start": 91.44,
+        "end": 91.58
+      },
+      {
+        "syllable": "ди",
+        "start": 91.68,
+        "end": 91.72
+      },
+      {
+        "syllable": "мир",
+        "start": 91.82,
+        "end": 91.94
+      },
+      {
+        "syllable": " в",
+        "start": 92.04,
+        "end": 92.09
+      },
+      {
+        "syllable": " этой",
+        "start": 92.1,
+        "end": 92.36
+      },
+      {
+        "syllable": " рэп",
+        "start": 92.4,
+        "end": 92.54
+      },
+      {
+        "syllable": "и",
+        "start": 92.58,
+        "end": 92.63
+      },
+      {
+        "syllable": "гре",
+        "start": 92.62,
+        "end": 92.84
+      },
+      {
+        "syllable": " (е)",
+        "start": 92.88,
+        "end": 92.92999999999999
+      },
+      {
+        "syllable": "\nРус",
+        "start": 92.92,
+        "end": 93.12
+      },
+      {
+        "syllable": "ский",
+        "start": 93.24,
+        "end": 93.48
+      },
+      {
+        "syllable": " рэп",
+        "start": 93.5,
+        "end": 93.68
+      },
+      {
+        "syllable": " для",
+        "start": 93.76,
+        "end": 93.92
+      },
+      {
+        "syllable": " вас",
+        "start": 94.04,
+        "end": 94.2
+      },
+      {
+        "syllable": " —",
+        "start": 94.24,
+        "end": 94.28999999999999
+      },
+      {
+        "syllable": " это",
+        "start": 94.32,
+        "end": 94.4
+      },
+      {
+        "syllable": " Брол",
+        "start": 94.46,
+        "end": 94.62
+      },
+      {
+        "syllable": " и",
+        "start": 94.74,
+        "end": 94.78999999999999
+      },
+      {
+        "syllable": " KREC",
+        "start": 94.82,
+        "end": 95.1
+      },
+      {
+        "syllable": " (ха",
+        "start": 95.18,
+        "end": 95.24
+      },
+      {
+        "syllable": "ха)",
+        "start": 95.32,
+        "end": 95.38
+      },
+      {
+        "syllable": "\nРус",
+        "start": 95.44,
+        "end": 95.64
+      },
+      {
+        "syllable": "ский",
+        "start": 95.72,
+        "end": 95.9
+      },
+      {
+        "syllable": " рэп",
+        "start": 95.98,
+        "end": 96.14
+      },
+      {
+        "syllable": " для",
+        "start": 96.18,
+        "end": 96.34
+      },
+      {
+        "syllable": " нас",
+        "start": 96.38,
+        "end": 96.5
+      },
+      {
+        "syllable": " —",
+        "start": 96.54,
+        "end": 96.59
+      },
+      {
+        "syllable": " это",
+        "start": 96.58,
+        "end": 96.72
+      },
+      {
+        "syllable": " лол",
+        "start": 96.76,
+        "end": 96.88
+      },
+      {
+        "syllable": " и",
+        "start": 96.92,
+        "end": 96.97
+      },
+      {
+        "syllable": " кек",
+        "start": 96.96,
+        "end": 97.1
+      },
+      {
+        "syllable": "\nЭтот",
+        "start": 97.14,
+        "end": 97.34
+      },
+      {
+        "syllable": " флоу",
+        "start": 97.38,
+        "end": 97.6
+      },
+      {
+        "syllable": " black",
+        "start": 97.7,
+        "end": 98.02
+      },
+      {
+        "syllable": "'s",
+        "start": 98.06,
+        "end": 98.11
+      },
+      {
+        "syllable": " и",
+        "start": 98.1,
+        "end": 98.14999999999999
+      },
+      {
+        "syllable": " это",
+        "start": 98.18,
+        "end": 98.26
+      },
+      {
+        "syllable": " body",
+        "start": 98.3,
+        "end": 98.52
+      },
+      {
+        "syllable": " bag",
+        "start": 98.56,
+        "end": 98.7
+      },
+      {
+        "syllable": "\nЕ,",
+        "start": 98.74,
+        "end": 98.76
+      },
+      {
+        "syllable": " Вла",
+        "start": 98.8,
+        "end": 98.9
+      },
+      {
+        "syllable": "ди",
+        "start": 98.94,
+        "end": 98.98
+      },
+      {
+        "syllable": "мир",
+        "start": 99.06,
+        "end": 99.16
+      },
+      {
+        "syllable": " Пу",
+        "start": 99.2,
+        "end": 99.28
+      },
+      {
+        "syllable": "тин,",
+        "start": 99.32,
+        "end": 99.46
+      },
+      {
+        "syllable": " эй",
+        "start": 99.54,
+        "end": 99.6
+      },
+      {
+        "syllable": "\nВла",
+        "start": 99.68,
+        "end": 99.78
+      },
+      {
+        "syllable": "ди",
+        "start": 99.88,
+        "end": 99.96
+      },
+      {
+        "syllable": "мир",
+        "start": 100.02,
+        "end": 100.2
+      },
+      {
+        "syllable": " Пу",
+        "start": 100.3,
+        "end": 100.38
+      },
+      {
+        "syllable": "тин,",
+        "start": 100.54,
+        "end": 100.72
+      },
+      {
+        "syllable": " эй",
+        "start": 100.8,
+        "end": 100.92
+      },
+      {
+        "syllable": "\nВла",
+        "start": 101.02,
+        "end": 101.22
+      },
+      {
+        "syllable": "ди",
+        "start": 101.3,
+        "end": 101.4
+      },
+      {
+        "syllable": "мир",
+        "start": 101.48,
+        "end": 101.66
+      },
+      {
+        "syllable": " Пу",
+        "start": 101.74,
+        "end": 101.84
+      },
+      {
+        "syllable": "тин",
+        "start": 101.96,
+        "end": 102.1
+      },
+      {
+        "syllable": "\nВ",
+        "start": 102.14,
+        "end": 102.19
+      },
+      {
+        "syllable": " рус",
+        "start": 102.18,
+        "end": 102.26
+      },
+      {
+        "syllable": "ском",
+        "start": 102.34,
+        "end": 102.56
+      },
+      {
+        "syllable": " рэ",
+        "start": 102.68,
+        "end": 102.82
+      },
+      {
+        "syllable": "пе",
+        "start": 102.96,
+        "end": 103.02
+      },
+      {
+        "syllable": " Вла",
+        "start": 103.22,
+        "end": 103.66
+      },
+      {
+        "syllable": "ди",
+        "start": 103.94,
+        "end": 104.34
+      },
+      {
+        "syllable": "мир",
+        "start": 104.52,
+        "end": 104.66
+      },
+      {
+        "syllable": " Пу",
+        "start": 104.84,
+        "end": 104.94
+      },
+      {
+        "syllable": "тин",
+        "start": 105.08,
+        "end": 105.22
+      },
+      {
+        "syllable": "\nРус",
+        "start": 105.38,
+        "end": 105.66
+      },
+      {
+        "syllable": "ский",
+        "start": 105.78,
+        "end": 106.04
+      },
+      {
+        "syllable": " бит",
+        "start": 106.24,
+        "end": 106.76
+      },
+      {
+        "syllable": "ко",
+        "start": 106.84,
+        "end": 107.0
+      },
+      {
+        "syllable": "ин",
+        "start": 107.12,
+        "end": 107.26
+      },
+      {
+        "syllable": " —",
+        "start": 107.34,
+        "end": 107.39
+      },
+      {
+        "syllable": " берёза",
+        "start": 107.4,
+        "end": 108.04
+      },
+      {
+        "syllable": " и",
+        "start": 108.06,
+        "end": 108.14
+      },
+      {
+        "syllable": " вод",
+        "start": 108.22,
+        "end": 108.82
+      },
+      {
+        "syllable": "ка",
+        "start": 108.9,
+        "end": 108.96
+      },
+      {
+        "syllable": "\nРус",
+        "start": 109.16,
+        "end": 109.4
+      },
+      {
+        "syllable": "ский",
+        "start": 109.48,
+        "end": 109.78
+      },
+      {
+        "syllable": " па",
+        "start": 109.94,
+        "end": 110.04
+      },
+      {
+        "syllable": "рень",
+        "start": 110.1,
+        "end": 110.32
+      },
+      {
+        "syllable": " из",
+        "start": 110.4,
+        "end": 110.44
+      },
+      {
+        "syllable": " Un",
+        "start": 110.5,
+        "end": 110.54
+      },
+      {
+        "syllable": "der",
+        "start": 110.58,
+        "end": 110.74
+      },
+      {
+        "syllable": "wa",
+        "start": 110.86,
+        "end": 110.94
+      },
+      {
+        "syllable": "ter",
+        "start": 111.02,
+        "end": 111.14
+      },
+      {
+        "syllable": "\nВ",
+        "start": 111.3,
+        "end": 111.35
+      },
+      {
+        "syllable": " вол",
+        "start": 111.42,
+        "end": 111.64
+      },
+      {
+        "syllable": "шеб",
+        "start": 111.72,
+        "end": 111.96
+      },
+      {
+        "syllable": "ной",
+        "start": 112.14,
+        "end": 112.3
+      },
+      {
+        "syllable": " (е)",
+        "start": 112.38,
+        "end": 112.42999999999999
+      },
+      {
+        "syllable": " стра",
+        "start": 112.44,
+        "end": 112.6
+      },
+      {
+        "syllable": "не",
+        "start": 112.64,
+        "end": 112.68
+      },
+      {
+        "syllable": " дол",
+        "start": 112.76,
+        "end": 112.9
+      },
+      {
+        "syllable": "боёбов,",
+        "start": 112.98,
+        "end": 113.38
+      },
+      {
+        "syllable": " ху",
+        "start": 113.44,
+        "end": 113.52
+      },
+      {
+        "syllable": "ле",
+        "start": 113.56,
+        "end": 113.76
+      },
+      {
+        "syllable": "\nКто,",
+        "start": 113.86,
+        "end": 114.04
+      },
+      {
+        "syllable": " если",
+        "start": 114.16,
+        "end": 114.42
+      },
+      {
+        "syllable": " не",
+        "start": 114.6,
+        "end": 114.66
+      },
+      {
+        "syllable": " я",
+        "start": 114.72,
+        "end": 114.77
+      },
+      {
+        "syllable": " —",
+        "start": 114.76,
+        "end": 114.81
+      },
+      {
+        "syllable": " Вла",
+        "start": 114.82,
+        "end": 114.9
+      },
+      {
+        "syllable": "ди",
+        "start": 115.0,
+        "end": 115.1
+      },
+      {
+        "syllable": "мир",
+        "start": 115.2,
+        "end": 115.34
+      },
+      {
+        "syllable": " Пу",
+        "start": 115.42,
+        "end": 115.5
+      },
+      {
+        "syllable": "тин",
+        "start": 115.58,
+        "end": 115.8
+      },
+      {
+        "syllable": "\nЯ",
+        "start": 115.86,
+        "end": 115.91
+      },
+      {
+        "syllable": " Вла",
+        "start": 115.94,
+        "end": 116.04
+      },
+      {
+        "syllable": "ди",
+        "start": 116.08,
+        "end": 116.12
+      },
+      {
+        "syllable": "мир",
+        "start": 116.16,
+        "end": 116.28
+      },
+      {
+        "syllable": " Пу",
+        "start": 116.38,
+        "end": 116.42
+      },
+      {
+        "syllable": "тин",
+        "start": 116.48,
+        "end": 116.6
+      },
+      {
+        "syllable": "\nЯ",
+        "start": 116.66,
+        "end": 116.71
+      },
+      {
+        "syllable": " Вла",
+        "start": 116.7,
+        "end": 116.82
+      },
+      {
+        "syllable": "ди",
+        "start": 116.86,
+        "end": 116.96
+      },
+      {
+        "syllable": "мир",
+        "start": 116.98,
+        "end": 117.12
+      },
+      {
+        "syllable": " Пу",
+        "start": 117.16,
+        "end": 117.22
+      },
+      {
+        "syllable": "тин",
+        "start": 117.3,
+        "end": 117.48
+      },
+      {
+        "syllable": "\nЯ",
+        "start": 117.54,
+        "end": 117.59
+      },
+      {
+        "syllable": " Вла",
+        "start": 117.6,
+        "end": 117.74
+      },
+      {
+        "syllable": "ди",
+        "start": 117.86,
+        "end": 118.04
+      },
+      {
+        "syllable": "мир",
+        "start": 118.1,
+        "end": 118.22
+      },
+      {
+        "syllable": " Пу",
+        "start": 118.3,
+        "end": 118.38
+      },
+      {
+        "syllable": "тин",
+        "start": 118.48,
+        "end": 118.82
+      },
+      {
+        "syllable": "\nВ",
+        "start": 118.88,
+        "end": 118.92999999999999
+      },
+      {
+        "syllable": " рус",
+        "start": 118.94,
+        "end": 119.06
+      },
+      {
+        "syllable": "ском",
+        "start": 119.12,
+        "end": 119.32
+      },
+      {
+        "syllable": " рэ",
+        "start": 119.38,
+        "end": 119.48
+      },
+      {
+        "syllable": "пе",
+        "start": 119.52,
+        "end": 119.68
+      },
+      {
+        "syllable": " Вла",
+        "start": 119.76,
+        "end": 119.98
+      },
+      {
+        "syllable": "ди",
+        "start": 120.1,
+        "end": 120.24
+      },
+      {
+        "syllable": "мир",
+        "start": 120.32,
+        "end": 120.52
+      },
+      {
+        "syllable": " Пу",
+        "start": 120.62,
+        "end": 120.78
+      },
+      {
+        "syllable": "тин",
+        "start": 120.88,
+        "end": 121.22
+      },
+      {
+        "syllable": "\nЭй,",
+        "start": 121.82,
+        "end": 121.9
+      },
+      {
+        "syllable": " Вла",
+        "start": 121.98,
+        "end": 122.24
+      },
+      {
+        "syllable": "ди",
+        "start": 122.42,
+        "end": 122.5
+      },
+      {
+        "syllable": "мир",
+        "start": 122.58,
+        "end": 122.8
+      },
+      {
+        "syllable": " Пу",
+        "start": 122.98,
+        "end": 123.12
+      },
+      {
+        "syllable": "тин",
+        "start": 123.22,
+        "end": 123.98
+      },
+      {
+        "syllable": "\nЯ",
+        "start": 124.08,
+        "end": 124.13
+      },
+      {
+        "syllable": " Вла",
+        "start": 124.14,
+        "end": 124.44
+      },
+      {
+        "syllable": "ди",
+        "start": 124.6,
+        "end": 124.68
+      },
+      {
+        "syllable": "мир",
+        "start": 124.74,
+        "end": 124.96
+      },
+      {
+        "syllable": " Пу",
+        "start": 125.16,
+        "end": 125.3
+      },
+      {
+        "syllable": "тин",
+        "start": 125.42,
+        "end": 126.14
+      },
+      {
+        "syllable": "\nЯ",
+        "start": 126.24,
+        "end": 126.28999999999999
+      },
+      {
+        "syllable": " Вла",
+        "start": 126.32,
+        "end": 126.6
+      },
+      {
+        "syllable": "ди",
+        "start": 126.76,
+        "end": 126.84
+      },
+      {
+        "syllable": "мир",
+        "start": 126.9,
+        "end": 127.12
+      },
+      {
+        "syllable": " Пу",
+        "start": 127.3,
+        "end": 127.38
+      },
+      {
+        "syllable": "тин",
+        "start": 127.46,
+        "end": 127.62
+      },
+      {
+        "syllable": "\nВ",
+        "start": 127.66,
+        "end": 127.71
+      },
+      {
+        "syllable": " рус",
+        "start": 127.7,
+        "end": 127.82
+      },
+      {
+        "syllable": "ском",
+        "start": 127.88,
+        "end": 128.08
+      },
+      {
+        "syllable": " рэ",
+        "start": 128.18,
+        "end": 128.26
+      },
+      {
+        "syllable": "пе",
+        "start": 128.34,
+        "end": 128.42
+      },
+      {
+        "syllable": " Вла",
+        "start": 128.5,
+        "end": 128.76
+      },
+      {
+        "syllable": "ди",
+        "start": 128.92,
+        "end": 129.0
+      },
+      {
+        "syllable": "мир",
+        "start": 129.06,
+        "end": 129.3
+      },
+      {
+        "syllable": " Пу",
+        "start": 129.44,
+        "end": 129.54
+      },
+      {
+        "syllable": "тин",
+        "start": 129.6,
+        "end": 130.0
+      },
+      {
+        "syllable": " (эй)",
+        "start": 130.02,
+        "end": 130.44
+      }
+    ]
+  },
+  "2": {
+    "meta": {
+      "artist": "Григорий Лепс",
+      "title": "Орлы или вороны",
+      "language": "ru"
+    },
+    "syllable_count": 301,
+    "char_timestamp_count": 903,
+    "lyrics_char_count": 730,
+    "lyrics_word_count": 174,
+    "ctc_char": {
+      "label": "ctc_char",
+      "mae": 4.854259136212625,
+      "hit_rate_01s": 0.006644518272425249,
+      "matched_count": 301,
+      "total_ref": 301,
+      "first_20": [
+        {
+          "syllable": "Ска",
+          "ref_start": 14.05,
+          "pred_start": 13.84,
+          "delta": -0.21000000000000085
+        },
+        {
+          "syllable": "жи",
+          "ref_start": 14.211,
+          "pred_start": 14.14,
+          "delta": -0.07099999999999973
+        },
+        {
+          "syllable": "мне,",
+          "ref_start": 14.553,
+          "pred_start": 14.48,
+          "delta": -0.0730000000000004
+        },
+        {
+          "syllable": "что",
+          "ref_start": 15.178,
+          "pred_start": 14.7,
+          "delta": -0.47800000000000153
+        },
+        {
+          "syllable": "я",
+          "ref_start": 15.459,
+          "pred_start": 15.26,
+          "delta": -0.19899999999999984
+        },
+        {
+          "syllable": "не",
+          "ref_start": 15.621,
+          "pred_start": 15.38,
+          "delta": -0.24099999999999966
+        },
+        {
+          "syllable": "знаю.",
+          "ref_start": 15.782,
+          "pred_start": 15.62,
+          "delta": -0.1620000000000008
+        },
+        {
+          "syllable": "По",
+          "ref_start": 16.809,
+          "pred_start": 16.16,
+          "delta": -0.6490000000000009
+        },
+        {
+          "syllable": "кой",
+          "ref_start": 16.99,
+          "pred_start": 16.74,
+          "delta": -0.25
+        },
+        {
+          "syllable": "про",
+          "ref_start": 17.211,
+          "pred_start": 17.0,
+          "delta": -0.21099999999999852
+        },
+        {
+          "syllable": "лей",
+          "ref_start": 17.393,
+          "pred_start": 17.18,
+          "delta": -0.21300000000000097
+        },
+        {
+          "syllable": "в",
+          "ref_start": 17.695,
+          "pred_start": 17.44,
+          "delta": -0.254999999999999
+        },
+        {
+          "syllable": "мою",
+          "ref_start": 17.815,
+          "pred_start": 17.56,
+          "delta": -0.25500000000000256
+        },
+        {
+          "syllable": "ду",
+          "ref_start": 18.198,
+          "pred_start": 17.8,
+          "delta": -0.3979999999999997
+        },
+        {
+          "syllable": "шу",
+          "ref_start": 18.581,
+          "pred_start": 18.12,
+          "delta": -0.4609999999999985
+        },
+        {
+          "syllable": "Ведь",
+          "ref_start": 19.99,
+          "pred_start": 18.5,
+          "delta": -1.4899999999999984
+        },
+        {
+          "syllable": "сча",
+          "ref_start": 20.492,
+          "pred_start": 20.26,
+          "delta": -0.23199999999999932
+        },
+        {
+          "syllable": "стье",
+          "ref_start": 20.894,
+          "pred_start": 20.44,
+          "delta": -0.4539999999999971
+        },
+        {
+          "syllable": "не",
+          "ref_start": 21.538,
+          "pred_start": 20.94,
+          "delta": -0.597999999999999
+        },
+        {
+          "syllable": "за",
+          "ref_start": 21.739,
+          "pred_start": 21.5,
+          "delta": -0.23900000000000077
+        }
+      ]
+    },
+    "ctc_char_timings": [
+      {
+        "syllable": "Ска",
+        "start": 13.84,
+        "end": 14.02
+      },
+      {
+        "syllable": "жи",
+        "start": 14.14,
+        "end": 14.26
+      },
+      {
+        "syllable": " мне,",
+        "start": 14.48,
+        "end": 14.68
+      },
+      {
+        "syllable": " что",
+        "start": 14.7,
+        "end": 15.18
+      },
+      {
+        "syllable": " я",
+        "start": 15.26,
+        "end": 15.31
+      },
+      {
+        "syllable": " не",
+        "start": 15.38,
+        "end": 15.56
+      },
+      {
+        "syllable": " знаю.",
+        "start": 15.62,
+        "end": 15.92
+      },
+      {
+        "syllable": " По",
+        "start": 16.16,
+        "end": 16.46
+      },
+      {
+        "syllable": "кой",
+        "start": 16.74,
+        "end": 16.92
+      },
+      {
+        "syllable": " про",
+        "start": 17.0,
+        "end": 17.14
+      },
+      {
+        "syllable": "лей",
+        "start": 17.18,
+        "end": 17.32
+      },
+      {
+        "syllable": " в",
+        "start": 17.44,
+        "end": 17.490000000000002
+      },
+      {
+        "syllable": " мою",
+        "start": 17.56,
+        "end": 17.72
+      },
+      {
+        "syllable": " ду",
+        "start": 17.8,
+        "end": 18.02
+      },
+      {
+        "syllable": "шу",
+        "start": 18.12,
+        "end": 18.24
+      },
+      {
+        "syllable": "\nВедь",
+        "start": 18.5,
+        "end": 20.22
+      },
+      {
+        "syllable": " сча",
+        "start": 20.26,
+        "end": 20.4
+      },
+      {
+        "syllable": "стье",
+        "start": 20.44,
+        "end": 20.88
+      },
+      {
+        "syllable": " не",
+        "start": 20.94,
+        "end": 21.04
+      },
+      {
+        "syllable": " за",
+        "start": 21.5,
+        "end": 21.56
+      },
+      {
+        "syllable": " го",
+        "start": 21.66,
+        "end": 21.76
+      },
+      {
+        "syllable": "ра",
+        "start": 21.88,
+        "end": 21.96
+      },
+      {
+        "syllable": "ми",
+        "start": 22.08,
+        "end": 22.22
+      },
+      {
+        "syllable": " -",
+        "start": 22.48,
+        "end": 22.53
+      },
+      {
+        "syllable": " оно",
+        "start": 22.58,
+        "end": 23.16
+      },
+      {
+        "syllable": " там,",
+        "start": 23.26,
+        "end": 23.52
+      },
+      {
+        "syllable": " где",
+        "start": 23.76,
+        "end": 23.96
+      },
+      {
+        "syllable": " хо",
+        "start": 24.04,
+        "end": 24.1
+      },
+      {
+        "syllable": "тят",
+        "start": 24.16,
+        "end": 24.54
+      },
+      {
+        "syllable": "\nЗа",
+        "start": 24.8,
+        "end": 24.94
+      },
+      {
+        "syllable": "чем",
+        "start": 25.8,
+        "end": 26.68
+      },
+      {
+        "syllable": " же",
+        "start": 26.78,
+        "end": 26.94
+      },
+      {
+        "syllable": " мы",
+        "start": 27.1,
+        "end": 27.24
+      },
+      {
+        "syllable": " по",
+        "start": 27.32,
+        "end": 27.78
+      },
+      {
+        "syllable": "те",
+        "start": 27.86,
+        "end": 27.98
+      },
+      {
+        "syllable": "ря",
+        "start": 28.04,
+        "end": 28.16
+      },
+      {
+        "syllable": "лись",
+        "start": 28.28,
+        "end": 28.8
+      },
+      {
+        "syllable": " сре",
+        "start": 28.9,
+        "end": 29.2
+      },
+      {
+        "syllable": "ди",
+        "start": 29.32,
+        "end": 29.4
+      },
+      {
+        "syllable": " ис",
+        "start": 29.46,
+        "end": 29.56
+      },
+      {
+        "syllable": "то",
+        "start": 29.64,
+        "end": 29.78
+      },
+      {
+        "syllable": "рий",
+        "start": 29.92,
+        "end": 30.1
+      },
+      {
+        "syllable": " не",
+        "start": 30.36,
+        "end": 30.44
+      },
+      {
+        "syllable": "нуж",
+        "start": 30.5,
+        "end": 30.66
+      },
+      {
+        "syllable": "ных?",
+        "start": 30.76,
+        "end": 31.1
+      },
+      {
+        "syllable": "\nНа",
+        "start": 31.18,
+        "end": 31.26
+      },
+      {
+        "syllable": "де",
+        "start": 31.62,
+        "end": 31.7
+      },
+      {
+        "syllable": "жды",
+        "start": 32.12,
+        "end": 32.3
+      },
+      {
+        "syllable": " не",
+        "start": 32.46,
+        "end": 32.64
+      },
+      {
+        "syllable": " оправ",
+        "start": 32.72,
+        "end": 33.32
+      },
+      {
+        "syllable": "да",
+        "start": 33.42,
+        "end": 33.5
+      },
+      {
+        "syllable": "лись,",
+        "start": 33.58,
+        "end": 33.86
+      },
+      {
+        "syllable": " ни",
+        "start": 34.14,
+        "end": 34.28
+      },
+      {
+        "syllable": "кто",
+        "start": 34.9,
+        "end": 35.12
+      },
+      {
+        "syllable": " не",
+        "start": 35.28,
+        "end": 35.34
+      },
+      {
+        "syllable": " ви",
+        "start": 35.4,
+        "end": 35.5
+      },
+      {
+        "syllable": "но",
+        "start": 35.62,
+        "end": 35.92
+      },
+      {
+        "syllable": "ват",
+        "start": 36.02,
+        "end": 36.36
+      },
+      {
+        "syllable": "\nПо",
+        "start": 36.48,
+        "end": 36.56
+      },
+      {
+        "syllable": " до",
+        "start": 36.66,
+        "end": 36.78
+      },
+      {
+        "syllable": "ро",
+        "start": 37.56,
+        "end": 38.26
+      },
+      {
+        "syllable": "ге",
+        "start": 38.32,
+        "end": 38.46
+      },
+      {
+        "syllable": " од",
+        "start": 38.52,
+        "end": 38.66
+      },
+      {
+        "syllable": "ной,",
+        "start": 38.74,
+        "end": 38.9
+      },
+      {
+        "syllable": " но",
+        "start": 40.38,
+        "end": 40.46
+      },
+      {
+        "syllable": " в",
+        "start": 40.86,
+        "end": 40.91
+      },
+      {
+        "syllable": " раз",
+        "start": 40.96,
+        "end": 41.4
+      },
+      {
+        "syllable": "ные",
+        "start": 41.62,
+        "end": 41.76
+      },
+      {
+        "syllable": " сто",
+        "start": 41.84,
+        "end": 42.14
+      },
+      {
+        "syllable": "ро",
+        "start": 42.28,
+        "end": 42.36
+      },
+      {
+        "syllable": "ны",
+        "start": 42.4,
+        "end": 42.56
+      },
+      {
+        "syllable": "\nКто",
+        "start": 42.6,
+        "end": 42.98
+      },
+      {
+        "syllable": " мы",
+        "start": 43.06,
+        "end": 43.18
+      },
+      {
+        "syllable": " с",
+        "start": 43.48,
+        "end": 43.529999999999994
+      },
+      {
+        "syllable": " то",
+        "start": 44.86,
+        "end": 44.96
+      },
+      {
+        "syllable": "бой,",
+        "start": 45.02,
+        "end": 45.22
+      },
+      {
+        "syllable": " -",
+        "start": 45.32,
+        "end": 45.37
+      },
+      {
+        "syllable": " Ор",
+        "start": 45.4,
+        "end": 45.46
+      },
+      {
+        "syllable": "лы",
+        "start": 45.76,
+        "end": 45.84
+      },
+      {
+        "syllable": " или",
+        "start": 47.64,
+        "end": 47.8
+      },
+      {
+        "syllable": " Во",
+        "start": 47.98,
+        "end": 48.08
+      },
+      {
+        "syllable": "ро",
+        "start": 48.16,
+        "end": 48.2
+      },
+      {
+        "syllable": "ны?",
+        "start": 48.3,
+        "end": 48.7
+      },
+      {
+        "syllable": "\nПо",
+        "start": 48.8,
+        "end": 48.9
+      },
+      {
+        "syllable": " до",
+        "start": 48.98,
+        "end": 49.32
+      },
+      {
+        "syllable": "ро",
+        "start": 49.4,
+        "end": 49.5
+      },
+      {
+        "syllable": "ге",
+        "start": 49.56,
+        "end": 50.6
+      },
+      {
+        "syllable": " од",
+        "start": 50.88,
+        "end": 50.96
+      },
+      {
+        "syllable": "ной,",
+        "start": 51.08,
+        "end": 51.28
+      },
+      {
+        "syllable": " но",
+        "start": 51.36,
+        "end": 51.46
+      },
+      {
+        "syllable": " в",
+        "start": 51.54,
+        "end": 51.589999999999996
+      },
+      {
+        "syllable": " раз",
+        "start": 52.88,
+        "end": 53.18
+      },
+      {
+        "syllable": "ные",
+        "start": 53.88,
+        "end": 54.08
+      },
+      {
+        "syllable": " сто",
+        "start": 54.24,
+        "end": 54.4
+      },
+      {
+        "syllable": "ро",
+        "start": 54.48,
+        "end": 54.54
+      },
+      {
+        "syllable": "ны",
+        "start": 54.78,
+        "end": 54.92
+      },
+      {
+        "syllable": "\nКто",
+        "start": 54.98,
+        "end": 55.18
+      },
+      {
+        "syllable": " мы",
+        "start": 55.24,
+        "end": 55.3
+      },
+      {
+        "syllable": " с",
+        "start": 55.62,
+        "end": 55.669999999999995
+      },
+      {
+        "syllable": " то",
+        "start": 55.68,
+        "end": 55.82
+      },
+      {
+        "syllable": "бой,",
+        "start": 55.88,
+        "end": 57.56
+      },
+      {
+        "syllable": " -",
+        "start": 57.64,
+        "end": 57.69
+      },
+      {
+        "syllable": " Ор",
+        "start": 57.88,
+        "end": 57.94
+      },
+      {
+        "syllable": "лы",
+        "start": 58.14,
+        "end": 58.22
+      },
+      {
+        "syllable": " или",
+        "start": 58.26,
+        "end": 58.46
+      },
+      {
+        "syllable": " Во",
+        "start": 63.52,
+        "end": 63.56
+      },
+      {
+        "syllable": "ро",
+        "start": 63.6,
+        "end": 63.74
+      },
+      {
+        "syllable": "ны?",
+        "start": 63.84,
+        "end": 63.9
+      },
+      {
+        "syllable": "\nСка",
+        "start": 63.94,
+        "end": 64.52
+      },
+      {
+        "syllable": "жи",
+        "start": 64.6,
+        "end": 64.68
+      },
+      {
+        "syllable": " мне,",
+        "start": 64.78,
+        "end": 64.98
+      },
+      {
+        "syllable": " кто",
+        "start": 65.08,
+        "end": 66.96
+      },
+      {
+        "syllable": " не",
+        "start": 67.54,
+        "end": 67.64
+      },
+      {
+        "syllable": " ошиб",
+        "start": 67.72,
+        "end": 68.2
+      },
+      {
+        "syllable": "ся,",
+        "start": 68.28,
+        "end": 68.36
+      },
+      {
+        "syllable": " не",
+        "start": 68.38,
+        "end": 68.74
+      },
+      {
+        "syllable": " сбил",
+        "start": 68.86,
+        "end": 69.12
+      },
+      {
+        "syllable": "ся",
+        "start": 69.24,
+        "end": 69.42
+      },
+      {
+        "syllable": " в",
+        "start": 69.54,
+        "end": 69.59
+      },
+      {
+        "syllable": " жиз",
+        "start": 69.7,
+        "end": 69.94
+      },
+      {
+        "syllable": "ни",
+        "start": 69.96,
+        "end": 70.38
+      },
+      {
+        "syllable": " ни",
+        "start": 70.46,
+        "end": 70.54
+      },
+      {
+        "syllable": " ра",
+        "start": 70.62,
+        "end": 70.68
+      },
+      {
+        "syllable": "зу",
+        "start": 70.76,
+        "end": 70.8
+      },
+      {
+        "syllable": "\nКто",
+        "start": 70.84,
+        "end": 71.04
+      },
+      {
+        "syllable": " пер",
+        "start": 71.12,
+        "end": 71.4
+      },
+      {
+        "syllable": "вый",
+        "start": 71.48,
+        "end": 71.68
+      },
+      {
+        "syllable": " оста",
+        "start": 71.82,
+        "end": 72.32
+      },
+      {
+        "syllable": "но",
+        "start": 73.86,
+        "end": 73.96
+      },
+      {
+        "syllable": "вил",
+        "start": 74.04,
+        "end": 74.28
+      },
+      {
+        "syllable": "ся,",
+        "start": 74.48,
+        "end": 74.56
+      },
+      {
+        "syllable": " ко",
+        "start": 74.68,
+        "end": 74.86
+      },
+      {
+        "syllable": "гда",
+        "start": 75.18,
+        "end": 75.36
+      },
+      {
+        "syllable": " его",
+        "start": 75.42,
+        "end": 75.6
+      },
+      {
+        "syllable": " несёт?",
+        "start": 75.7,
+        "end": 76.22
+      },
+      {
+        "syllable": "\nЛо",
+        "start": 76.24,
+        "end": 76.92
+      },
+      {
+        "syllable": "ма",
+        "start": 77.02,
+        "end": 77.2
+      },
+      {
+        "syllable": "ли",
+        "start": 77.32,
+        "end": 77.42
+      },
+      {
+        "syllable": " не",
+        "start": 77.78,
+        "end": 77.92
+      },
+      {
+        "syllable": "тер",
+        "start": 78.0,
+        "end": 78.3
+      },
+      {
+        "syllable": "пе",
+        "start": 78.44,
+        "end": 78.6
+      },
+      {
+        "syllable": "ли",
+        "start": 79.98,
+        "end": 80.06
+      },
+      {
+        "syllable": "во,",
+        "start": 80.3,
+        "end": 80.38
+      },
+      {
+        "syllable": " в",
+        "start": 80.48,
+        "end": 80.53
+      },
+      {
+        "syllable": " упор",
+        "start": 80.56,
+        "end": 81.5
+      },
+      {
+        "syllable": " не",
+        "start": 81.56,
+        "end": 81.66
+      },
+      {
+        "syllable": " слу",
+        "start": 81.74,
+        "end": 81.88
+      },
+      {
+        "syllable": "шая",
+        "start": 81.94,
+        "end": 82.18
+      },
+      {
+        "syllable": " ра",
+        "start": 82.46,
+        "end": 82.56
+      },
+      {
+        "syllable": "зум",
+        "start": 82.58,
+        "end": 83.16
+      },
+      {
+        "syllable": "\nХо",
+        "start": 83.22,
+        "end": 83.3
+      },
+      {
+        "syllable": "те",
+        "start": 83.36,
+        "end": 83.44
+      },
+      {
+        "syllable": "ли,",
+        "start": 83.5,
+        "end": 83.58
+      },
+      {
+        "syllable": " что",
+        "start": 83.66,
+        "end": 84.02
+      },
+      {
+        "syllable": "бы",
+        "start": 84.12,
+        "end": 84.32
+      },
+      {
+        "syllable": " кра",
+        "start": 84.42,
+        "end": 84.78
+      },
+      {
+        "syllable": "си",
+        "start": 84.92,
+        "end": 85.46
+      },
+      {
+        "syllable": "во,",
+        "start": 85.82,
+        "end": 85.88
+      },
+      {
+        "syllable": " но",
+        "start": 85.98,
+        "end": 86.12
+      },
+      {
+        "syllable": " всё",
+        "start": 86.42,
+        "end": 86.5
+      },
+      {
+        "syllable": " на",
+        "start": 86.58,
+        "end": 86.64
+      },
+      {
+        "syllable": "о",
+        "start": 86.7,
+        "end": 86.75
+      },
+      {
+        "syllable": "бо",
+        "start": 86.82,
+        "end": 86.9
+      },
+      {
+        "syllable": "рот",
+        "start": 87.16,
+        "end": 87.28
+      },
+      {
+        "syllable": "\nПо",
+        "start": 87.44,
+        "end": 87.58
+      },
+      {
+        "syllable": " до",
+        "start": 87.84,
+        "end": 87.96
+      },
+      {
+        "syllable": "ро",
+        "start": 87.98,
+        "end": 88.98
+      },
+      {
+        "syllable": "ге",
+        "start": 89.02,
+        "end": 89.1
+      },
+      {
+        "syllable": " од",
+        "start": 89.16,
+        "end": 89.26
+      },
+      {
+        "syllable": "ной,",
+        "start": 89.56,
+        "end": 90.04
+      },
+      {
+        "syllable": " но",
+        "start": 90.18,
+        "end": 90.28
+      },
+      {
+        "syllable": " в",
+        "start": 90.38,
+        "end": 90.42999999999999
+      },
+      {
+        "syllable": " раз",
+        "start": 90.46,
+        "end": 91.92
+      },
+      {
+        "syllable": "ные",
+        "start": 92.0,
+        "end": 92.22
+      },
+      {
+        "syllable": " сто",
+        "start": 92.34,
+        "end": 92.54
+      },
+      {
+        "syllable": "ро",
+        "start": 92.6,
+        "end": 92.74
+      },
+      {
+        "syllable": "ны",
+        "start": 92.96,
+        "end": 93.08
+      },
+      {
+        "syllable": "\nКто",
+        "start": 93.16,
+        "end": 94.68
+      },
+      {
+        "syllable": " мы",
+        "start": 95.3,
+        "end": 95.36
+      },
+      {
+        "syllable": " с",
+        "start": 95.44,
+        "end": 95.49
+      },
+      {
+        "syllable": " то",
+        "start": 95.52,
+        "end": 95.58
+      },
+      {
+        "syllable": "бой?",
+        "start": 95.84,
+        "end": 96.04
+      },
+      {
+        "syllable": " Ор",
+        "start": 96.08,
+        "end": 96.24
+      },
+      {
+        "syllable": "лы",
+        "start": 96.28,
+        "end": 96.36
+      },
+      {
+        "syllable": " или",
+        "start": 96.7,
+        "end": 97.16
+      },
+      {
+        "syllable": " во",
+        "start": 97.2,
+        "end": 98.54
+      },
+      {
+        "syllable": "ро",
+        "start": 98.64,
+        "end": 98.72
+      },
+      {
+        "syllable": "ны?",
+        "start": 98.84,
+        "end": 98.92
+      },
+      {
+        "syllable": "\nПо",
+        "start": 99.0,
+        "end": 99.08
+      },
+      {
+        "syllable": " до",
+        "start": 99.14,
+        "end": 99.44
+      },
+      {
+        "syllable": "ро",
+        "start": 99.52,
+        "end": 101.5
+      },
+      {
+        "syllable": "ге",
+        "start": 101.52,
+        "end": 101.64
+      },
+      {
+        "syllable": " од",
+        "start": 101.68,
+        "end": 101.76
+      },
+      {
+        "syllable": "ной,",
+        "start": 101.8,
+        "end": 102.4
+      },
+      {
+        "syllable": " но",
+        "start": 102.48,
+        "end": 102.58
+      },
+      {
+        "syllable": " в",
+        "start": 102.68,
+        "end": 102.73
+      },
+      {
+        "syllable": " раз",
+        "start": 103.02,
+        "end": 103.42
+      },
+      {
+        "syllable": "ные",
+        "start": 103.46,
+        "end": 104.56
+      },
+      {
+        "syllable": " сто",
+        "start": 104.64,
+        "end": 104.84
+      },
+      {
+        "syllable": "ро",
+        "start": 104.96,
+        "end": 105.06
+      },
+      {
+        "syllable": "ны",
+        "start": 105.16,
+        "end": 105.24
+      },
+      {
+        "syllable": "\nКто",
+        "start": 105.38,
+        "end": 105.7
+      },
+      {
+        "syllable": " мы",
+        "start": 105.78,
+        "end": 106.6
+      },
+      {
+        "syllable": " с",
+        "start": 106.62,
+        "end": 107.2
+      },
+      {
+        "syllable": " то",
+        "start": 107.94,
+        "end": 108.0
+      },
+      {
+        "syllable": "бой?",
+        "start": 108.08,
+        "end": 108.24
+      },
+      {
+        "syllable": " Ор",
+        "start": 108.48,
+        "end": 108.62
+      },
+      {
+        "syllable": "лы",
+        "start": 108.68,
+        "end": 108.74
+      },
+      {
+        "syllable": " или",
+        "start": 108.88,
+        "end": 108.98
+      },
+      {
+        "syllable": " во",
+        "start": 109.28,
+        "end": 109.38
+      },
+      {
+        "syllable": "ро",
+        "start": 110.56,
+        "end": 110.62
+      },
+      {
+        "syllable": "ны?",
+        "start": 111.16,
+        "end": 111.24
+      },
+      {
+        "syllable": "\nПо",
+        "start": 111.32,
+        "end": 111.56
+      },
+      {
+        "syllable": " до",
+        "start": 111.72,
+        "end": 111.8
+      },
+      {
+        "syllable": "ро",
+        "start": 111.88,
+        "end": 111.94
+      },
+      {
+        "syllable": "ге",
+        "start": 112.06,
+        "end": 112.14
+      },
+      {
+        "syllable": " од",
+        "start": 112.36,
+        "end": 114.3
+      },
+      {
+        "syllable": "ной,",
+        "start": 116.94,
+        "end": 117.2
+      },
+      {
+        "syllable": " в",
+        "start": 117.38,
+        "end": 117.42999999999999
+      },
+      {
+        "syllable": " раз",
+        "start": 117.74,
+        "end": 118.28
+      },
+      {
+        "syllable": "ные",
+        "start": 118.38,
+        "end": 118.6
+      },
+      {
+        "syllable": " сто",
+        "start": 118.66,
+        "end": 118.82
+      },
+      {
+        "syllable": "ро",
+        "start": 118.84,
+        "end": 142.46
+      },
+      {
+        "syllable": "ны",
+        "start": 142.54,
+        "end": 142.68
+      },
+      {
+        "syllable": "\nКто",
+        "start": 142.76,
+        "end": 142.94
+      },
+      {
+        "syllable": " мы",
+        "start": 143.08,
+        "end": 143.16
+      },
+      {
+        "syllable": " с",
+        "start": 143.42,
+        "end": 143.47
+      },
+      {
+        "syllable": " то",
+        "start": 143.58,
+        "end": 143.68
+      },
+      {
+        "syllable": "бой?",
+        "start": 143.8,
+        "end": 144.7
+      },
+      {
+        "syllable": " Ор",
+        "start": 145.94,
+        "end": 146.04
+      },
+      {
+        "syllable": "лы",
+        "start": 146.14,
+        "end": 146.36
+      },
+      {
+        "syllable": " или",
+        "start": 146.44,
+        "end": 146.62
+      },
+      {
+        "syllable": " во",
+        "start": 146.74,
+        "end": 146.82
+      },
+      {
+        "syllable": "ро",
+        "start": 146.94,
+        "end": 147.24
+      },
+      {
+        "syllable": "ны?",
+        "start": 147.32,
+        "end": 147.42
+      },
+      {
+        "syllable": "\nПо",
+        "start": 147.54,
+        "end": 149.06
+      },
+      {
+        "syllable": " до",
+        "start": 149.14,
+        "end": 149.24
+      },
+      {
+        "syllable": "ро",
+        "start": 149.38,
+        "end": 149.44
+      },
+      {
+        "syllable": "ге",
+        "start": 149.54,
+        "end": 149.62
+      },
+      {
+        "syllable": " од",
+        "start": 149.7,
+        "end": 149.98
+      },
+      {
+        "syllable": "ной,",
+        "start": 150.12,
+        "end": 151.36
+      },
+      {
+        "syllable": " но",
+        "start": 152.02,
+        "end": 152.14
+      },
+      {
+        "syllable": " в",
+        "start": 152.3,
+        "end": 152.35000000000002
+      },
+      {
+        "syllable": " раз",
+        "start": 152.46,
+        "end": 152.9
+      },
+      {
+        "syllable": "ные",
+        "start": 153.0,
+        "end": 153.28
+      },
+      {
+        "syllable": " сто",
+        "start": 153.5,
+        "end": 153.72
+      },
+      {
+        "syllable": "ро",
+        "start": 153.84,
+        "end": 154.36
+      },
+      {
+        "syllable": "ны",
+        "start": 155.08,
+        "end": 155.16
+      },
+      {
+        "syllable": "\nКто",
+        "start": 155.28,
+        "end": 155.5
+      },
+      {
+        "syllable": " мы",
+        "start": 155.58,
+        "end": 155.68
+      },
+      {
+        "syllable": " с",
+        "start": 155.78,
+        "end": 155.83
+      },
+      {
+        "syllable": " то",
+        "start": 155.96,
+        "end": 156.12
+      },
+      {
+        "syllable": "бой?",
+        "start": 156.24,
+        "end": 157.8
+      },
+      {
+        "syllable": "\nПо",
+        "start": 157.82,
+        "end": 158.38
+      },
+      {
+        "syllable": " до",
+        "start": 158.44,
+        "end": 158.52
+      },
+      {
+        "syllable": "ро",
+        "start": 158.62,
+        "end": 158.72
+      },
+      {
+        "syllable": "ге",
+        "start": 158.96,
+        "end": 159.04
+      },
+      {
+        "syllable": " од",
+        "start": 159.12,
+        "end": 159.26
+      },
+      {
+        "syllable": "ной,",
+        "start": 159.36,
+        "end": 159.56
+      },
+      {
+        "syllable": " но",
+        "start": 159.86,
+        "end": 159.92
+      },
+      {
+        "syllable": " в",
+        "start": 160.04,
+        "end": 160.09
+      },
+      {
+        "syllable": " раз",
+        "start": 160.14,
+        "end": 161.76
+      },
+      {
+        "syllable": "ные",
+        "start": 161.88,
+        "end": 162.18
+      },
+      {
+        "syllable": " сто",
+        "start": 162.34,
+        "end": 162.54
+      },
+      {
+        "syllable": "ро",
+        "start": 162.68,
+        "end": 162.78
+      },
+      {
+        "syllable": "ны",
+        "start": 164.28,
+        "end": 165.64
+      },
+      {
+        "syllable": "\nКто",
+        "start": 170.86,
+        "end": 171.08
+      },
+      {
+        "syllable": " мы",
+        "start": 171.14,
+        "end": 171.28
+      },
+      {
+        "syllable": " с",
+        "start": 171.36,
+        "end": 171.41000000000003
+      },
+      {
+        "syllable": " то",
+        "start": 171.48,
+        "end": 171.56
+      },
+      {
+        "syllable": "бой?",
+        "start": 171.66,
+        "end": 172.02
+      },
+      {
+        "syllable": " Ор",
+        "start": 172.1,
+        "end": 172.66
+      },
+      {
+        "syllable": "лы",
+        "start": 172.68,
+        "end": 174.24
+      },
+      {
+        "syllable": " или",
+        "start": 174.3,
+        "end": 174.46
+      },
+      {
+        "syllable": " во",
+        "start": 174.52,
+        "end": 174.76
+      },
+      {
+        "syllable": "ро",
+        "start": 174.82,
+        "end": 174.88
+      },
+      {
+        "syllable": "ны?",
+        "start": 175.02,
+        "end": 175.14
+      },
+      {
+        "syllable": "\nПо",
+        "start": 175.22,
+        "end": 175.3
+      },
+      {
+        "syllable": " до",
+        "start": 175.62,
+        "end": 175.9
+      },
+      {
+        "syllable": "ро",
+        "start": 176.08,
+        "end": 176.2
+      },
+      {
+        "syllable": "ге",
+        "start": 177.48,
+        "end": 177.58
+      },
+      {
+        "syllable": " од",
+        "start": 177.66,
+        "end": 177.78
+      },
+      {
+        "syllable": "ной,",
+        "start": 177.84,
+        "end": 178.02
+      },
+      {
+        "syllable": " но",
+        "start": 178.46,
+        "end": 180.18
+      },
+      {
+        "syllable": " в",
+        "start": 180.24,
+        "end": 180.29000000000002
+      },
+      {
+        "syllable": " раз",
+        "start": 180.42,
+        "end": 180.56
+      },
+      {
+        "syllable": "ные",
+        "start": 180.64,
+        "end": 180.78
+      },
+      {
+        "syllable": " сто",
+        "start": 180.86,
+        "end": 181.44
+      },
+      {
+        "syllable": "ро",
+        "start": 181.52,
+        "end": 181.84
+      },
+      {
+        "syllable": "ны",
+        "start": 181.96,
+        "end": 182.02
+      },
+      {
+        "syllable": "\nКто",
+        "start": 182.12,
+        "end": 182.92
+      },
+      {
+        "syllable": " мы",
+        "start": 183.5,
+        "end": 183.58
+      },
+      {
+        "syllable": " с",
+        "start": 183.72,
+        "end": 183.77
+      },
+      {
+        "syllable": " то",
+        "start": 183.78,
+        "end": 183.92
+      },
+      {
+        "syllable": "бой?",
+        "start": 184.0,
+        "end": 184.18
+      },
+      {
+        "syllable": " Ор",
+        "start": 184.4,
+        "end": 184.52
+      },
+      {
+        "syllable": "лы",
+        "start": 186.48,
+        "end": 186.54
+      },
+      {
+        "syllable": " или",
+        "start": 186.68,
+        "end": 186.86
+      },
+      {
+        "syllable": " во",
+        "start": 186.94,
+        "end": 187.02
+      },
+      {
+        "syllable": "ро",
+        "start": 187.1,
+        "end": 187.2
+      },
+      {
+        "syllable": "ны?",
+        "start": 187.42,
+        "end": 187.56
+      }
+    ]
+  },
+  "3": {
+    "meta": {
+      "artist": "Red Hot Chili Peppers",
+      "title": "Bullet Proof",
+      "language": "en"
+    },
+    "syllable_count": 80,
+    "char_timestamp_count": 357,
+    "lyrics_char_count": 283,
+    "lyrics_word_count": 75,
+    "ctc_char": {
+      "label": "ctc_char",
+      "mae": 23.9123,
+      "hit_rate_01s": 0.0,
+      "matched_count": 80,
+      "total_ref": 80,
+      "first_20": [
+        {
+          "syllable": "All",
+          "ref_start": 7.58,
+          "pred_start": 8.08,
+          "delta": 0.5
+        },
+        {
+          "syllable": "around",
+          "ref_start": 8.17,
+          "pred_start": 8.48,
+          "delta": 0.3100000000000005
+        },
+        {
+          "syllable": "the",
+          "ref_start": 8.456,
+          "pred_start": 9.34,
+          "delta": 0.8840000000000003
+        },
+        {
+          "syllable": "world",
+          "ref_start": 8.618,
+          "pred_start": 10.1,
+          "delta": 1.4819999999999993
+        },
+        {
+          "syllable": "I'd",
+          "ref_start": 9.27,
+          "pred_start": 10.4,
+          "delta": 1.1300000000000008
+        },
+        {
+          "syllable": "rather",
+          "ref_start": 10.313,
+          "pred_start": 10.48,
+          "delta": 0.16699999999999982
+        },
+        {
+          "syllable": "be",
+          "ref_start": 10.62,
+          "pred_start": 11.36,
+          "delta": 0.7400000000000002
+        },
+        {
+          "syllable": "in",
+          "ref_start": 10.682,
+          "pred_start": 11.64,
+          "delta": 0.9580000000000002
+        },
+        {
+          "syllable": "a",
+          "ref_start": 10.743,
+          "pred_start": 12.06,
+          "delta": 1.3170000000000002
+        },
+        {
+          "syllable": "band",
+          "ref_start": 10.784,
+          "pred_start": 12.34,
+          "delta": 1.5559999999999992
+        },
+        {
+          "syllable": "Playin'",
+          "ref_start": 11.05,
+          "pred_start": 12.88,
+          "delta": 1.83
+        },
+        {
+          "syllable": "my",
+          "ref_start": 11.836,
+          "pred_start": 14.36,
+          "delta": 2.523999999999999
+        },
+        {
+          "syllable": "funky",
+          "ref_start": 11.957,
+          "pred_start": 14.48,
+          "delta": 2.5229999999999997
+        },
+        {
+          "syllable": "mu",
+          "ref_start": 12.381,
+          "pred_start": 15.12,
+          "delta": 2.738999999999999
+        },
+        {
+          "syllable": "sic",
+          "ref_start": 12.643,
+          "pred_start": 15.44,
+          "delta": 2.796999999999999
+        },
+        {
+          "syllable": "as",
+          "ref_start": 12.865,
+          "pred_start": 15.7,
+          "delta": 2.834999999999999
+        },
+        {
+          "syllable": "loud",
+          "ref_start": 12.925,
+          "pred_start": 16.76,
+          "delta": 3.835000000000001
+        },
+        {
+          "syllable": "as",
+          "ref_start": 13.348,
+          "pred_start": 17.06,
+          "delta": 3.711999999999998
+        },
+        {
+          "syllable": "I",
+          "ref_start": 13.51,
+          "pred_start": 17.88,
+          "delta": 4.369999999999999
+        },
+        {
+          "syllable": "can",
+          "ref_start": 13.772,
+          "pred_start": 18.22,
+          "delta": 4.447999999999999
+        }
+      ]
+    },
+    "ctc_char_timings": [
+      {
+        "syllable": "All",
+        "start": 8.08,
+        "end": 8.38
+      },
+      {
+        "syllable": " around",
+        "start": 8.48,
+        "end": 9.02
+      },
+      {
+        "syllable": " the",
+        "start": 9.34,
+        "end": 9.9
+      },
+      {
+        "syllable": " world",
+        "start": 10.1,
+        "end": 10.28
+      },
+      {
+        "syllable": "\nI'd",
+        "start": 10.4,
+        "end": 10.44
+      },
+      {
+        "syllable": " rather",
+        "start": 10.48,
+        "end": 11.32
+      },
+      {
+        "syllable": " be",
+        "start": 11.36,
+        "end": 11.56
+      },
+      {
+        "syllable": " in",
+        "start": 11.64,
+        "end": 11.86
+      },
+      {
+        "syllable": " a",
+        "start": 12.06,
+        "end": 12.110000000000001
+      },
+      {
+        "syllable": " band",
+        "start": 12.34,
+        "end": 12.82
+      },
+      {
+        "syllable": "\nPlayin'",
+        "start": 12.88,
+        "end": 14.28
+      },
+      {
+        "syllable": " my",
+        "start": 14.36,
+        "end": 14.4
+      },
+      {
+        "syllable": " funky",
+        "start": 14.48,
+        "end": 14.76
+      },
+      {
+        "syllable": " mu",
+        "start": 15.12,
+        "end": 15.36
+      },
+      {
+        "syllable": "sic",
+        "start": 15.44,
+        "end": 15.64
+      },
+      {
+        "syllable": " as",
+        "start": 15.7,
+        "end": 15.84
+      },
+      {
+        "syllable": " loud",
+        "start": 16.76,
+        "end": 16.96
+      },
+      {
+        "syllable": " as",
+        "start": 17.06,
+        "end": 17.58
+      },
+      {
+        "syllable": " I",
+        "start": 17.88,
+        "end": 17.93
+      },
+      {
+        "syllable": " can",
+        "start": 18.22,
+        "end": 18.62
+      },
+      {
+        "syllable": "\nI",
+        "start": 18.8,
+        "end": 18.85
+      },
+      {
+        "syllable": " ain't",
+        "start": 19.06,
+        "end": 22.62
+      },
+      {
+        "syllable": " bul",
+        "start": 22.66,
+        "end": 23.04
+      },
+      {
+        "syllable": "let",
+        "start": 24.08,
+        "end": 25.24
+      },
+      {
+        "syllable": "proof",
+        "start": 25.46,
+        "end": 26.4
+      },
+      {
+        "syllable": "\nI",
+        "start": 30.02,
+        "end": 30.07
+      },
+      {
+        "syllable": " won't",
+        "start": 30.26,
+        "end": 31.78
+      },
+      {
+        "syllable": " wear",
+        "start": 31.82,
+        "end": 31.96
+      },
+      {
+        "syllable": " the",
+        "start": 32.24,
+        "end": 32.6
+      },
+      {
+        "syllable": " ball",
+        "start": 32.64,
+        "end": 32.9
+      },
+      {
+        "syllable": " and",
+        "start": 33.08,
+        "end": 33.24
+      },
+      {
+        "syllable": " chain",
+        "start": 33.3,
+        "end": 34.08
+      },
+      {
+        "syllable": "\nI",
+        "start": 36.68,
+        "end": 36.73
+      },
+      {
+        "syllable": " ain't",
+        "start": 36.74,
+        "end": 37.12
+      },
+      {
+        "syllable": " bul",
+        "start": 37.22,
+        "end": 37.88
+      },
+      {
+        "syllable": "let",
+        "start": 37.92,
+        "end": 38.72
+      },
+      {
+        "syllable": "proof",
+        "start": 38.78,
+        "end": 39.16
+      },
+      {
+        "syllable": "\nI",
+        "start": 39.2,
+        "end": 39.25
+      },
+      {
+        "syllable": " won't",
+        "start": 39.24,
+        "end": 39.88
+      },
+      {
+        "syllable": " wear",
+        "start": 39.98,
+        "end": 40.44
+      },
+      {
+        "syllable": " the",
+        "start": 40.48,
+        "end": 44.12
+      },
+      {
+        "syllable": " ball",
+        "start": 44.16,
+        "end": 46.3
+      },
+      {
+        "syllable": " and",
+        "start": 46.34,
+        "end": 46.52
+      },
+      {
+        "syllable": " chain",
+        "start": 46.62,
+        "end": 50.94
+      },
+      {
+        "syllable": "\nI",
+        "start": 51.2,
+        "end": 51.25
+      },
+      {
+        "syllable": " don't",
+        "start": 51.42,
+        "end": 51.64
+      },
+      {
+        "syllable": " want",
+        "start": 52.74,
+        "end": 54.6
+      },
+      {
+        "syllable": " your",
+        "start": 54.74,
+        "end": 56.76
+      },
+      {
+        "syllable": " war",
+        "start": 56.86,
+        "end": 57.18
+      },
+      {
+        "syllable": "\nI",
+        "start": 57.64,
+        "end": 57.69
+      },
+      {
+        "syllable": " don't",
+        "start": 60.12,
+        "end": 60.32
+      },
+      {
+        "syllable": " like",
+        "start": 60.36,
+        "end": 62.2
+      },
+      {
+        "syllable": " the",
+        "start": 62.28,
+        "end": 62.78
+      },
+      {
+        "syllable": " boom",
+        "start": 62.82,
+        "end": 63.2
+      },
+      {
+        "syllable": " and",
+        "start": 63.5,
+        "end": 63.98
+      },
+      {
+        "syllable": " bang",
+        "start": 64.02,
+        "end": 64.9
+      },
+      {
+        "syllable": "\nI",
+        "start": 65.0,
+        "end": 65.05
+      },
+      {
+        "syllable": " don't",
+        "start": 69.8,
+        "end": 71.72
+      },
+      {
+        "syllable": " want",
+        "start": 71.82,
+        "end": 72.08
+      },
+      {
+        "syllable": " to",
+        "start": 72.16,
+        "end": 72.28
+      },
+      {
+        "syllable": " song",
+        "start": 72.36,
+        "end": 87.76
+      },
+      {
+        "syllable": "\nI",
+        "start": 87.8,
+        "end": 87.85
+      },
+      {
+        "syllable": " don't",
+        "start": 87.92,
+        "end": 90.26
+      },
+      {
+        "syllable": " like",
+        "start": 90.42,
+        "end": 90.72
+      },
+      {
+        "syllable": " the",
+        "start": 90.86,
+        "end": 91.04
+      },
+      {
+        "syllable": " songs",
+        "start": 91.08,
+        "end": 91.36
+      },
+      {
+        "syllable": " you",
+        "start": 91.48,
+        "end": 92.22
+      },
+      {
+        "syllable": " sing",
+        "start": 92.28,
+        "end": 93.04
+      },
+      {
+        "syllable": "\nLalala",
+        "start": 93.16,
+        "end": 98.66
+      },
+      {
+        "syllable": " lalalala",
+        "start": 98.76,
+        "end": 103.34
+      },
+      {
+        "syllable": " lala",
+        "start": 103.62,
+        "end": 103.88
+      },
+      {
+        "syllable": " oh",
+        "start": 104.02,
+        "end": 104.1
+      },
+      {
+        "syllable": " oh",
+        "start": 104.2,
+        "end": 104.52
+      },
+      {
+        "syllable": "\nLalala",
+        "start": 107.4,
+        "end": 108.34
+      },
+      {
+        "syllable": " lalalala",
+        "start": 108.74,
+        "end": 115.28
+      },
+      {
+        "syllable": " lala",
+        "start": 115.34,
+        "end": 115.74
+      },
+      {
+        "syllable": " oh",
+        "start": 115.78,
+        "end": 115.84
+      },
+      {
+        "syllable": " oh,",
+        "start": 115.94,
+        "end": 116.0
+      },
+      {
+        "syllable": " oh",
+        "start": 116.08,
+        "end": 116.14
+      },
+      {
+        "syllable": " yeah",
+        "start": 116.22,
+        "end": 116.74
+      }
+    ]
+  },
+  "4": {
+    "meta": {
+      "artist": "Дима Билан",
+      "title": "Я просто люблю тебя",
+      "language": "ru"
+    },
+    "syllable_count": 315,
+    "char_timestamp_count": 955,
+    "lyrics_char_count": 772,
+    "lyrics_word_count": 184,
+    "ctc_char": {
+      "label": "ctc_char",
+      "mae": 2.285377777777778,
+      "hit_rate_01s": 0.04126984126984127,
+      "matched_count": 315,
+      "total_ref": 315,
+      "first_20": [
+        {
+          "syllable": "Ве",
+          "ref_start": 18.74,
+          "pred_start": 19.86,
+          "delta": 1.120000000000001
+        },
+        {
+          "syllable": "чер",
+          "ref_start": 20.126,
+          "pred_start": 20.08,
+          "delta": -0.04600000000000293
+        },
+        {
+          "syllable": "няя",
+          "ref_start": 20.467,
+          "pred_start": 20.44,
+          "delta": -0.02699999999999747
+        },
+        {
+          "syllable": "грусть",
+          "ref_start": 21.07,
+          "pred_start": 21.0,
+          "delta": -0.07000000000000028
+        },
+        {
+          "syllable": "в",
+          "ref_start": 22.275,
+          "pred_start": 22.24,
+          "delta": -0.03500000000000014
+        },
+        {
+          "syllable": "ок",
+          "ref_start": 22.375,
+          "pred_start": 22.32,
+          "delta": -0.054999999999999716
+        },
+        {
+          "syllable": "но",
+          "ref_start": 22.576,
+          "pred_start": 22.52,
+          "delta": -0.05600000000000094
+        },
+        {
+          "syllable": "по",
+          "ref_start": 22.837,
+          "pred_start": 22.8,
+          "delta": -0.036999999999999034
+        },
+        {
+          "syllable": "сту",
+          "ref_start": 23.058,
+          "pred_start": 23.0,
+          "delta": -0.05799999999999983
+        },
+        {
+          "syllable": "чит",
+          "ref_start": 23.46,
+          "pred_start": 23.34,
+          "delta": -0.120000000000001
+        },
+        {
+          "syllable": "ко",
+          "ref_start": 24.022,
+          "pred_start": 23.98,
+          "delta": -0.04199999999999804
+        },
+        {
+          "syllable": "мне",
+          "ref_start": 24.203,
+          "pred_start": 24.14,
+          "delta": -0.06299999999999883
+        },
+        {
+          "syllable": "Но",
+          "ref_start": 28.36,
+          "pred_start": 29.28,
+          "delta": 0.9200000000000017
+        },
+        {
+          "syllable": "я",
+          "ref_start": 29.644,
+          "pred_start": 29.54,
+          "delta": -0.1039999999999992
+        },
+        {
+          "syllable": "не",
+          "ref_start": 29.925,
+          "pred_start": 29.9,
+          "delta": -0.02500000000000213
+        },
+        {
+          "syllable": "бо",
+          "ref_start": 30.206,
+          "pred_start": 30.18,
+          "delta": -0.0259999999999998
+        },
+        {
+          "syllable": "юсь,",
+          "ref_start": 30.547,
+          "pred_start": 30.46,
+          "delta": -0.08699999999999974
+        },
+        {
+          "syllable": "я",
+          "ref_start": 31.711,
+          "pred_start": 31.44,
+          "delta": -0.27099999999999724
+        },
+        {
+          "syllable": "сам",
+          "ref_start": 31.972,
+          "pred_start": 31.66,
+          "delta": -0.31200000000000117
+        },
+        {
+          "syllable": "ее",
+          "ref_start": 32.473,
+          "pred_start": 32.24,
+          "delta": -0.232999999999997
+        }
+      ]
+    },
+    "ctc_char_timings": [
+      {
+        "syllable": "Ве",
+        "start": 19.86,
+        "end": 19.94
+      },
+      {
+        "syllable": "чер",
+        "start": 20.08,
+        "end": 20.36
+      },
+      {
+        "syllable": "няя",
+        "start": 20.44,
+        "end": 20.86
+      },
+      {
+        "syllable": " грусть",
+        "start": 21.0,
+        "end": 21.94
+      },
+      {
+        "syllable": " в",
+        "start": 22.24,
+        "end": 22.29
+      },
+      {
+        "syllable": " ок",
+        "start": 22.32,
+        "end": 22.44
+      },
+      {
+        "syllable": "но",
+        "start": 22.52,
+        "end": 22.62
+      },
+      {
+        "syllable": " по",
+        "start": 22.8,
+        "end": 22.88
+      },
+      {
+        "syllable": "сту",
+        "start": 23.0,
+        "end": 23.2
+      },
+      {
+        "syllable": "чит",
+        "start": 23.34,
+        "end": 23.86
+      },
+      {
+        "syllable": " ко",
+        "start": 23.98,
+        "end": 24.06
+      },
+      {
+        "syllable": " мне",
+        "start": 24.14,
+        "end": 24.44
+      },
+      {
+        "syllable": "\nНо",
+        "start": 29.28,
+        "end": 29.38
+      },
+      {
+        "syllable": " я",
+        "start": 29.54,
+        "end": 29.68
+      },
+      {
+        "syllable": " не",
+        "start": 29.9,
+        "end": 30.06
+      },
+      {
+        "syllable": " бо",
+        "start": 30.18,
+        "end": 30.28
+      },
+      {
+        "syllable": "юсь,",
+        "start": 30.46,
+        "end": 31.42
+      },
+      {
+        "syllable": " я",
+        "start": 31.44,
+        "end": 31.48
+      },
+      {
+        "syllable": " сам",
+        "start": 31.66,
+        "end": 32.06
+      },
+      {
+        "syllable": " ее",
+        "start": 32.24,
+        "end": 32.44
+      },
+      {
+        "syllable": " звал",
+        "start": 32.6,
+        "end": 32.94
+      },
+      {
+        "syllable": " к",
+        "start": 33.16,
+        "end": 33.209999999999994
+      },
+      {
+        "syllable": " се",
+        "start": 33.26,
+        "end": 33.4
+      },
+      {
+        "syllable": "бе",
+        "start": 33.52,
+        "end": 33.7
+      },
+      {
+        "syllable": "\nО,",
+        "start": 33.88,
+        "end": 33.93
+      },
+      {
+        "syllable": " как",
+        "start": 38.74,
+        "end": 38.96
+      },
+      {
+        "syllable": " вы",
+        "start": 39.06,
+        "end": 39.22
+      },
+      {
+        "syllable": "со",
+        "start": 39.3,
+        "end": 39.36
+      },
+      {
+        "syllable": "ко",
+        "start": 39.52,
+        "end": 39.64
+      },
+      {
+        "syllable": " и",
+        "start": 39.84,
+        "end": 39.89
+      },
+      {
+        "syllable": " как",
+        "start": 39.94,
+        "end": 41.32
+      },
+      {
+        "syllable": " не",
+        "start": 41.42,
+        "end": 41.56
+      },
+      {
+        "syllable": "за",
+        "start": 41.66,
+        "end": 41.74
+      },
+      {
+        "syllable": "ви",
+        "start": 41.9,
+        "end": 42.04
+      },
+      {
+        "syllable": "си",
+        "start": 42.2,
+        "end": 42.32
+      },
+      {
+        "syllable": "мо",
+        "start": 42.5,
+        "end": 42.62
+      },
+      {
+        "syllable": "\nЛе",
+        "start": 42.82,
+        "end": 42.94
+      },
+      {
+        "syllable": "та",
+        "start": 48.12,
+        "end": 48.22
+      },
+      {
+        "syllable": "ет",
+        "start": 48.38,
+        "end": 48.5
+      },
+      {
+        "syllable": " лю",
+        "start": 48.82,
+        "end": 48.94
+      },
+      {
+        "syllable": "бовь",
+        "start": 49.02,
+        "end": 49.46
+      },
+      {
+        "syllable": " про",
+        "start": 50.1,
+        "end": 50.46
+      },
+      {
+        "syllable": "пис",
+        "start": 50.52,
+        "end": 50.74
+      },
+      {
+        "syllable": "ная",
+        "start": 50.84,
+        "end": 51.08
+      },
+      {
+        "syllable": " ис",
+        "start": 51.16,
+        "end": 51.46
+      },
+      {
+        "syllable": "ти",
+        "start": 51.76,
+        "end": 52.14
+      },
+      {
+        "syllable": "на",
+        "start": 52.24,
+        "end": 52.32
+      },
+      {
+        "syllable": "\nЯ",
+        "start": 52.5,
+        "end": 52.55
+      },
+      {
+        "syllable": " про",
+        "start": 52.64,
+        "end": 55.42
+      },
+      {
+        "syllable": "сто",
+        "start": 55.48,
+        "end": 55.72
+      },
+      {
+        "syllable": " лю",
+        "start": 55.8,
+        "end": 55.88
+      },
+      {
+        "syllable": "блю",
+        "start": 56.06,
+        "end": 56.3
+      },
+      {
+        "syllable": " те",
+        "start": 56.38,
+        "end": 56.48
+      },
+      {
+        "syllable": "бя",
+        "start": 56.92,
+        "end": 57.06
+      },
+      {
+        "syllable": "\nЯ",
+        "start": 57.22,
+        "end": 57.269999999999996
+      },
+      {
+        "syllable": " про",
+        "start": 57.3,
+        "end": 60.08
+      },
+      {
+        "syllable": "сто",
+        "start": 60.16,
+        "end": 60.36
+      },
+      {
+        "syllable": " бе",
+        "start": 60.46,
+        "end": 60.56
+      },
+      {
+        "syllable": "гу",
+        "start": 60.74,
+        "end": 60.86
+      },
+      {
+        "syllable": " за",
+        "start": 61.04,
+        "end": 61.18
+      },
+      {
+        "syllable": " то",
+        "start": 61.64,
+        "end": 61.76
+      },
+      {
+        "syllable": "бой",
+        "start": 61.94,
+        "end": 62.22
+      },
+      {
+        "syllable": "\nНо",
+        "start": 62.32,
+        "end": 63.72
+      },
+      {
+        "syllable": " не",
+        "start": 64.56,
+        "end": 64.64
+      },
+      {
+        "syllable": " об",
+        "start": 64.84,
+        "end": 65.0
+      },
+      {
+        "syllable": "ма",
+        "start": 65.26,
+        "end": 65.36
+      },
+      {
+        "syllable": "ни",
+        "start": 65.46,
+        "end": 65.56
+      },
+      {
+        "syllable": " ме",
+        "start": 65.72,
+        "end": 65.84
+      },
+      {
+        "syllable": "ня",
+        "start": 66.04,
+        "end": 66.14
+      },
+      {
+        "syllable": " (не",
+        "start": 66.3,
+        "end": 66.46
+      },
+      {
+        "syllable": " об",
+        "start": 66.52,
+        "end": 67.16
+      },
+      {
+        "syllable": "ма",
+        "start": 67.36,
+        "end": 67.6
+      },
+      {
+        "syllable": "ни",
+        "start": 67.74,
+        "end": 67.82
+      },
+      {
+        "syllable": " ме",
+        "start": 67.9,
+        "end": 68.04
+      },
+      {
+        "syllable": "ня)",
+        "start": 68.2,
+        "end": 68.36
+      },
+      {
+        "syllable": "\nНе",
+        "start": 68.42,
+        "end": 68.66
+      },
+      {
+        "syllable": " знаю",
+        "start": 68.7,
+        "end": 69.36
+      },
+      {
+        "syllable": " лю",
+        "start": 69.48,
+        "end": 69.6
+      },
+      {
+        "syllable": "бви",
+        "start": 69.7,
+        "end": 70.16
+      },
+      {
+        "syllable": " иной",
+        "start": 70.22,
+        "end": 70.6
+      },
+      {
+        "syllable": "\nЯ",
+        "start": 70.84,
+        "end": 70.89
+      },
+      {
+        "syllable": " про",
+        "start": 71.02,
+        "end": 71.96
+      },
+      {
+        "syllable": "сто",
+        "start": 74.0,
+        "end": 74.3
+      },
+      {
+        "syllable": " лю",
+        "start": 74.36,
+        "end": 74.52
+      },
+      {
+        "syllable": "блю",
+        "start": 74.6,
+        "end": 74.86
+      },
+      {
+        "syllable": " те",
+        "start": 74.94,
+        "end": 75.1
+      },
+      {
+        "syllable": "бя",
+        "start": 75.2,
+        "end": 75.3
+      },
+      {
+        "syllable": "\nЯ",
+        "start": 75.72,
+        "end": 75.77
+      },
+      {
+        "syllable": " про",
+        "start": 75.86,
+        "end": 76.2
+      },
+      {
+        "syllable": "сто",
+        "start": 78.7,
+        "end": 79.0
+      },
+      {
+        "syllable": " бе",
+        "start": 79.06,
+        "end": 79.2
+      },
+      {
+        "syllable": "гу",
+        "start": 79.3,
+        "end": 79.4
+      },
+      {
+        "syllable": " за",
+        "start": 79.58,
+        "end": 79.7
+      },
+      {
+        "syllable": " то",
+        "start": 79.86,
+        "end": 79.98
+      },
+      {
+        "syllable": "бой",
+        "start": 80.46,
+        "end": 80.76
+      },
+      {
+        "syllable": "\nНе",
+        "start": 80.88,
+        "end": 81.04
+      },
+      {
+        "syllable": " оста",
+        "start": 81.16,
+        "end": 83.5
+      },
+      {
+        "syllable": "но",
+        "start": 83.78,
+        "end": 83.94
+      },
+      {
+        "syllable": "ви",
+        "start": 84.02,
+        "end": 84.12
+      },
+      {
+        "syllable": " ме",
+        "start": 84.28,
+        "end": 84.4
+      },
+      {
+        "syllable": "ня",
+        "start": 84.56,
+        "end": 84.66
+      },
+      {
+        "syllable": "\nНе",
+        "start": 84.86,
+        "end": 84.98
+      },
+      {
+        "syllable": " знаю",
+        "start": 85.16,
+        "end": 88.2
+      },
+      {
+        "syllable": " лю",
+        "start": 88.32,
+        "end": 88.44
+      },
+      {
+        "syllable": "бви",
+        "start": 88.56,
+        "end": 88.98
+      },
+      {
+        "syllable": " иной",
+        "start": 89.04,
+        "end": 89.42
+      },
+      {
+        "syllable": "\nРо",
+        "start": 89.64,
+        "end": 89.86
+      },
+      {
+        "syllable": "жда",
+        "start": 90.02,
+        "end": 97.52
+      },
+      {
+        "syllable": "ет",
+        "start": 97.58,
+        "end": 97.72
+      },
+      {
+        "syllable": " теп",
+        "start": 97.82,
+        "end": 98.18
+      },
+      {
+        "syllable": "ло",
+        "start": 98.26,
+        "end": 98.4
+      },
+      {
+        "syllable": " жи",
+        "start": 98.5,
+        "end": 98.6
+      },
+      {
+        "syllable": "вое",
+        "start": 98.72,
+        "end": 99.88
+      },
+      {
+        "syllable": " ды",
+        "start": 100.0,
+        "end": 100.18
+      },
+      {
+        "syllable": "ха",
+        "start": 100.32,
+        "end": 100.62
+      },
+      {
+        "syllable": "ние",
+        "start": 100.78,
+        "end": 101.04
+      },
+      {
+        "syllable": "\nНо",
+        "start": 101.18,
+        "end": 101.36
+      },
+      {
+        "syllable": " как",
+        "start": 101.46,
+        "end": 106.92
+      },
+      {
+        "syllable": " тя",
+        "start": 107.0,
+        "end": 107.2
+      },
+      {
+        "syllable": "же",
+        "start": 107.3,
+        "end": 107.44
+      },
+      {
+        "syllable": "ло",
+        "start": 107.52,
+        "end": 107.62
+      },
+      {
+        "syllable": " от",
+        "start": 107.8,
+        "end": 107.92
+      },
+      {
+        "syllable": " не",
+        "start": 108.1,
+        "end": 108.28
+      },
+      {
+        "syllable": "по",
+        "start": 109.36,
+        "end": 109.46
+      },
+      {
+        "syllable": "ни",
+        "start": 109.56,
+        "end": 109.68
+      },
+      {
+        "syllable": "ма",
+        "start": 109.84,
+        "end": 109.94
+      },
+      {
+        "syllable": "ния,",
+        "start": 110.14,
+        "end": 110.44
+      },
+      {
+        "syllable": " о",
+        "start": 110.58,
+        "end": 110.63
+      },
+      {
+        "syllable": "о",
+        "start": 110.76,
+        "end": 110.81
+      },
+      {
+        "syllable": "\nЗа",
+        "start": 110.84,
+        "end": 111.22
+      },
+      {
+        "syllable": "крою",
+        "start": 111.24,
+        "end": 112.94
+      },
+      {
+        "syllable": " гла",
+        "start": 116.34,
+        "end": 116.54
+      },
+      {
+        "syllable": "за",
+        "start": 116.66,
+        "end": 116.8
+      },
+      {
+        "syllable": " я,",
+        "start": 116.98,
+        "end": 117.06
+      },
+      {
+        "syllable": " что",
+        "start": 117.18,
+        "end": 117.34
+      },
+      {
+        "syllable": "бы",
+        "start": 117.52,
+        "end": 117.66
+      },
+      {
+        "syllable": " рас",
+        "start": 118.7,
+        "end": 118.92
+      },
+      {
+        "syllable": "сла",
+        "start": 119.02,
+        "end": 119.32
+      },
+      {
+        "syllable": "бить",
+        "start": 119.4,
+        "end": 119.72
+      },
+      {
+        "syllable": "ся",
+        "start": 119.82,
+        "end": 119.9
+      },
+      {
+        "syllable": "\nСку",
+        "start": 120.02,
+        "end": 120.24
+      },
+      {
+        "syllable": "пая",
+        "start": 120.32,
+        "end": 120.44
+      },
+      {
+        "syllable": " сле",
+        "start": 122.6,
+        "end": 125.78
+      },
+      {
+        "syllable": "за",
+        "start": 125.86,
+        "end": 126.04
+      },
+      {
+        "syllable": " по",
+        "start": 126.16,
+        "end": 126.42
+      },
+      {
+        "syllable": " серд",
+        "start": 126.56,
+        "end": 126.92
+      },
+      {
+        "syllable": "цу",
+        "start": 127.06,
+        "end": 128.12
+      },
+      {
+        "syllable": " про",
+        "start": 128.18,
+        "end": 128.5
+      },
+      {
+        "syllable": "ка",
+        "start": 128.6,
+        "end": 128.66
+      },
+      {
+        "syllable": "тит",
+        "start": 128.7,
+        "end": 128.96
+      },
+      {
+        "syllable": "ся",
+        "start": 129.04,
+        "end": 129.1
+      },
+      {
+        "syllable": "\nЯ",
+        "start": 129.28,
+        "end": 129.33
+      },
+      {
+        "syllable": " про",
+        "start": 129.4,
+        "end": 129.66
+      },
+      {
+        "syllable": "сто",
+        "start": 129.74,
+        "end": 132.32
+      },
+      {
+        "syllable": " лю",
+        "start": 132.84,
+        "end": 133.06
+      },
+      {
+        "syllable": "блю",
+        "start": 133.14,
+        "end": 133.36
+      },
+      {
+        "syllable": " те",
+        "start": 133.46,
+        "end": 133.54
+      },
+      {
+        "syllable": "бя",
+        "start": 133.7,
+        "end": 133.82
+      },
+      {
+        "syllable": "\nЯ",
+        "start": 133.94,
+        "end": 133.99
+      },
+      {
+        "syllable": " про",
+        "start": 134.02,
+        "end": 134.56
+      },
+      {
+        "syllable": "сто",
+        "start": 134.72,
+        "end": 135.02
+      },
+      {
+        "syllable": " бе",
+        "start": 137.48,
+        "end": 137.72
+      },
+      {
+        "syllable": "гу",
+        "start": 137.8,
+        "end": 137.86
+      },
+      {
+        "syllable": " за",
+        "start": 138.02,
+        "end": 138.1
+      },
+      {
+        "syllable": " то",
+        "start": 138.2,
+        "end": 138.38
+      },
+      {
+        "syllable": "бой",
+        "start": 138.5,
+        "end": 138.8
+      },
+      {
+        "syllable": "\nНо",
+        "start": 139.3,
+        "end": 139.42
+      },
+      {
+        "syllable": " не",
+        "start": 139.58,
+        "end": 139.7
+      },
+      {
+        "syllable": " об",
+        "start": 139.88,
+        "end": 139.98
+      },
+      {
+        "syllable": "ма",
+        "start": 141.38,
+        "end": 142.22
+      },
+      {
+        "syllable": "ни",
+        "start": 142.3,
+        "end": 142.48
+      },
+      {
+        "syllable": " ме",
+        "start": 142.64,
+        "end": 142.9
+      },
+      {
+        "syllable": "ня",
+        "start": 143.0,
+        "end": 143.12
+      },
+      {
+        "syllable": "\nНе",
+        "start": 143.2,
+        "end": 143.36
+      },
+      {
+        "syllable": " знаю",
+        "start": 143.48,
+        "end": 143.96
+      },
+      {
+        "syllable": " лю",
+        "start": 146.08,
+        "end": 146.92
+      },
+      {
+        "syllable": "бви",
+        "start": 147.02,
+        "end": 147.24
+      },
+      {
+        "syllable": " иной",
+        "start": 147.34,
+        "end": 147.92
+      },
+      {
+        "syllable": "\nЯ",
+        "start": 148.1,
+        "end": 148.15
+      },
+      {
+        "syllable": " про",
+        "start": 148.16,
+        "end": 148.48
+      },
+      {
+        "syllable": "сто",
+        "start": 148.66,
+        "end": 149.6
+      },
+      {
+        "syllable": " лю",
+        "start": 151.66,
+        "end": 151.86
+      },
+      {
+        "syllable": "блю",
+        "start": 151.94,
+        "end": 152.16
+      },
+      {
+        "syllable": " те",
+        "start": 152.26,
+        "end": 152.34
+      },
+      {
+        "syllable": "бя",
+        "start": 152.54,
+        "end": 152.64
+      },
+      {
+        "syllable": "\nЯ",
+        "start": 152.76,
+        "end": 152.81
+      },
+      {
+        "syllable": " про",
+        "start": 152.84,
+        "end": 153.36
+      },
+      {
+        "syllable": "сто",
+        "start": 153.5,
+        "end": 153.84
+      },
+      {
+        "syllable": " бе",
+        "start": 156.34,
+        "end": 156.56
+      },
+      {
+        "syllable": "гу",
+        "start": 156.64,
+        "end": 156.72
+      },
+      {
+        "syllable": " за",
+        "start": 156.86,
+        "end": 156.96
+      },
+      {
+        "syllable": " то",
+        "start": 157.04,
+        "end": 157.22
+      },
+      {
+        "syllable": "бой",
+        "start": 157.34,
+        "end": 157.64
+      },
+      {
+        "syllable": "\nНе",
+        "start": 158.12,
+        "end": 158.24
+      },
+      {
+        "syllable": " оста",
+        "start": 158.42,
+        "end": 158.8
+      },
+      {
+        "syllable": "но",
+        "start": 160.24,
+        "end": 161.06
+      },
+      {
+        "syllable": "ви",
+        "start": 161.14,
+        "end": 161.42
+      },
+      {
+        "syllable": " ме",
+        "start": 161.6,
+        "end": 161.68
+      },
+      {
+        "syllable": "ня",
+        "start": 161.78,
+        "end": 161.92
+      },
+      {
+        "syllable": "\nНе",
+        "start": 162.04,
+        "end": 162.22
+      },
+      {
+        "syllable": " знаю",
+        "start": 162.32,
+        "end": 162.8
+      },
+      {
+        "syllable": " лю",
+        "start": 162.88,
+        "end": 165.76
+      },
+      {
+        "syllable": "бви",
+        "start": 165.86,
+        "end": 166.08
+      },
+      {
+        "syllable": " иной",
+        "start": 166.2,
+        "end": 166.74
+      },
+      {
+        "syllable": "\nЗем",
+        "start": 166.86,
+        "end": 167.06
+      },
+      {
+        "syllable": "ля",
+        "start": 167.32,
+        "end": 167.5
+      },
+      {
+        "syllable": " дро",
+        "start": 167.66,
+        "end": 172.5
+      },
+      {
+        "syllable": "жит,",
+        "start": 172.62,
+        "end": 172.82
+      },
+      {
+        "syllable": " сле",
+        "start": 172.88,
+        "end": 173.4
+      },
+      {
+        "syllable": "тев",
+        "start": 173.52,
+        "end": 174.14
+      },
+      {
+        "syllable": " с",
+        "start": 174.42,
+        "end": 174.47
+      },
+      {
+        "syllable": " ор",
+        "start": 174.44,
+        "end": 174.8
+      },
+      {
+        "syllable": "бит",
+        "start": 174.88,
+        "end": 175.14
+      },
+      {
+        "syllable": "\nИ",
+        "start": 175.3,
+        "end": 175.35000000000002
+      },
+      {
+        "syllable": " я",
+        "start": 175.52,
+        "end": 175.57000000000002
+      },
+      {
+        "syllable": " кри",
+        "start": 175.74,
+        "end": 176.24
+      },
+      {
+        "syllable": "чу",
+        "start": 176.34,
+        "end": 176.46
+      },
+      {
+        "syllable": " те",
+        "start": 176.84,
+        "end": 177.3
+      },
+      {
+        "syllable": "бе:",
+        "start": 177.52,
+        "end": 178.0
+      },
+      {
+        "syllable": " По",
+        "start": 178.12,
+        "end": 178.24
+      },
+      {
+        "syllable": "стой!",
+        "start": 178.7,
+        "end": 179.72
+      },
+      {
+        "syllable": "\nЗвер",
+        "start": 179.86,
+        "end": 180.74
+      },
+      {
+        "syllable": "гаю",
+        "start": 180.84,
+        "end": 181.1
+      },
+      {
+        "syllable": " гром,",
+        "start": 181.22,
+        "end": 181.9
+      },
+      {
+        "syllable": " го",
+        "start": 181.96,
+        "end": 182.04
+      },
+      {
+        "syllable": "рю",
+        "start": 182.16,
+        "end": 182.24
+      },
+      {
+        "syllable": " ог",
+        "start": 182.34,
+        "end": 183.22
+      },
+      {
+        "syllable": "нем",
+        "start": 183.38,
+        "end": 183.58
+      },
+      {
+        "syllable": "\nИ",
+        "start": 183.88,
+        "end": 183.93
+      },
+      {
+        "syllable": " гас",
+        "start": 183.9,
+        "end": 184.42
+      },
+      {
+        "syllable": "нут",
+        "start": 184.64,
+        "end": 185.28
+      },
+      {
+        "syllable": " звез",
+        "start": 185.64,
+        "end": 186.16
+      },
+      {
+        "syllable": "ды",
+        "start": 186.76,
+        "end": 186.94
+      },
+      {
+        "syllable": " над",
+        "start": 187.1,
+        "end": 187.56
+      },
+      {
+        "syllable": " Моск",
+        "start": 187.64,
+        "end": 188.14
+      },
+      {
+        "syllable": "вой",
+        "start": 188.3,
+        "end": 188.72
+      },
+      {
+        "syllable": "\nКак",
+        "start": 188.82,
+        "end": 189.44
+      },
+      {
+        "syllable": " свет",
+        "start": 189.7,
+        "end": 190.34
+      },
+      {
+        "syllable": " звез",
+        "start": 190.44,
+        "end": 190.92
+      },
+      {
+        "syllable": "ды",
+        "start": 191.36,
+        "end": 191.44
+      },
+      {
+        "syllable": " свер",
+        "start": 191.54,
+        "end": 191.84
+      },
+      {
+        "syllable": "ка",
+        "start": 192.1,
+        "end": 192.18
+      },
+      {
+        "syllable": "ешь",
+        "start": 192.26,
+        "end": 192.76
+      },
+      {
+        "syllable": " ты",
+        "start": 192.84,
+        "end": 192.94
+      },
+      {
+        "syllable": "\nВсе",
+        "start": 193.66,
+        "end": 193.8
+      },
+      {
+        "syllable": " осталь",
+        "start": 193.9,
+        "end": 195.18
+      },
+      {
+        "syllable": "ное",
+        "start": 195.28,
+        "end": 195.96
+      },
+      {
+        "syllable": " -",
+        "start": 196.06,
+        "end": 196.11
+      },
+      {
+        "syllable": " ерун",
+        "start": 196.2,
+        "end": 196.94
+      },
+      {
+        "syllable": "да",
+        "start": 197.06,
+        "end": 197.32
+      },
+      {
+        "syllable": "\nНе",
+        "start": 197.5,
+        "end": 197.54
+      },
+      {
+        "syllable": " важ",
+        "start": 197.74,
+        "end": 198.32
+      },
+      {
+        "syllable": "но,",
+        "start": 198.86,
+        "end": 199.3
+      },
+      {
+        "syllable": " не",
+        "start": 199.38,
+        "end": 199.5
+      },
+      {
+        "syllable": " важ",
+        "start": 199.58,
+        "end": 200.76
+      },
+      {
+        "syllable": "но",
+        "start": 200.9,
+        "end": 201.08
+      },
+      {
+        "syllable": "\nЯ",
+        "start": 201.22,
+        "end": 201.27
+      },
+      {
+        "syllable": " про",
+        "start": 201.5,
+        "end": 201.78
+      },
+      {
+        "syllable": "сто",
+        "start": 201.8,
+        "end": 203.22
+      },
+      {
+        "syllable": " лю",
+        "start": 203.44,
+        "end": 203.58
+      },
+      {
+        "syllable": "блю",
+        "start": 203.9,
+        "end": 204.18
+      },
+      {
+        "syllable": " те",
+        "start": 212.82,
+        "end": 213.06
+      },
+      {
+        "syllable": "бя",
+        "start": 213.14,
+        "end": 213.18
+      },
+      {
+        "syllable": "\nЯ",
+        "start": 213.34,
+        "end": 213.39000000000001
+      },
+      {
+        "syllable": " про",
+        "start": 213.42,
+        "end": 213.7
+      },
+      {
+        "syllable": "сто",
+        "start": 213.76,
+        "end": 214.02
+      },
+      {
+        "syllable": " бе",
+        "start": 214.06,
+        "end": 214.56
+      },
+      {
+        "syllable": "гу",
+        "start": 214.7,
+        "end": 214.74
+      },
+      {
+        "syllable": " за",
+        "start": 214.86,
+        "end": 217.62
+      },
+      {
+        "syllable": " то",
+        "start": 217.76,
+        "end": 217.82
+      },
+      {
+        "syllable": "бой",
+        "start": 217.9,
+        "end": 218.12
+      },
+      {
+        "syllable": "\nНо",
+        "start": 218.2,
+        "end": 218.38
+      },
+      {
+        "syllable": " не",
+        "start": 218.5,
+        "end": 218.68
+      },
+      {
+        "syllable": " об",
+        "start": 218.8,
+        "end": 219.28
+      },
+      {
+        "syllable": "ма",
+        "start": 219.4,
+        "end": 219.56
+      },
+      {
+        "syllable": "ни",
+        "start": 219.68,
+        "end": 219.86
+      },
+      {
+        "syllable": " ме",
+        "start": 219.96,
+        "end": 221.48
+      },
+      {
+        "syllable": "ня",
+        "start": 222.22,
+        "end": 222.3
+      },
+      {
+        "syllable": "\nНе",
+        "start": 222.46,
+        "end": 222.64
+      },
+      {
+        "syllable": " знаю",
+        "start": 222.9,
+        "end": 223.2
+      },
+      {
+        "syllable": " лю",
+        "start": 223.36,
+        "end": 223.46
+      },
+      {
+        "syllable": "бви",
+        "start": 223.66,
+        "end": 223.94
+      },
+      {
+        "syllable": " иной",
+        "start": 224.04,
+        "end": 227.12
+      },
+      {
+        "syllable": "\nЯ",
+        "start": 227.24,
+        "end": 227.29000000000002
+      },
+      {
+        "syllable": " про",
+        "start": 227.34,
+        "end": 227.82
+      },
+      {
+        "syllable": "сто",
+        "start": 227.88,
+        "end": 228.14
+      },
+      {
+        "syllable": " лю",
+        "start": 228.24,
+        "end": 228.5
+      },
+      {
+        "syllable": "блю",
+        "start": 228.66,
+        "end": 229.58
+      },
+      {
+        "syllable": " те",
+        "start": 231.66,
+        "end": 231.88
+      },
+      {
+        "syllable": "бя",
+        "start": 231.94,
+        "end": 232.02
+      },
+      {
+        "syllable": "\nЯ",
+        "start": 232.18,
+        "end": 232.23000000000002
+      },
+      {
+        "syllable": " про",
+        "start": 232.26,
+        "end": 232.52
+      },
+      {
+        "syllable": "сто",
+        "start": 232.58,
+        "end": 232.84
+      },
+      {
+        "syllable": " бе",
+        "start": 232.88,
+        "end": 233.4
+      },
+      {
+        "syllable": "гу",
+        "start": 233.52,
+        "end": 233.68
+      },
+      {
+        "syllable": " за",
+        "start": 233.72,
+        "end": 236.44
+      },
+      {
+        "syllable": " то",
+        "start": 236.54,
+        "end": 236.62
+      },
+      {
+        "syllable": "бой",
+        "start": 236.7,
+        "end": 236.94
+      },
+      {
+        "syllable": "\nНе",
+        "start": 237.04,
+        "end": 237.22
+      },
+      {
+        "syllable": " оста",
+        "start": 237.36,
+        "end": 238.08
+      },
+      {
+        "syllable": "но",
+        "start": 238.22,
+        "end": 238.4
+      },
+      {
+        "syllable": "ви",
+        "start": 238.52,
+        "end": 238.68
+      },
+      {
+        "syllable": " ме",
+        "start": 238.8,
+        "end": 239.22
+      },
+      {
+        "syllable": "ня",
+        "start": 239.38,
+        "end": 239.44
+      },
+      {
+        "syllable": "\nНе",
+        "start": 239.52,
+        "end": 239.58
+      },
+      {
+        "syllable": " знаю",
+        "start": 239.62,
+        "end": 239.78
+      },
+      {
+        "syllable": " лю",
+        "start": 239.82,
+        "end": 240.72
+      },
+      {
+        "syllable": "бви",
+        "start": 241.06,
+        "end": 241.88
+      },
+      {
+        "syllable": " иной",
+        "start": 242.34,
+        "end": 245.94
+      },
+      {
+        "syllable": "\nНе",
+        "start": 246.06,
+        "end": 246.16
+      },
+      {
+        "syllable": " оста",
+        "start": 246.46,
+        "end": 246.92
+      },
+      {
+        "syllable": "но",
+        "start": 246.98,
+        "end": 247.06
+      },
+      {
+        "syllable": "ви",
+        "start": 247.36,
+        "end": 247.52
+      },
+      {
+        "syllable": " ме",
+        "start": 247.66,
+        "end": 250.08
+      },
+      {
+        "syllable": "ня",
+        "start": 250.48,
+        "end": 250.58
+      }
+    ]
+  },
+  "5": {
+    "meta": {
+      "artist": "Король и Шут",
+      "title": "Помнят с горечью древляне",
+      "language": "ru"
+    },
+    "syllable_count": 287,
+    "char_timestamp_count": 928,
+    "lyrics_char_count": 764,
+    "lyrics_word_count": 165,
+    "ctc_char": {
+      "label": "ctc_char",
+      "mae": 3.2635121951219515,
+      "hit_rate_01s": 0.020905923344947737,
+      "matched_count": 287,
+      "total_ref": 287,
+      "first_20": [
+        {
+          "syllable": "По",
+          "ref_start": 6.5,
+          "pred_start": 6.92,
+          "delta": 0.41999999999999993
+        },
+        {
+          "syllable": "мнят",
+          "ref_start": 7.383,
+          "pred_start": 7.22,
+          "delta": -0.16300000000000026
+        },
+        {
+          "syllable": "с",
+          "ref_start": 7.745,
+          "pred_start": 7.7,
+          "delta": -0.04499999999999993
+        },
+        {
+          "syllable": "го",
+          "ref_start": 7.865,
+          "pred_start": 7.82,
+          "delta": -0.04499999999999993
+        },
+        {
+          "syllable": "ре",
+          "ref_start": 8.307,
+          "pred_start": 8.26,
+          "delta": -0.0470000000000006
+        },
+        {
+          "syllable": "чью",
+          "ref_start": 8.648,
+          "pred_start": 8.56,
+          "delta": -0.08799999999999919
+        },
+        {
+          "syllable": "дре",
+          "ref_start": 9.15,
+          "pred_start": 9.1,
+          "delta": -0.05000000000000071
+        },
+        {
+          "syllable": "вля",
+          "ref_start": 9.512,
+          "pred_start": 9.36,
+          "delta": -0.15200000000000102
+        },
+        {
+          "syllable": "не,",
+          "ref_start": 9.974,
+          "pred_start": 9.9,
+          "delta": -0.07399999999999984
+        },
+        {
+          "syllable": "хоть",
+          "ref_start": 10.677,
+          "pred_start": 10.04,
+          "delta": -0.6370000000000005
+        },
+        {
+          "syllable": "про",
+          "ref_start": 11.118,
+          "pred_start": 10.98,
+          "delta": -0.1379999999999999
+        },
+        {
+          "syllable": "шло",
+          "ref_start": 11.46,
+          "pred_start": 11.22,
+          "delta": -0.2400000000000002
+        },
+        {
+          "syllable": "не",
+          "ref_start": 12.182,
+          "pred_start": 11.72,
+          "delta": -0.46199999999999974
+        },
+        {
+          "syllable": "ма",
+          "ref_start": 12.624,
+          "pred_start": 12.22,
+          "delta": -0.4039999999999999
+        },
+        {
+          "syllable": "ло",
+          "ref_start": 12.905,
+          "pred_start": 12.68,
+          "delta": -0.22499999999999964
+        },
+        {
+          "syllable": "лет",
+          "ref_start": 13.327,
+          "pred_start": 12.98,
+          "delta": -0.34699999999999953
+        },
+        {
+          "syllable": "О",
+          "ref_start": 14.09,
+          "pred_start": 13.58,
+          "delta": -0.5099999999999998
+        },
+        {
+          "syllable": "ро",
+          "ref_start": 14.893,
+          "pred_start": 14.56,
+          "delta": -0.3330000000000002
+        },
+        {
+          "syllable": "ман",
+          "ref_start": 15.235,
+          "pred_start": 15.0,
+          "delta": -0.23499999999999943
+        },
+        {
+          "syllable": "ти",
+          "ref_start": 15.857,
+          "pred_start": 15.52,
+          "delta": -0.33699999999999974
+        }
+      ]
+    },
+    "ctc_char_timings": [
+      {
+        "syllable": "По",
+        "start": 6.92,
+        "end": 7.04
+      },
+      {
+        "syllable": "мнят",
+        "start": 7.22,
+        "end": 7.62
+      },
+      {
+        "syllable": " с",
+        "start": 7.7,
+        "end": 7.75
+      },
+      {
+        "syllable": " го",
+        "start": 7.82,
+        "end": 7.96
+      },
+      {
+        "syllable": "ре",
+        "start": 8.26,
+        "end": 8.4
+      },
+      {
+        "syllable": "чью",
+        "start": 8.56,
+        "end": 8.94
+      },
+      {
+        "syllable": " дре",
+        "start": 9.1,
+        "end": 9.28
+      },
+      {
+        "syllable": "вля",
+        "start": 9.36,
+        "end": 9.64
+      },
+      {
+        "syllable": "не,",
+        "start": 9.9,
+        "end": 10.02
+      },
+      {
+        "syllable": " хоть",
+        "start": 10.04,
+        "end": 10.92
+      },
+      {
+        "syllable": " про",
+        "start": 10.98,
+        "end": 11.14
+      },
+      {
+        "syllable": "шло",
+        "start": 11.22,
+        "end": 11.6
+      },
+      {
+        "syllable": " не",
+        "start": 11.72,
+        "end": 12.08
+      },
+      {
+        "syllable": "ма",
+        "start": 12.22,
+        "end": 12.58
+      },
+      {
+        "syllable": "ло",
+        "start": 12.68,
+        "end": 12.86
+      },
+      {
+        "syllable": " лет",
+        "start": 12.98,
+        "end": 13.42
+      },
+      {
+        "syllable": "\nО",
+        "start": 13.58,
+        "end": 13.63
+      },
+      {
+        "syllable": " ро",
+        "start": 14.56,
+        "end": 14.88
+      },
+      {
+        "syllable": "ман",
+        "start": 15.0,
+        "end": 15.3
+      },
+      {
+        "syllable": "ти",
+        "start": 15.52,
+        "end": 15.8
+      },
+      {
+        "syllable": "ке",
+        "start": 15.94,
+        "end": 16.1
+      },
+      {
+        "syllable": " Де",
+        "start": 16.22,
+        "end": 16.78
+      },
+      {
+        "syllable": "мья",
+        "start": 16.9,
+        "end": 17.24
+      },
+      {
+        "syllable": "не,",
+        "start": 17.28,
+        "end": 17.6
+      },
+      {
+        "syllable": " чей",
+        "start": 17.7,
+        "end": 18.14
+      },
+      {
+        "syllable": " ле",
+        "start": 18.3,
+        "end": 18.46
+      },
+      {
+        "syllable": "жит",
+        "start": 18.66,
+        "end": 18.92
+      },
+      {
+        "syllable": " в",
+        "start": 19.04,
+        "end": 19.09
+      },
+      {
+        "syllable": " ле",
+        "start": 19.32,
+        "end": 19.52
+      },
+      {
+        "syllable": "су",
+        "start": 19.62,
+        "end": 19.76
+      },
+      {
+        "syllable": " ске",
+        "start": 19.82,
+        "end": 20.3
+      },
+      {
+        "syllable": "лет",
+        "start": 20.5,
+        "end": 20.78
+      },
+      {
+        "syllable": "\nЖаль,",
+        "start": 20.92,
+        "end": 22.06
+      },
+      {
+        "syllable": " ни",
+        "start": 22.22,
+        "end": 22.26
+      },
+      {
+        "syllable": "кто",
+        "start": 22.28,
+        "end": 22.48
+      },
+      {
+        "syllable": " ему",
+        "start": 22.58,
+        "end": 22.98
+      },
+      {
+        "syllable": " не",
+        "start": 23.48,
+        "end": 23.6
+      },
+      {
+        "syllable": " ве",
+        "start": 23.7,
+        "end": 24.26
+      },
+      {
+        "syllable": "рил,",
+        "start": 24.36,
+        "end": 24.76
+      },
+      {
+        "syllable": " но",
+        "start": 24.98,
+        "end": 25.1
+      },
+      {
+        "syllable": " за",
+        "start": 25.22,
+        "end": 25.64
+      },
+      {
+        "syllable": "хва",
+        "start": 25.72,
+        "end": 26.16
+      },
+      {
+        "syllable": "ты",
+        "start": 26.3,
+        "end": 26.5
+      },
+      {
+        "syllable": "ва",
+        "start": 26.64,
+        "end": 26.8
+      },
+      {
+        "syllable": "ло",
+        "start": 27.1,
+        "end": 27.26
+      },
+      {
+        "syllable": " дух",
+        "start": 27.4,
+        "end": 27.88
+      },
+      {
+        "syllable": "\nОт",
+        "start": 27.98,
+        "end": 28.3
+      },
+      {
+        "syllable": " его",
+        "start": 28.4,
+        "end": 29.52
+      },
+      {
+        "syllable": " бы",
+        "start": 29.8,
+        "end": 30.08
+      },
+      {
+        "syllable": "лин",
+        "start": 30.2,
+        "end": 30.84
+      },
+      {
+        "syllable": " о",
+        "start": 30.94,
+        "end": 30.990000000000002
+      },
+      {
+        "syllable": " фее",
+        "start": 31.14,
+        "end": 31.72
+      },
+      {
+        "syllable": " -",
+        "start": 31.9,
+        "end": 31.95
+      },
+      {
+        "syllable": " по",
+        "start": 32.04,
+        "end": 32.28
+      },
+      {
+        "syllable": "ве",
+        "start": 32.58,
+        "end": 33.04
+      },
+      {
+        "syllable": "ли",
+        "start": 33.2,
+        "end": 33.36
+      },
+      {
+        "syllable": "тель",
+        "start": 33.7,
+        "end": 34.08
+      },
+      {
+        "syllable": "ни",
+        "start": 34.6,
+        "end": 34.76
+      },
+      {
+        "syllable": "це",
+        "start": 34.96,
+        "end": 35.06
+      },
+      {
+        "syllable": " мух",
+        "start": 35.12,
+        "end": 35.5
+      },
+      {
+        "syllable": "\nК",
+        "start": 35.64,
+        "end": 35.69
+      },
+      {
+        "syllable": " этой",
+        "start": 35.78,
+        "end": 36.92
+      },
+      {
+        "syllable": " фее",
+        "start": 37.08,
+        "end": 37.56
+      },
+      {
+        "syllable": " был",
+        "start": 37.68,
+        "end": 38.08
+      },
+      {
+        "syllable": " ро",
+        "start": 38.56,
+        "end": 38.84
+      },
+      {
+        "syllable": "ман",
+        "start": 38.96,
+        "end": 39.3
+      },
+      {
+        "syllable": "тик",
+        "start": 39.42,
+        "end": 39.72
+      },
+      {
+        "syllable": " по",
+        "start": 39.88,
+        "end": 40.0
+      },
+      {
+        "syllable": "лон",
+        "start": 40.16,
+        "end": 40.74
+      },
+      {
+        "syllable": " стра",
+        "start": 40.94,
+        "end": 41.32
+      },
+      {
+        "syllable": "сти",
+        "start": 41.42,
+        "end": 41.62
+      },
+      {
+        "syllable": " и",
+        "start": 41.74,
+        "end": 41.79
+      },
+      {
+        "syllable": " лю",
+        "start": 42.08,
+        "end": 42.18
+      },
+      {
+        "syllable": "бви",
+        "start": 42.3,
+        "end": 42.92
+      },
+      {
+        "syllable": "\nЧув",
+        "start": 43.04,
+        "end": 43.32
+      },
+      {
+        "syllable": "ства",
+        "start": 43.46,
+        "end": 44.72
+      },
+      {
+        "syllable": " ей",
+        "start": 44.8,
+        "end": 44.9
+      },
+      {
+        "syllable": " хо",
+        "start": 45.04,
+        "end": 45.14
+      },
+      {
+        "syllable": "тел",
+        "start": 45.44,
+        "end": 45.9
+      },
+      {
+        "syllable": " он",
+        "start": 45.98,
+        "end": 46.12
+      },
+      {
+        "syllable": " вы",
+        "start": 46.36,
+        "end": 46.58
+      },
+      {
+        "syllable": "ра",
+        "start": 46.72,
+        "end": 46.98
+      },
+      {
+        "syllable": "зить",
+        "start": 47.34,
+        "end": 47.86
+      },
+      {
+        "syllable": " свои",
+        "start": 48.02,
+        "end": 48.36
+      },
+      {
+        "syllable": "\nЧув",
+        "start": 48.48,
+        "end": 48.8
+      },
+      {
+        "syllable": "ства",
+        "start": 49.08,
+        "end": 50.32
+      },
+      {
+        "syllable": " вы",
+        "start": 50.4,
+        "end": 50.54
+      },
+      {
+        "syllable": "ра",
+        "start": 50.66,
+        "end": 50.76
+      },
+      {
+        "syllable": "зить",
+        "start": 50.9,
+        "end": 51.58
+      },
+      {
+        "syllable": " свои",
+        "start": 51.76,
+        "end": 52.16
+      },
+      {
+        "syllable": "\nХе",
+        "start": 52.24,
+        "end": 52.42
+      },
+      {
+        "syllable": "хе",
+        "start": 52.56,
+        "end": 52.86
+      },
+      {
+        "syllable": "хей!",
+        "start": 55.9,
+        "end": 56.04
+      },
+      {
+        "syllable": "\nВ",
+        "start": 56.12,
+        "end": 56.169999999999995
+      },
+      {
+        "syllable": " час,",
+        "start": 58.56,
+        "end": 58.98
+      },
+      {
+        "syllable": " ко",
+        "start": 59.0,
+        "end": 63.04
+      },
+      {
+        "syllable": "гда",
+        "start": 63.18,
+        "end": 63.58
+      },
+      {
+        "syllable": " он",
+        "start": 63.6,
+        "end": 63.72
+      },
+      {
+        "syllable": " ви",
+        "start": 63.84,
+        "end": 63.98
+      },
+      {
+        "syllable": "дел",
+        "start": 64.18,
+        "end": 64.76
+      },
+      {
+        "syllable": " фею,",
+        "start": 64.9,
+        "end": 65.28
+      },
+      {
+        "syllable": " на",
+        "start": 65.42,
+        "end": 65.54
+      },
+      {
+        "syllable": "чи",
+        "start": 65.66,
+        "end": 65.82
+      },
+      {
+        "syllable": "нал",
+        "start": 66.08,
+        "end": 66.9
+      },
+      {
+        "syllable": " ей",
+        "start": 67.1,
+        "end": 67.22
+      },
+      {
+        "syllable": " по",
+        "start": 67.44,
+        "end": 67.64
+      },
+      {
+        "syllable": "вто",
+        "start": 67.96,
+        "end": 68.26
+      },
+      {
+        "syllable": "рять",
+        "start": 68.56,
+        "end": 69.06
+      },
+      {
+        "syllable": "\nЖизнь",
+        "start": 69.18,
+        "end": 69.86
+      },
+      {
+        "syllable": " свою",
+        "start": 70.06,
+        "end": 70.94
+      },
+      {
+        "syllable": " не",
+        "start": 70.98,
+        "end": 71.04
+      },
+      {
+        "syllable": " по",
+        "start": 71.08,
+        "end": 71.16
+      },
+      {
+        "syllable": "жа",
+        "start": 71.3,
+        "end": 71.42
+      },
+      {
+        "syllable": "лею",
+        "start": 71.58,
+        "end": 72.32
+      },
+      {
+        "syllable": " за",
+        "start": 72.48,
+        "end": 72.6
+      },
+      {
+        "syllable": " твою",
+        "start": 72.94,
+        "end": 73.62
+      },
+      {
+        "syllable": " лю",
+        "start": 73.9,
+        "end": 74.58
+      },
+      {
+        "syllable": "бовь",
+        "start": 74.7,
+        "end": 75.14
+      },
+      {
+        "syllable": " от",
+        "start": 75.3,
+        "end": 75.9
+      },
+      {
+        "syllable": "дать!",
+        "start": 75.96,
+        "end": 76.62
+      },
+      {
+        "syllable": "\nВсе",
+        "start": 76.7,
+        "end": 77.02
+      },
+      {
+        "syllable": " за",
+        "start": 77.14,
+        "end": 77.28
+      },
+      {
+        "syllable": "сты",
+        "start": 77.84,
+        "end": 77.94
+      },
+      {
+        "syllable": "ли",
+        "start": 78.1,
+        "end": 78.28
+      },
+      {
+        "syllable": " в",
+        "start": 78.48,
+        "end": 78.53
+      },
+      {
+        "syllable": " изум",
+        "start": 78.8,
+        "end": 79.26
+      },
+      {
+        "syllable": "ле",
+        "start": 79.4,
+        "end": 79.78
+      },
+      {
+        "syllable": "нье,",
+        "start": 79.92,
+        "end": 80.34
+      },
+      {
+        "syllable": " лишь",
+        "start": 80.5,
+        "end": 80.94
+      },
+      {
+        "syllable": " на",
+        "start": 81.1,
+        "end": 81.28
+      },
+      {
+        "syllable": "род",
+        "start": 81.4,
+        "end": 81.8
+      },
+      {
+        "syllable": " о",
+        "start": 82.14,
+        "end": 82.19
+      },
+      {
+        "syllable": " том",
+        "start": 82.24,
+        "end": 82.5
+      },
+      {
+        "syllable": " узнал",
+        "start": 82.58,
+        "end": 83.32
+      },
+      {
+        "syllable": "\nЧто",
+        "start": 83.6,
+        "end": 84.1
+      },
+      {
+        "syllable": " Де",
+        "start": 84.28,
+        "end": 84.36
+      },
+      {
+        "syllable": "мьян",
+        "start": 84.56,
+        "end": 85.04
+      },
+      {
+        "syllable": " по",
+        "start": 85.72,
+        "end": 85.88
+      },
+      {
+        "syllable": " во",
+        "start": 85.98,
+        "end": 86.2
+      },
+      {
+        "syllable": "ле",
+        "start": 86.44,
+        "end": 86.56
+      },
+      {
+        "syllable": " феи",
+        "start": 86.74,
+        "end": 87.06
+      },
+      {
+        "syllable": " по",
+        "start": 87.26,
+        "end": 87.38
+      },
+      {
+        "syllable": "кло",
+        "start": 87.68,
+        "end": 88.02
+      },
+      {
+        "syllable": "нять",
+        "start": 88.14,
+        "end": 89.08
+      },
+      {
+        "syllable": "ся",
+        "start": 89.64,
+        "end": 89.74
+      },
+      {
+        "syllable": " му",
+        "start": 89.92,
+        "end": 90.08
+      },
+      {
+        "syllable": "хам",
+        "start": 90.18,
+        "end": 90.5
+      },
+      {
+        "syllable": " стал!",
+        "start": 90.68,
+        "end": 91.1
+      },
+      {
+        "syllable": "\nК",
+        "start": 91.48,
+        "end": 91.53
+      },
+      {
+        "syllable": " этой",
+        "start": 91.6,
+        "end": 91.98
+      },
+      {
+        "syllable": " фее",
+        "start": 92.08,
+        "end": 92.38
+      },
+      {
+        "syllable": " был",
+        "start": 92.8,
+        "end": 93.36
+      },
+      {
+        "syllable": " ро",
+        "start": 93.52,
+        "end": 93.82
+      },
+      {
+        "syllable": "ман",
+        "start": 93.96,
+        "end": 94.32
+      },
+      {
+        "syllable": "тик",
+        "start": 94.46,
+        "end": 95.26
+      },
+      {
+        "syllable": " по",
+        "start": 95.36,
+        "end": 95.5
+      },
+      {
+        "syllable": "лон",
+        "start": 95.72,
+        "end": 95.9
+      },
+      {
+        "syllable": " стра",
+        "start": 96.1,
+        "end": 96.58
+      },
+      {
+        "syllable": "сти",
+        "start": 96.74,
+        "end": 97.28
+      },
+      {
+        "syllable": " и",
+        "start": 97.6,
+        "end": 97.64999999999999
+      },
+      {
+        "syllable": " лю",
+        "start": 97.7,
+        "end": 97.78
+      },
+      {
+        "syllable": "бви",
+        "start": 97.88,
+        "end": 98.06
+      },
+      {
+        "syllable": "\nЧув",
+        "start": 98.16,
+        "end": 98.52
+      },
+      {
+        "syllable": "ства",
+        "start": 98.64,
+        "end": 99.44
+      },
+      {
+        "syllable": " ей",
+        "start": 99.56,
+        "end": 99.7
+      },
+      {
+        "syllable": " хо",
+        "start": 99.82,
+        "end": 100.88
+      },
+      {
+        "syllable": "тел",
+        "start": 101.0,
+        "end": 101.14
+      },
+      {
+        "syllable": " он",
+        "start": 101.26,
+        "end": 101.4
+      },
+      {
+        "syllable": " вы",
+        "start": 101.5,
+        "end": 101.78
+      },
+      {
+        "syllable": "ра",
+        "start": 102.02,
+        "end": 102.24
+      },
+      {
+        "syllable": "зить",
+        "start": 102.36,
+        "end": 102.96
+      },
+      {
+        "syllable": " свои",
+        "start": 103.06,
+        "end": 103.82
+      },
+      {
+        "syllable": "\nЧув",
+        "start": 104.16,
+        "end": 104.42
+      },
+      {
+        "syllable": "ства",
+        "start": 104.56,
+        "end": 104.9
+      },
+      {
+        "syllable": " вы",
+        "start": 105.06,
+        "end": 105.22
+      },
+      {
+        "syllable": "ра",
+        "start": 105.52,
+        "end": 106.58
+      },
+      {
+        "syllable": "зить",
+        "start": 106.68,
+        "end": 106.9
+      },
+      {
+        "syllable": " свои",
+        "start": 107.06,
+        "end": 107.4
+      },
+      {
+        "syllable": "\nРо",
+        "start": 107.76,
+        "end": 107.88
+      },
+      {
+        "syllable": "ман",
+        "start": 108.14,
+        "end": 108.54
+      },
+      {
+        "syllable": "тик",
+        "start": 108.6,
+        "end": 108.88
+      },
+      {
+        "syllable": " идо",
+        "start": 108.98,
+        "end": 111.68
+      },
+      {
+        "syllable": "ла",
+        "start": 111.82,
+        "end": 111.92
+      },
+      {
+        "syllable": " в",
+        "start": 112.12,
+        "end": 112.17
+      },
+      {
+        "syllable": " овра",
+        "start": 112.3,
+        "end": 112.94
+      },
+      {
+        "syllable": "ге",
+        "start": 113.24,
+        "end": 113.56
+      },
+      {
+        "syllable": " со",
+        "start": 113.66,
+        "end": 113.82
+      },
+      {
+        "syllable": "тво",
+        "start": 113.92,
+        "end": 114.34
+      },
+      {
+        "syllable": "рил",
+        "start": 114.56,
+        "end": 114.82
+      },
+      {
+        "syllable": "\nЕму",
+        "start": 115.2,
+        "end": 115.84
+      },
+      {
+        "syllable": " он",
+        "start": 116.02,
+        "end": 116.2
+      },
+      {
+        "syllable": " жерт",
+        "start": 116.38,
+        "end": 116.76
+      },
+      {
+        "syllable": "вы",
+        "start": 116.98,
+        "end": 117.46
+      },
+      {
+        "syllable": " при",
+        "start": 117.62,
+        "end": 118.12
+      },
+      {
+        "syllable": "но",
+        "start": 118.3,
+        "end": 118.72
+      },
+      {
+        "syllable": "сил!",
+        "start": 118.9,
+        "end": 119.18
+      },
+      {
+        "syllable": "\nХе",
+        "start": 119.32,
+        "end": 119.42
+      },
+      {
+        "syllable": "хе",
+        "start": 119.58,
+        "end": 119.7
+      },
+      {
+        "syllable": "хей!",
+        "start": 119.84,
+        "end": 120.12
+      },
+      {
+        "syllable": "\nЭй,",
+        "start": 120.36,
+        "end": 120.52
+      },
+      {
+        "syllable": " лю",
+        "start": 120.84,
+        "end": 121.14
+      },
+      {
+        "syllable": "ди,",
+        "start": 123.68,
+        "end": 123.78
+      },
+      {
+        "syllable": " му",
+        "start": 139.38,
+        "end": 139.46
+      },
+      {
+        "syllable": "хам",
+        "start": 144.32,
+        "end": 149.26
+      },
+      {
+        "syllable": " по",
+        "start": 149.28,
+        "end": 168.22
+      },
+      {
+        "syllable": "кло",
+        "start": 168.38,
+        "end": 168.6
+      },
+      {
+        "syllable": "нять",
+        "start": 168.64,
+        "end": 169.24
+      },
+      {
+        "syllable": "ся",
+        "start": 169.46,
+        "end": 169.58
+      },
+      {
+        "syllable": " нуж",
+        "start": 169.92,
+        "end": 170.18
+      },
+      {
+        "syllable": "но",
+        "start": 170.44,
+        "end": 170.56
+      },
+      {
+        "syllable": " нам",
+        "start": 170.7,
+        "end": 171.0
+      },
+      {
+        "syllable": "\nА",
+        "start": 171.16,
+        "end": 171.21
+      },
+      {
+        "syllable": " не",
+        "start": 171.22,
+        "end": 171.52
+      },
+      {
+        "syllable": " язы",
+        "start": 171.56,
+        "end": 171.94
+      },
+      {
+        "syllable": "че",
+        "start": 172.34,
+        "end": 172.48
+      },
+      {
+        "syllable": "ским",
+        "start": 172.62,
+        "end": 173.08
+      },
+      {
+        "syllable": " бо",
+        "start": 173.2,
+        "end": 173.38
+      },
+      {
+        "syllable": "гам!",
+        "start": 173.84,
+        "end": 174.34
+      },
+      {
+        "syllable": "\nЯ,",
+        "start": 174.5,
+        "end": 174.66
+      },
+      {
+        "syllable": " брат",
+        "start": 174.9,
+        "end": 175.76
+      },
+      {
+        "syllable": "цы,",
+        "start": 175.9,
+        "end": 176.14
+      },
+      {
+        "syllable": " до",
+        "start": 176.26,
+        "end": 176.36
+      },
+      {
+        "syllable": " то",
+        "start": 176.58,
+        "end": 176.7
+      },
+      {
+        "syllable": "го,",
+        "start": 176.86,
+        "end": 176.96
+      },
+      {
+        "syllable": " как",
+        "start": 177.3,
+        "end": 179.48
+      },
+      {
+        "syllable": " фею",
+        "start": 179.5,
+        "end": 179.74
+      },
+      {
+        "syllable": " по",
+        "start": 179.88,
+        "end": 180.04
+      },
+      {
+        "syllable": "лю",
+        "start": 180.12,
+        "end": 180.48
+      },
+      {
+        "syllable": "бил",
+        "start": 180.5,
+        "end": 180.94
+      },
+      {
+        "syllable": "\nПо",
+        "start": 181.28,
+        "end": 181.38
+      },
+      {
+        "syllable": " су",
+        "start": 181.54,
+        "end": 181.64
+      },
+      {
+        "syllable": "ти,",
+        "start": 181.66,
+        "end": 181.94
+      },
+      {
+        "syllable": " без",
+        "start": 182.04,
+        "end": 182.74
+      },
+      {
+        "syllable": "на",
+        "start": 182.88,
+        "end": 183.34
+      },
+      {
+        "syllable": "деж",
+        "start": 183.68,
+        "end": 183.96
+      },
+      {
+        "syllable": "ным",
+        "start": 184.06,
+        "end": 184.48
+      },
+      {
+        "syllable": " был!",
+        "start": 184.64,
+        "end": 185.14
+      },
+      {
+        "syllable": "\nНе",
+        "start": 185.44,
+        "end": 185.58
+      },
+      {
+        "syllable": " знал",
+        "start": 185.76,
+        "end": 186.42
+      },
+      {
+        "syllable": " ро",
+        "start": 186.6,
+        "end": 186.74
+      },
+      {
+        "syllable": "ман",
+        "start": 186.9,
+        "end": 187.2
+      },
+      {
+        "syllable": "тик,",
+        "start": 187.32,
+        "end": 187.64
+      },
+      {
+        "syllable": " что",
+        "start": 187.74,
+        "end": 188.24
+      },
+      {
+        "syllable": " она",
+        "start": 188.38,
+        "end": 189.28
+      },
+      {
+        "syllable": "\nДля",
+        "start": 190.54,
+        "end": 190.84
+      },
+      {
+        "syllable": " лю",
+        "start": 190.96,
+        "end": 191.06
+      },
+      {
+        "syllable": "бви",
+        "start": 191.28,
+        "end": 191.52
+      },
+      {
+        "syllable": " не",
+        "start": 191.82,
+        "end": 192.0
+      },
+      {
+        "syllable": " ро",
+        "start": 193.2,
+        "end": 193.34
+      },
+      {
+        "syllable": "жде",
+        "start": 193.46,
+        "end": 193.62
+      },
+      {
+        "syllable": "на",
+        "start": 193.7,
+        "end": 193.78
+      },
+      {
+        "syllable": "\nИ",
+        "start": 193.88,
+        "end": 193.93
+      },
+      {
+        "syllable": " не",
+        "start": 195.3,
+        "end": 195.62
+      },
+      {
+        "syllable": " без",
+        "start": 195.74,
+        "end": 196.84
+      },
+      {
+        "syllable": "гре",
+        "start": 196.88,
+        "end": 197.24
+      },
+      {
+        "syllable": "шен",
+        "start": 197.44,
+        "end": 197.72
+      },
+      {
+        "syllable": " сам",
+        "start": 198.22,
+        "end": 198.7
+      },
+      {
+        "syllable": " он",
+        "start": 198.8,
+        "end": 198.98
+      },
+      {
+        "syllable": " был",
+        "start": 199.16,
+        "end": 199.42
+      },
+      {
+        "syllable": "\nОн",
+        "start": 199.56,
+        "end": 202.08
+      },
+      {
+        "syllable": " то",
+        "start": 202.26,
+        "end": 202.42
+      },
+      {
+        "syllable": "же",
+        "start": 202.68,
+        "end": 202.78
+      },
+      {
+        "syllable": " мух",
+        "start": 203.02,
+        "end": 203.18
+      },
+      {
+        "syllable": " ко",
+        "start": 203.36,
+        "end": 204.54
+      },
+      {
+        "syllable": "гда",
+        "start": 204.66,
+        "end": 204.98
+      },
+      {
+        "syllable": "то",
+        "start": 205.14,
+        "end": 205.52
+      },
+      {
+        "syllable": " бил",
+        "start": 206.54,
+        "end": 206.88
+      },
+      {
+        "syllable": "\nЛе",
+        "start": 207.0,
+        "end": 207.54
+      },
+      {
+        "syllable": "те",
+        "start": 207.66,
+        "end": 207.84
+      },
+      {
+        "syllable": "ли",
+        "start": 208.06,
+        "end": 208.18
+      },
+      {
+        "syllable": " му",
+        "start": 208.44,
+        "end": 208.62
+      },
+      {
+        "syllable": "хи",
+        "start": 208.78,
+        "end": 208.9
+      },
+      {
+        "syllable": " на",
+        "start": 209.2,
+        "end": 209.5
+      },
+      {
+        "syllable": " не",
+        "start": 209.6,
+        "end": 209.76
+      },
+      {
+        "syllable": "го",
+        "start": 209.98,
+        "end": 210.08
+      },
+      {
+        "syllable": " со",
+        "start": 210.1,
+        "end": 210.26
+      },
+      {
+        "syllable": " всех",
+        "start": 210.36,
+        "end": 211.12
+      },
+      {
+        "syllable": " сто",
+        "start": 213.28,
+        "end": 213.52
+      },
+      {
+        "syllable": "рон",
+        "start": 213.72,
+        "end": 214.04
+      },
+      {
+        "syllable": "\nБыл",
+        "start": 214.54,
+        "end": 214.96
+      },
+      {
+        "syllable": " ри",
+        "start": 215.24,
+        "end": 215.36
+      },
+      {
+        "syllable": "ту",
+        "start": 215.76,
+        "end": 215.9
+      },
+      {
+        "syllable": "аль",
+        "start": 216.04,
+        "end": 216.46
+      },
+      {
+        "syllable": "но",
+        "start": 216.98,
+        "end": 217.1
+      },
+      {
+        "syllable": " ску",
+        "start": 217.2,
+        "end": 217.56
+      },
+      {
+        "syllable": "шан",
+        "start": 217.66,
+        "end": 217.9
+      },
+      {
+        "syllable": " он...",
+        "start": 218.02,
+        "end": 218.14
+      }
+    ]
+  }
+}

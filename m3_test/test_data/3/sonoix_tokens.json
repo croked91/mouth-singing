@@ -1,0 +1,772 @@
+[
+  {
+    "text": "All",
+    "start_ms": 8400,
+    "end_ms": 8460,
+    "confidence": 0.7009592056274414,
+    "language": "en"
+  },
+  {
+    "text": " around",
+    "start_ms": 8700,
+    "end_ms": 8760,
+    "confidence": 0.9992967247962952,
+    "language": "en"
+  },
+  {
+    "text": " the",
+    "start_ms": 8940,
+    "end_ms": 9000,
+    "confidence": 0.9998722672462463,
+    "language": "en"
+  },
+  {
+    "text": " world",
+    "start_ms": 9120,
+    "end_ms": 9180,
+    "confidence": 0.9990177154541016,
+    "language": "en"
+  },
+  {
+    "text": ",",
+    "start_ms": 9300,
+    "end_ms": 9360,
+    "confidence": 0.973025381565094,
+    "language": "en"
+  },
+  {
+    "text": " world",
+    "start_ms": 9420,
+    "end_ms": 9480,
+    "confidence": 0.44907546043395996,
+    "language": "en"
+  },
+  {
+    "text": ",",
+    "start_ms": 9600,
+    "end_ms": 9660,
+    "confidence": 0.9915614724159241,
+    "language": "en"
+  },
+  {
+    "text": " I",
+    "start_ms": 10020,
+    "end_ms": 10080,
+    "confidence": 0.9845480918884277,
+    "language": "en"
+  },
+  {
+    "text": "'",
+    "start_ms": 10080,
+    "end_ms": 10140,
+    "confidence": 0.8507537245750427,
+    "language": "en"
+  },
+  {
+    "text": "m",
+    "start_ms": 10200,
+    "end_ms": 10260,
+    "confidence": 0.8604002594947815,
+    "language": "en"
+  },
+  {
+    "text": " la",
+    "start_ms": 10260,
+    "end_ms": 10320,
+    "confidence": 0.6349408030509949,
+    "language": "en"
+  },
+  {
+    "text": "y",
+    "start_ms": 10380,
+    "end_ms": 10440,
+    "confidence": 0.9464138150215149,
+    "language": "en"
+  },
+  {
+    "text": "ing",
+    "start_ms": 10440,
+    "end_ms": 10500,
+    "confidence": 0.9975058436393738,
+    "language": "en"
+  },
+  {
+    "text": " in",
+    "start_ms": 10620,
+    "end_ms": 10680,
+    "confidence": 0.9956013560295105,
+    "language": "en"
+  },
+  {
+    "text": " my",
+    "start_ms": 10800,
+    "end_ms": 10860,
+    "confidence": 0.9999039173126221,
+    "language": "en"
+  },
+  {
+    "text": " b",
+    "start_ms": 11100,
+    "end_ms": 11160,
+    "confidence": 0.9387787580490112,
+    "language": "en"
+  },
+  {
+    "text": "ed,",
+    "start_ms": 11280,
+    "end_ms": 11340,
+    "confidence": 0.9323570132255554,
+    "language": "en"
+  },
+  {
+    "text": " and",
+    "start_ms": 11520,
+    "end_ms": 11580,
+    "confidence": 0.5177798271179199,
+    "language": "en"
+  },
+  {
+    "text": " I",
+    "start_ms": 11640,
+    "end_ms": 11700,
+    "confidence": 0.9993184804916382,
+    "language": "en"
+  },
+  {
+    "text": " bl",
+    "start_ms": 11760,
+    "end_ms": 11820,
+    "confidence": 0.48148030042648315,
+    "language": "en"
+  },
+  {
+    "text": "ame",
+    "start_ms": 11880,
+    "end_ms": 11940,
+    "confidence": 0.9991043210029602,
+    "language": "en"
+  },
+  {
+    "text": " the",
+    "start_ms": 12000,
+    "end_ms": 12060,
+    "confidence": 0.5475114583969116,
+    "language": "en"
+  },
+  {
+    "text": " f",
+    "start_ms": 12180,
+    "end_ms": 12240,
+    "confidence": 0.4132145941257477,
+    "language": "en"
+  },
+  {
+    "text": "uck",
+    "start_ms": 12300,
+    "end_ms": 12360,
+    "confidence": 0.5686578154563904,
+    "language": "en"
+  },
+  {
+    "text": " if",
+    "start_ms": 12480,
+    "end_ms": 12540,
+    "confidence": 0.4836677312850952,
+    "language": "en"
+  },
+  {
+    "text": " y",
+    "start_ms": 12720,
+    "end_ms": 12780,
+    "confidence": 0.8593822121620178,
+    "language": "en"
+  },
+  {
+    "text": "ou",
+    "start_ms": 12780,
+    "end_ms": 12840,
+    "confidence": 0.9963833689689636,
+    "language": "en"
+  },
+  {
+    "text": "'",
+    "start_ms": 12900,
+    "end_ms": 12960,
+    "confidence": 0.5045763254165649,
+    "language": "en"
+  },
+  {
+    "text": "re",
+    "start_ms": 12960,
+    "end_ms": 13020,
+    "confidence": 0.9909316301345825,
+    "language": "en"
+  },
+  {
+    "text": " the",
+    "start_ms": 13020,
+    "end_ms": 13080,
+    "confidence": 0.6274464726448059,
+    "language": "en"
+  },
+  {
+    "text": " go",
+    "start_ms": 13260,
+    "end_ms": 13320,
+    "confidence": 0.30829596519470215,
+    "language": "en"
+  },
+  {
+    "text": "od",
+    "start_ms": 13380,
+    "end_ms": 13440,
+    "confidence": 0.9994611740112305,
+    "language": "en"
+  },
+  {
+    "text": ".",
+    "start_ms": 13440,
+    "end_ms": 13500,
+    "confidence": 0.7140986919403076,
+    "language": "en"
+  },
+  {
+    "text": " I",
+    "start_ms": 13980,
+    "end_ms": 14040,
+    "confidence": 0.4907419979572296,
+    "language": "en"
+  },
+  {
+    "text": " can",
+    "start_ms": 14640,
+    "end_ms": 14700,
+    "confidence": 0.5540865063667297,
+    "language": "en"
+  },
+  {
+    "text": "'t",
+    "start_ms": 14760,
+    "end_ms": 14820,
+    "confidence": 0.9523767232894897,
+    "language": "en"
+  },
+  {
+    "text": " '",
+    "start_ms": 14880,
+    "end_ms": 14940,
+    "confidence": 0.8866702914237976,
+    "language": "en"
+  },
+  {
+    "text": "ca",
+    "start_ms": 14940,
+    "end_ms": 15000,
+    "confidence": 0.999910831451416,
+    "language": "en"
+  },
+  {
+    "text": "use",
+    "start_ms": 15060,
+    "end_ms": 15120,
+    "confidence": 0.9999854564666748,
+    "language": "en"
+  },
+  {
+    "text": " I",
+    "start_ms": 15360,
+    "end_ms": 15420,
+    "confidence": 0.9999796748161316,
+    "language": "en"
+  },
+  {
+    "text": " ain",
+    "start_ms": 15540,
+    "end_ms": 15600,
+    "confidence": 0.9988347291946411,
+    "language": "en"
+  },
+  {
+    "text": "'t",
+    "start_ms": 15660,
+    "end_ms": 15720,
+    "confidence": 0.9999969005584717,
+    "language": "en"
+  },
+  {
+    "text": " p",
+    "start_ms": 15780,
+    "end_ms": 15840,
+    "confidence": 0.5218552947044373,
+    "language": "en"
+  },
+  {
+    "text": "utt",
+    "start_ms": 15840,
+    "end_ms": 15900,
+    "confidence": 0.9724107980728149,
+    "language": "en"
+  },
+  {
+    "text": "ing",
+    "start_ms": 15960,
+    "end_ms": 16020,
+    "confidence": 0.9465002417564392,
+    "language": "en"
+  },
+  {
+    "text": " pro",
+    "start_ms": 16140,
+    "end_ms": 16200,
+    "confidence": 0.9467005729675293,
+    "language": "en"
+  },
+  {
+    "text": "of",
+    "start_ms": 16260,
+    "end_ms": 16320,
+    "confidence": 0.9999921321868896,
+    "language": "en"
+  },
+  {
+    "text": ".",
+    "start_ms": 16440,
+    "end_ms": 16500,
+    "confidence": 0.5404428243637085,
+    "language": "en"
+  },
+  {
+    "text": " I",
+    "start_ms": 16920,
+    "end_ms": 16980,
+    "confidence": 0.8948438763618469,
+    "language": "en"
+  },
+  {
+    "text": " won",
+    "start_ms": 17220,
+    "end_ms": 17280,
+    "confidence": 0.9952021837234497,
+    "language": "en"
+  },
+  {
+    "text": "'t",
+    "start_ms": 17340,
+    "end_ms": 17400,
+    "confidence": 0.9998177886009216,
+    "language": "en"
+  },
+  {
+    "text": " let",
+    "start_ms": 17700,
+    "end_ms": 17760,
+    "confidence": 0.27578434348106384,
+    "language": "en"
+  },
+  {
+    "text": " nob",
+    "start_ms": 17940,
+    "end_ms": 18000,
+    "confidence": 0.4333151578903198,
+    "language": "en"
+  },
+  {
+    "text": "ody",
+    "start_ms": 18240,
+    "end_ms": 18300,
+    "confidence": 0.999733030796051,
+    "language": "en"
+  },
+  {
+    "text": " let",
+    "start_ms": 18780,
+    "end_ms": 18840,
+    "confidence": 0.7252157926559448,
+    "language": "en"
+  },
+  {
+    "text": " chang",
+    "start_ms": 19200,
+    "end_ms": 19260,
+    "confidence": 0.511716902256012,
+    "language": "en"
+  },
+  {
+    "text": "e.",
+    "start_ms": 19380,
+    "end_ms": 19440,
+    "confidence": 0.9998841881752014,
+    "language": "en"
+  },
+  {
+    "text": " I",
+    "start_ms": 22620,
+    "end_ms": 22680,
+    "confidence": 0.9993090033531189,
+    "language": "en"
+  },
+  {
+    "text": " ain",
+    "start_ms": 22740,
+    "end_ms": 22800,
+    "confidence": 0.999941349029541,
+    "language": "en"
+  },
+  {
+    "text": "'t",
+    "start_ms": 22860,
+    "end_ms": 22920,
+    "confidence": 0.9999986886978149,
+    "language": "en"
+  },
+  {
+    "text": " p",
+    "start_ms": 22980,
+    "end_ms": 23040,
+    "confidence": 0.9997279047966003,
+    "language": "en"
+  },
+  {
+    "text": "utt",
+    "start_ms": 23040,
+    "end_ms": 23100,
+    "confidence": 0.9999752044677734,
+    "language": "en"
+  },
+  {
+    "text": "ing",
+    "start_ms": 23100,
+    "end_ms": 23160,
+    "confidence": 0.9999909400939941,
+    "language": "en"
+  },
+  {
+    "text": " pro",
+    "start_ms": 23280,
+    "end_ms": 23340,
+    "confidence": 0.9999691247940063,
+    "language": "en"
+  },
+  {
+    "text": "of",
+    "start_ms": 23400,
+    "end_ms": 23460,
+    "confidence": 0.9999961853027344,
+    "language": "en"
+  },
+  {
+    "text": ".",
+    "start_ms": 23580,
+    "end_ms": 23640,
+    "confidence": 0.9999010562896729,
+    "language": "en"
+  },
+  {
+    "text": " I",
+    "start_ms": 24060,
+    "end_ms": 24120,
+    "confidence": 0.9999333620071411,
+    "language": "en"
+  },
+  {
+    "text": " won",
+    "start_ms": 24360,
+    "end_ms": 24420,
+    "confidence": 0.9998181462287903,
+    "language": "en"
+  },
+  {
+    "text": "'t",
+    "start_ms": 24480,
+    "end_ms": 24540,
+    "confidence": 0.9999936819076538,
+    "language": "en"
+  },
+  {
+    "text": " let",
+    "start_ms": 24840,
+    "end_ms": 24900,
+    "confidence": 0.9998295903205872,
+    "language": "en"
+  },
+  {
+    "text": " nob",
+    "start_ms": 25080,
+    "end_ms": 25140,
+    "confidence": 0.999476432800293,
+    "language": "en"
+  },
+  {
+    "text": "ody",
+    "start_ms": 25380,
+    "end_ms": 25440,
+    "confidence": 0.9999912977218628,
+    "language": "en"
+  },
+  {
+    "text": " let",
+    "start_ms": 25860,
+    "end_ms": 25920,
+    "confidence": 0.9985162019729614,
+    "language": "en"
+  },
+  {
+    "text": " chang",
+    "start_ms": 26340,
+    "end_ms": 26400,
+    "confidence": 0.9999239444732666,
+    "language": "en"
+  },
+  {
+    "text": "e.",
+    "start_ms": 26580,
+    "end_ms": 26640,
+    "confidence": 0.9999903440475464,
+    "language": "en"
+  },
+  {
+    "text": " I",
+    "start_ms": 29760,
+    "end_ms": 29820,
+    "confidence": 0.9945740103721619,
+    "language": "en"
+  },
+  {
+    "text": " do",
+    "start_ms": 29940,
+    "end_ms": 30000,
+    "confidence": 0.557695209980011,
+    "language": "en"
+  },
+  {
+    "text": " w",
+    "start_ms": 30180,
+    "end_ms": 30240,
+    "confidence": 0.9950787425041199,
+    "language": "en"
+  },
+  {
+    "text": "ant",
+    "start_ms": 30240,
+    "end_ms": 30300,
+    "confidence": 0.9996806383132935,
+    "language": "en"
+  },
+  {
+    "text": " y",
+    "start_ms": 30360,
+    "end_ms": 30420,
+    "confidence": 0.9947671890258789,
+    "language": "en"
+  },
+  {
+    "text": "our",
+    "start_ms": 30480,
+    "end_ms": 30540,
+    "confidence": 0.9923036098480225,
+    "language": "en"
+  },
+  {
+    "text": " war",
+    "start_ms": 30840,
+    "end_ms": 30900,
+    "confidence": 0.9983276128768921,
+    "language": "en"
+  },
+  {
+    "text": ",",
+    "start_ms": 31020,
+    "end_ms": 31080,
+    "confidence": 0.9235129952430725,
+    "language": "en"
+  },
+  {
+    "text": " I",
+    "start_ms": 31500,
+    "end_ms": 31560,
+    "confidence": 0.9999452829360962,
+    "language": "en"
+  },
+  {
+    "text": " do",
+    "start_ms": 31620,
+    "end_ms": 31680,
+    "confidence": 0.9931246042251587,
+    "language": "en"
+  },
+  {
+    "text": " w",
+    "start_ms": 31860,
+    "end_ms": 31920,
+    "confidence": 0.9999812841415405,
+    "language": "en"
+  },
+  {
+    "text": "ant",
+    "start_ms": 31920,
+    "end_ms": 31980,
+    "confidence": 0.9999923706054688,
+    "language": "en"
+  },
+  {
+    "text": " y",
+    "start_ms": 32100,
+    "end_ms": 32160,
+    "confidence": 0.9999220371246338,
+    "language": "en"
+  },
+  {
+    "text": "our",
+    "start_ms": 32160,
+    "end_ms": 32220,
+    "confidence": 0.9999029636383057,
+    "language": "en"
+  },
+  {
+    "text": " war",
+    "start_ms": 32580,
+    "end_ms": 32640,
+    "confidence": 0.9984092116355896,
+    "language": "en"
+  },
+  {
+    "text": " and",
+    "start_ms": 33180,
+    "end_ms": 33240,
+    "confidence": 0.9729607105255127,
+    "language": "en"
+  },
+  {
+    "text": " pa",
+    "start_ms": 33480,
+    "end_ms": 33540,
+    "confidence": 0.985183835029602,
+    "language": "en"
+  },
+  {
+    "text": "in.",
+    "start_ms": 33600,
+    "end_ms": 33660,
+    "confidence": 0.619828999042511,
+    "language": "en"
+  },
+  {
+    "text": " I",
+    "start_ms": 36780,
+    "end_ms": 36840,
+    "confidence": 0.875724196434021,
+    "language": "en"
+  },
+  {
+    "text": " do",
+    "start_ms": 37020,
+    "end_ms": 37080,
+    "confidence": 0.9985436201095581,
+    "language": "en"
+  },
+  {
+    "text": " l",
+    "start_ms": 37320,
+    "end_ms": 37380,
+    "confidence": 0.9989688396453857,
+    "language": "en"
+  },
+  {
+    "text": "ike",
+    "start_ms": 37380,
+    "end_ms": 37440,
+    "confidence": 0.9999019503593445,
+    "language": "en"
+  },
+  {
+    "text": " this",
+    "start_ms": 37680,
+    "end_ms": 37740,
+    "confidence": 0.7223280668258667,
+    "language": "en"
+  },
+  {
+    "text": " song",
+    "start_ms": 37920,
+    "end_ms": 37980,
+    "confidence": 0.9992190599441528,
+    "language": "en"
+  },
+  {
+    "text": ",",
+    "start_ms": 38220,
+    "end_ms": 38280,
+    "confidence": 0.999846875667572,
+    "language": "en"
+  },
+  {
+    "text": " I",
+    "start_ms": 38640,
+    "end_ms": 38700,
+    "confidence": 0.9999759793281555,
+    "language": "en"
+  },
+  {
+    "text": " do",
+    "start_ms": 38820,
+    "end_ms": 38880,
+    "confidence": 0.9994701147079468,
+    "language": "en"
+  },
+  {
+    "text": " l",
+    "start_ms": 39000,
+    "end_ms": 39060,
+    "confidence": 0.9999793767929077,
+    "language": "en"
+  },
+  {
+    "text": "ike",
+    "start_ms": 39120,
+    "end_ms": 39180,
+    "confidence": 0.9999961256980896,
+    "language": "en"
+  },
+  {
+    "text": " the",
+    "start_ms": 39360,
+    "end_ms": 39420,
+    "confidence": 0.6173033714294434,
+    "language": "en"
+  },
+  {
+    "text": " song",
+    "start_ms": 39660,
+    "end_ms": 39720,
+    "confidence": 0.999687671661377,
+    "language": "en"
+  },
+  {
+    "text": " y",
+    "start_ms": 40200,
+    "end_ms": 40260,
+    "confidence": 0.8171366453170776,
+    "language": "en"
+  },
+  {
+    "text": "ou",
+    "start_ms": 40320,
+    "end_ms": 40380,
+    "confidence": 0.9999512434005737,
+    "language": "en"
+  },
+  {
+    "text": " sang",
+    "start_ms": 40620,
+    "end_ms": 40680,
+    "confidence": 0.6297758221626282,
+    "language": "en"
+  },
+  {
+    "text": ".",
+    "start_ms": 40740,
+    "end_ms": 40800,
+    "confidence": 0.9981601238250732,
+    "language": "en"
+  }
+]
