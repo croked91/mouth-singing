@@ -41,6 +41,7 @@ services:
       - sqlite_data:/data/sqlite
       - media_data:/data/media
       - models_data:/data/models
+      - ctc_model:/root/ctc_forced_aligner
     networks:
       - karaoke_net
     deploy:
