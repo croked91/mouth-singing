@@ -11,12 +11,14 @@ COPY shared/pyproject.toml /shared/pyproject.toml
 COPY shared/karaoke_shared/ /shared/karaoke_shared/
 RUN pip install --no-cache-dir /shared/
 
-# Backend package
+# Backend dependencies (install from pyproject.toml first for caching)
 COPY backend/pyproject.toml /app/pyproject.toml
-COPY backend/app/ /app/app/
-RUN pip install --no-cache-dir /app/
+RUN pip install --no-cache-dir .
 
-# Pre-create media directories
+# Backend source code
+COPY backend/app/ /app/app/
+
+# Pre-create data directories
 RUN mkdir -p /data/sqlite /data/media/mp3 /data/media/instrumental /data/media/clips
 
 EXPOSE 8000

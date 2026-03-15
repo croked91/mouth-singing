@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "Checking models..."
-python /worker/tools/download_models.py
+echo "=== Karaoke Worker ==="
+echo "WORKER_MODE=${WORKER_MODE:-gpu}"
+echo "WORKER_ID=${WORKER_ID:-worker-1}"
 
-echo "Starting worker..."
-exec python -m app.main
+# Project root must be on PYTHONPATH so `from worker.xxx` imports resolve
+export PYTHONPATH="${PYTHONPATH:-}:/project"
+
+exec python -m worker.app.main

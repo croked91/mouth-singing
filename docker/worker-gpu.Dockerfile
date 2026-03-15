@@ -13,8 +13,9 @@ ENV PIP_DEFAULT_TIMEOUT=300
 ENV PYTHONUNBUFFERED=1
 ENV HF_HOME=/data/models/hf
 ENV XDG_CACHE_HOME=/data/models/xdg
+ENV PYTHONPATH=/project
 
-WORKDIR /worker
+WORKDIR /project
 
 # Layer 1: PyTorch with CUDA 12.1 (heaviest, cached first)
 RUN pip install --no-cache-dir \
@@ -42,12 +43,11 @@ RUN pip install --no-cache-dir \
     aiosqlite>=0.20 structlog>=24.0 httpx>=0.27 "qdrant-client>=1.8" \
     pyphen>=0.16 beautifulsoup4>=4.12 lxml>=5.0 pydantic-settings>=2.0
 
-# Layer 7: worker code
-COPY worker/ /worker/
-RUN pip install --no-cache-dir --no-deps /worker/ 2>/dev/null || true
+# Layer 7: project code
+COPY worker/ /project/worker/
 
-COPY worker/entrypoint.sh /worker/entrypoint.sh
-RUN chmod +x /worker/entrypoint.sh
+COPY worker/entrypoint.sh /project/entrypoint.sh
+RUN chmod +x /project/entrypoint.sh
 
 ENV WORKER_MODE=gpu
-ENTRYPOINT ["/worker/entrypoint.sh"]
+ENTRYPOINT ["/project/entrypoint.sh"]
