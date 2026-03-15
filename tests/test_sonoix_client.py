@@ -1,3 +1,10 @@
+# LEGACY: This file tests the Sonoix transcription API integration which was
+# removed in v3-rc1. The Sonoix client (worker/app/pipeline/sonoix_client.py)
+# no longer exists in the restructured codebase. These tests are kept for
+# historical reference only and will be skipped automatically because the
+# module load at the top of the file will raise an AssertionError.
+# TODO: Delete this file or replace with tests for WhisperTranscriber.
+
 """Unit tests for SonoixClient.
 
 Strategy

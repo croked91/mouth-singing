@@ -1,6 +1,12 @@
-"""Shared fixtures for v3-rc1 worker tests.
+"""Shared fixtures for worker tests.
 
-PYTHONPATH must include v3-rc1/shared and v3-rc1/worker before running.
+The project root (parent of the ``worker/`` and ``shared/`` packages) and the
+``shared/`` source tree must both be on sys.path so that:
+
+  from worker.gpu.gpu_pipeline import GpuPipeline
+  from karaoke_shared.models.track import Track
+
+both resolve correctly.
 """
 
 from __future__ import annotations
@@ -10,12 +16,14 @@ import sys
 
 import pytest
 
-# Ensure shared and worker packages are importable.
+# _RC1_ROOT is the project root: /home/croked/karaoke/
 _RC1_ROOT = pathlib.Path(__file__).resolve().parent.parent.parent
-_SHARED = _RC1_ROOT / "shared"
-_WORKER = _RC1_ROOT / "worker"
 
-for p in (_SHARED, _WORKER):
+# The project root lets Python find the ``worker`` package (worker/__init__.py).
+# The shared/ subdirectory lets Python find ``karaoke_shared`` (shared/karaoke_shared/).
+_SHARED = _RC1_ROOT / "shared"
+
+for p in (_RC1_ROOT, _SHARED):
     if str(p) not in sys.path:
         sys.path.insert(0, str(p))
 

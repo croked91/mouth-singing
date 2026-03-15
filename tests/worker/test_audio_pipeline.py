@@ -9,13 +9,13 @@ import pytest
 from karaoke_shared.models.job import Job
 from karaoke_shared.models.track import SyllableTiming, Track
 
-from app.pipeline.audio_pipeline import AudioPipeline
-from app.pipeline.ctc_aligner import AlignmentStats
-from app.pipeline.lyrics_searcher import (
+from worker.gpu.gpu_pipeline import GpuPipeline
+from worker.common.ctc_aligner import AlignmentStats
+from worker.common.lyrics_searcher import (
     LyricsNotFoundError,
     LyricsResult,
 )
-from app.pipeline.whisper_transcriber import WhisperResult
+from worker.gpu.whisper_transcriber import WhisperResult
 
 
 # ---------------------------------------------------------------------------
@@ -114,7 +114,7 @@ def mock_deps():
 
 @pytest.fixture
 def pipeline(mock_deps):
-    return AudioPipeline(
+    return GpuPipeline(
         job_service=mock_deps["job_service"],
         uvr=mock_deps["uvr"],
         repo=mock_deps["repo"],
@@ -141,7 +141,7 @@ class TestPipelineSuccess:
         """Full pipeline produces status=ready and syncs QDrant."""
         job = _make_job()
 
-        with patch("app.pipeline.audio_pipeline.Path"):
+        with patch("worker.gpu.gpu_pipeline.Path"):
             with patch(
                 "karaoke_shared.utils.line_breaker.detect_line_breaks",
                 return_value=[SyllableTiming(syllable="test", start=0.0, end=1.0)],
@@ -160,7 +160,7 @@ class TestPipelineSuccess:
         """Pipeline calls UVR, VAD, Whisper, lyrics search, CTC, embedding."""
         job = _make_job()
 
-        with patch("app.pipeline.audio_pipeline.Path"):
+        with patch("worker.gpu.gpu_pipeline.Path"):
             with patch(
                 "karaoke_shared.utils.line_breaker.detect_line_breaks",
                 return_value=[],
@@ -203,7 +203,7 @@ class TestPipelineErrors:
         )
         job = _make_job()
 
-        with patch("app.pipeline.audio_pipeline.Path"):
+        with patch("worker.gpu.gpu_pipeline.Path"):
             await pipeline.process(job)
 
         mock_deps["job_service"].mark_failed.assert_called_once()
@@ -215,7 +215,7 @@ class TestPipelineErrors:
 
     @pytest.mark.asyncio
     async def test_no_lyrics_searcher(self, mock_deps):
-        pipeline = AudioPipeline(
+        pipeline = GpuPipeline(
             job_service=mock_deps["job_service"],
             uvr=mock_deps["uvr"],
             repo=mock_deps["repo"],
@@ -241,21 +241,21 @@ class TestPipelineHelpers:
     """Test helper methods."""
 
     def test_parse_hints_artist_title(self):
-        artist, title = AudioPipeline._parse_hints_from_path(
+        artist, title = GpuPipeline._parse_hints_from_path(
             "/data/media/Земфира - Хочешь.mp3"
         )
         assert artist == "Земфира"
         assert title == "Хочешь"
 
     def test_parse_hints_no_separator(self):
-        artist, title = AudioPipeline._parse_hints_from_path(
+        artist, title = GpuPipeline._parse_hints_from_path(
             "/data/media/some_track.mp3"
         )
         assert artist is None
         assert title is None
 
     def test_parse_hints_multiple_dashes(self):
-        artist, title = AudioPipeline._parse_hints_from_path(
+        artist, title = GpuPipeline._parse_hints_from_path(
             "/data/media/A - B - C.mp3"
         )
         assert artist == "A"

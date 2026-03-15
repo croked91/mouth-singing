@@ -24,7 +24,7 @@ from karaoke_shared.utils.syllabifier import Syllabifier
 
 
 class FakeWordToken:
-    """Minimal stand-in for worker.app.pipeline.sonoix_client.WordToken."""
+    """Minimal stand-in for a word-token model (no worker imports needed)."""
 
     def __init__(
         self,

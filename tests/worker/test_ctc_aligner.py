@@ -19,7 +19,7 @@ def _make_aligner():
         mock_singleton.alignment_tokenizer = MagicMock()
         mock_cls.return_value = mock_singleton
 
-        from app.pipeline.ctc_aligner import CTCAligner
+        from worker.common.ctc_aligner import CTCAligner
 
         return CTCAligner(
             syllabifier=Syllabifier(),
@@ -46,25 +46,25 @@ class TestCTCAlignerUnit:
             aligner.align("/fake/vocals.wav", "   \n  ", "ru")
 
     def test_lang_flags_ru(self):
-        from app.pipeline.ctc_aligner import CTCAligner
+        from worker.common.ctc_aligner import CTCAligner
         iso3, romanize = CTCAligner._lang_flags("ru")
         assert iso3 == "rus"
         assert romanize is True
 
     def test_lang_flags_en(self):
-        from app.pipeline.ctc_aligner import CTCAligner
+        from worker.common.ctc_aligner import CTCAligner
         iso3, romanize = CTCAligner._lang_flags("en")
         assert iso3 == "eng"
         assert romanize is False
 
     def test_lang_flags_unknown(self):
-        from app.pipeline.ctc_aligner import CTCAligner
+        from worker.common.ctc_aligner import CTCAligner
         iso3, romanize = CTCAligner._lang_flags("fr")
         assert iso3 == "eng"
         assert romanize is True
 
     def test_time_to_frame(self):
-        from app.pipeline.ctc_aligner import CTCAligner
+        from worker.common.ctc_aligner import CTCAligner
         assert CTCAligner._time_to_frame(1.0, 20) == 50
         assert CTCAligner._time_to_frame(0.0, 20) == 0
         assert CTCAligner._time_to_frame(0.5, 20) == 25
@@ -134,7 +134,7 @@ class TestCTCAlignerIntegration:
     def aligner(self):
         """Real CTCAligner (loads MMS-300m, ~5s)."""
         try:
-            from app.pipeline.ctc_aligner import CTCAligner
+            from worker.common.ctc_aligner import CTCAligner
             return CTCAligner(syllabifier=Syllabifier())
         except Exception:
             pytest.skip("ctc-forced-aligner not available")

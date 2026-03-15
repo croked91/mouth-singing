@@ -1,3 +1,11 @@
+# LEGACY: This file was written against the old v2 worker structure which had
+# worker/app/pipeline/audio_pipeline.py and worker/app/pipeline/uvr_separator.py.
+# After restructuring, those paths no longer exist. The v3 equivalent tests
+# are in tests/worker/test_audio_pipeline.py (using worker.gpu.gpu_pipeline).
+# This file is kept for historical reference only and will fail at import time
+# because the importlib.util paths it loads no longer exist.
+# TODO: Delete this file once confirmed the tests/worker/ suite covers the same ground.
+
 """Unit tests for AudioPipeline, UVRSeparator error handling, and JobPoller.
 
 Strategy

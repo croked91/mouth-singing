@@ -8,7 +8,7 @@ import httpx
 import pytest
 import respx
 
-from app.pipeline.lyrics_searcher import (
+from worker.common.lyrics_searcher import (
     LyricsAPIError,
     LyricsNotFoundError,
     LyricsResult,

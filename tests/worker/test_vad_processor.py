@@ -7,7 +7,7 @@ import pathlib
 import numpy as np
 import pytest
 
-from app.pipeline.vad_processor import VADProcessor
+from worker.common.vad_processor import VADProcessor
 
 
 class TestVADProcessor:

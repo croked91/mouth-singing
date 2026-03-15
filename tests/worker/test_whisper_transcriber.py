@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.pipeline.whisper_transcriber import WhisperResult
+from worker.gpu.whisper_transcriber import WhisperResult
 
 
 class TestWhisperResult:
@@ -25,7 +25,7 @@ class TestWhisperTranscriber:
     @patch("faster_whisper.WhisperModel")
     def test_transcribe_returns_result(self, mock_model_cls):
         """transcribe() joins segment texts and computes confidence."""
-        from app.pipeline.whisper_transcriber import WhisperTranscriber
+        from worker.gpu.whisper_transcriber import WhisperTranscriber
 
         mock_model = MagicMock()
         mock_model_cls.return_value = mock_model
@@ -57,7 +57,7 @@ class TestWhisperTranscriber:
     @patch("faster_whisper.WhisperModel")
     def test_transcribe_empty_segments(self, mock_model_cls):
         """Empty segments return empty text with confidence 0."""
-        from app.pipeline.whisper_transcriber import WhisperTranscriber
+        from worker.gpu.whisper_transcriber import WhisperTranscriber
 
         mock_model = MagicMock()
         mock_model_cls.return_value = mock_model
@@ -77,7 +77,7 @@ class TestWhisperTranscriber:
     @patch("faster_whisper.WhisperModel")
     def test_cleanup_releases_model(self, mock_model_cls):
         """cleanup() sets model to None."""
-        from app.pipeline.whisper_transcriber import WhisperTranscriber
+        from worker.gpu.whisper_transcriber import WhisperTranscriber
 
         mock_model = MagicMock()
         mock_model_cls.return_value = mock_model
