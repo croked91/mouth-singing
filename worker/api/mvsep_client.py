@@ -182,7 +182,7 @@ class MVSEPClient:
                         f"MVSEP rejected the job: {body}"
                     )
 
-                job_id: str = body["data"]["id"]
+                job_id: str = body["data"].get("id") or body["data"]["hash"]
                 return job_id
 
             except (MVSEPAPIError, MVSEPError):
@@ -222,7 +222,7 @@ class MVSEPClient:
             MVSEPAPIError: On persistent HTTP errors while polling.
         """
         url = f"{self._api_url}/separation/get"
-        params = {"id": job_id, "api_token": self._api_key}
+        params = {"hash": job_id, "api_token": self._api_key}
         poll_timeout = httpx.Timeout(15.0, read=30.0, write=10.0)
 
         start_time = time.monotonic()
@@ -250,11 +250,17 @@ class MVSEPClient:
                 elapsed_sec=round(elapsed, 1),
             )
 
-            if job_status == "finished":
-                output_files = status_data.get("output_files", [])
+            if job_status in ("finished", "done"):
+                data = status_data.get("data", status_data)
+                output_files = (
+                    data.get("files")
+                    or data.get("output_files")
+                    or status_data.get("output_files")
+                    or []
+                )
                 if not output_files:
                     raise MVSEPJobError(
-                        f"Job {job_id} finished but output_files is empty"
+                        f"Job {job_id} finished but no output files found"
                     )
                 return output_files
 
@@ -350,28 +356,33 @@ class MVSEPClient:
         instrumental_entry = None
 
         for entry in output_files:
-            filename = entry.get("filename", "").lower()
-            if _is_instrumental(filename):
+            # MVSEP returns either {type, url} or {filename, large_path}
+            label = (
+                entry.get("type", "")
+                or entry.get("filename", "")
+                or entry.get("url", "")
+            ).lower()
+            if _is_instrumental(label):
                 instrumental_entry = entry
-            elif _is_vocals(filename):
+            elif _is_vocals(label):
                 vocals_entry = entry
 
         if vocals_entry is None:
-            filenames = [e.get("filename", "") for e in output_files]
+            labels = [e.get("type") or e.get("filename", "") for e in output_files]
             raise MVSEPParseError(
-                f"Cannot identify vocals file in output_files: {filenames}"
+                f"Cannot identify vocals file in output_files: {labels}"
             )
 
         if instrumental_entry is None:
-            filenames = [e.get("filename", "") for e in output_files]
+            labels = [e.get("type") or e.get("filename", "") for e in output_files]
             raise MVSEPParseError(
-                f"Cannot identify instrumental file in output_files: {filenames}"
+                f"Cannot identify instrumental file in output_files: {labels}"
             )
 
-        vocals_url = vocals_entry["large_path"]
-        instrumental_url = instrumental_entry["large_path"]
+        vocals_url = vocals_entry.get("url") or vocals_entry.get("large_path")
+        instrumental_url = instrumental_entry.get("url") or instrumental_entry.get("large_path")
 
-        ext = self._output_format
+        ext = Path(vocals_url).suffix.lstrip(".") if vocals_url else "mp3"
         vocals_path = self._output_dir / f"{base_name}_vocals.{ext}"
         instrumental_path = self._output_dir / f"{base_name}_instrumental.{ext}"
 
