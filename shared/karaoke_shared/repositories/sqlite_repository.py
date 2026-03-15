@@ -170,9 +170,8 @@ class SQLiteRepository:
     async def list_popular(self, limit: int = 10) -> list[Track]:
         """Return the most-played ready tracks, ordered by play count descending."""
         cursor = await self.db.execute(
-            "SELECT * FROM tracks"
-            f" WHERE status = '{TrackStatus.READY}' ORDER BY play_count DESC, RANDOM() LIMIT ?",
-            (limit,),
+            "SELECT * FROM tracks WHERE status = ? ORDER BY play_count DESC, RANDOM() LIMIT ?",
+            (TrackStatus.READY, limit),
         )
         rows = await cursor.fetchall()
         return [self._track_from_row(row) for row in rows]
@@ -180,9 +179,8 @@ class SQLiteRepository:
     async def list_random(self, limit: int = 10) -> list[Track]:
         """Return random ready tracks from the catalog."""
         cursor = await self.db.execute(
-            "SELECT * FROM tracks"
-            f" WHERE status = '{TrackStatus.READY}' ORDER BY RANDOM() LIMIT ?",
-            (limit,),
+            "SELECT * FROM tracks WHERE status = ? ORDER BY RANDOM() LIMIT ?",
+            (TrackStatus.READY, limit),
         )
         rows = await cursor.fetchall()
         return [self._track_from_row(row) for row in rows]
@@ -340,16 +338,16 @@ class SQLiteRepository:
     async def terminate_session(self, session_id: str) -> None:
         """Mark a session as terminated and record the termination timestamp."""
         await self.db.execute(
-            f"UPDATE sessions SET status = '{SessionStatus.TERMINATED}', terminated_at = ? WHERE id = ?",
-            (_now_iso(), session_id),
+            "UPDATE sessions SET status = ?, terminated_at = ? WHERE id = ?",
+            (SessionStatus.TERMINATED, _now_iso(), session_id),
         )
         await self.db.commit()
 
     async def get_active_by_room(self, room_id: str) -> Session | None:
         """Return the active session for a room, or ``None`` if none exists."""
         cursor = await self.db.execute(
-            f"SELECT * FROM sessions WHERE room_id = ? AND status = '{SessionStatus.ACTIVE}' LIMIT 1",
-            (room_id,),
+            "SELECT * FROM sessions WHERE room_id = ? AND status = ? LIMIT 1",
+            (room_id, SessionStatus.ACTIVE),
         )
         row = await cursor.fetchone()
         if row is None:

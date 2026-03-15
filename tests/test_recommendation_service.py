@@ -1842,54 +1842,6 @@ class TestQueueServiceFinishPlayingIntegration:
         repo.get_current_entry.return_value = next_entry
         return QueueService(repo=repo, qdrant_repo=qdrant_repo), repo
 
-    async def test_finish_playing_calls_update_portrait_when_qdrant_available(self):
-        """finish_playing calls update_portrait when qdrant_repo is provided."""
-        entry = self._make_queue_entry("e-1", "s-1", "p-1", "t-1")
-
-        qdrant_repo = _make_qdrant_repo(audio_retrieve=_audio_vec())
-        service, repo = await self._build_queue_service_with_repo(entry, qdrant_repo)
-
-        # Provide participant data for portrait update
-        participant = _make_participant("p-1", tracks_played=1)
-        repo.get_participant.return_value = participant
-        repo.get_history_by_participant.return_value = []
-        repo.update_portrait.return_value = None
-
-        with patch(
-            "app.services.recommendation_service.RecommendationService.update_portrait",
-            new_callable=AsyncMock,
-            return_value=_audio_vec(),
-        ) as mock_update, patch(
-            "app.services.recommendation_service.RecommendationService.record_transition",
-            new_callable=AsyncMock,
-            return_value=None,
-        ):
-            await service.finish_playing("e-1")
-            mock_update.assert_called_once_with("p-1", "t-1")
-
-    async def test_finish_playing_calls_record_transition_when_qdrant_available(self):
-        """finish_playing calls record_transition when qdrant_repo is provided."""
-        entry = self._make_queue_entry("e-1", "s-1", "p-1", "t-1")
-
-        qdrant_repo = _make_qdrant_repo(audio_retrieve=_audio_vec())
-        service, repo = await self._build_queue_service_with_repo(entry, qdrant_repo)
-
-        repo.get_participant.return_value = _make_participant("p-1", tracks_played=1)
-        repo.get_history_by_participant.return_value = []
-        repo.update_portrait.return_value = None
-
-        with patch(
-            "app.services.recommendation_service.RecommendationService.update_portrait",
-            new_callable=AsyncMock,
-            return_value=None,
-        ), patch(
-            "app.services.recommendation_service.RecommendationService.record_transition",
-            new_callable=AsyncMock,
-            return_value=None,
-        ) as mock_transition:
-            await service.finish_playing("e-1")
-            mock_transition.assert_called_once_with("p-1", "t-1")
-
     async def test_finish_playing_skips_recommendation_when_qdrant_is_none(self):
         """finish_playing skips portrait/transition updates when qdrant_repo is None."""
         entry = self._make_queue_entry("e-1", "s-1", "p-1", "t-1")

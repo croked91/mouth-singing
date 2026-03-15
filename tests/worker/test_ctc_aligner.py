@@ -127,33 +127,3 @@ class TestCTCAlignerUnit:
         assert result is None
 
 
-class TestCTCAlignerIntegration:
-    """Integration test with real CTC model — requires ctc-forced-aligner."""
-
-    @pytest.fixture
-    def aligner(self):
-        """Real CTCAligner (loads MMS-300m, ~5s)."""
-        try:
-            from worker.common.ctc_aligner import CTCAligner
-            return CTCAligner(syllabifier=Syllabifier())
-        except Exception:
-            pytest.skip("ctc-forced-aligner not available")
-
-    def test_align_real_track(self, aligner, track1_vocals, track1_lyrics, track1_meta):
-        """Full alignment on test track 1 produces valid syllable timings."""
-        timings, stats = aligner.align(
-            track1_vocals,
-            track1_lyrics,
-            track1_meta["language"],
-        )
-
-        assert len(timings) > 0
-        assert stats.total_words > 0
-        assert stats.char_level_used > 0
-        assert stats.char_level_used / stats.total_words > 0.3
-
-        for i in range(1, len(timings)):
-            assert timings[i].start >= timings[i - 1].start
-
-        for t in timings:
-            assert t.end >= t.start

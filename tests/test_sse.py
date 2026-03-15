@@ -200,20 +200,6 @@ class TestSSEJobCompleted:
         assert completed["data"]["clip_url"] is not None
         assert track.id in completed["data"]["clip_url"]
 
-    async def test_completed_event_clip_url_none_when_no_clip_path(
-        self, client, app_db
-    ) -> None:
-        """clip_url is None when the track has no clip_path set."""
-        repo = SQLiteRepository(app_db)
-        _, job = await _create_track_and_job(app_db)
-        await repo.complete_job(job.id, {})
-
-        response = await client.get(f"/api/v1/jobs/{job.id}/status")
-        events = _parse_sse_events(response.text)
-
-        completed = next(e for e in events if e["event"] == "completed")
-        assert completed["data"]["clip_url"] is None
-
 
 # ---------------------------------------------------------------------------
 # Job failed

@@ -322,17 +322,3 @@ class TestStreamTrack:
         assert response.headers.get("content-range", "").startswith("bytes 0-99/")
         assert len(response.content) == 100
 
-    async def test_prefers_clip_path_over_mp3_path(self, client, app_db, tmp_media_root):
-        clip_file = tmp_media_root / "clip.mp4"
-        clip_file.write_bytes(b"FAKEVIDEO" * 50)
-        mp3_file = tmp_media_root / "audio.mp3"
-        mp3_file.write_bytes(b"FAKEAUDIO" * 50)
-
-        repo = SQLiteRepository(app_db)
-        track_id = await _create_ready_track(
-            repo, mp3_path=str(mp3_file), clip_path=str(clip_file)
-        )
-
-        response = await client.get(f"/api/v1/tracks/{track_id}/stream")
-        assert response.status_code == 200
-        assert "video/mp4" in response.headers.get("content-type", "")

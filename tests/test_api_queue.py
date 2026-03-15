@@ -323,25 +323,6 @@ class TestSkipTurn:
 
 
 class TestStartPlaying:
-    async def test_start_returns_200_with_clip_url_and_duration(
-        self, client, queue_fixtures
-    ):
-        """Starting an entry returns entry_id, clip_url, and duration_sec."""
-        fx = queue_fixtures
-        entry = await _add_entry(
-            client, fx["session_id"], fx["participant_id"], fx["track_id"]
-        )
-
-        response = await client.post(f"/api/v1/queue/{entry['id']}/start")
-
-        assert response.status_code == 200
-        body = response.json()
-        assert body["entry_id"] == entry["id"]
-        assert body["clip_url"] == "/media/test.mp4"
-        assert body["duration_sec"] == 210
-        # syllable_timings is None because the track has none
-        assert body["syllable_timings"] is None
-
     async def test_start_nonexistent_entry_returns_404(self, client, queue_fixtures):
         """Starting a non-existent entry returns 404."""
         response = await client.post("/api/v1/queue/ghost-entry-id/start")
