@@ -1,0 +1,22 @@
+# Production overrides — bind mounts instead of named volumes
+# Usage: docker compose -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.prod.yml up -d
+
+services:
+  qdrant:
+    volumes:
+      - /root/qdrant_storage:/qdrant/storage
+
+  backend:
+    volumes:
+      - /root/bootstrap_output:/data/sqlite:rw
+      - /root/bootstrap_output:/data/media:rw
+
+  worker:
+    volumes:
+      - /root/bootstrap_output:/data/sqlite:rw
+      - /root/bootstrap_output:/data/media:rw
+      - /root/models:/data/models:rw
+
+  frontend:
+    ports:
+      - "80:80"

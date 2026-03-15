@@ -6,6 +6,8 @@ skip/finish flows that touch multiple tables all live here.
 
 from __future__ import annotations
 
+from typing import Any
+
 import structlog
 from karaoke_shared.constants import QueueEntryStatus
 from karaoke_shared.models.play_history import PlayHistoryCreate
@@ -22,15 +24,21 @@ class QueueService:
     Args:
         repo: An open SQLiteRepository for the current request.
         qdrant_repo: Optional QDrant repository for recommendation updates.
+        recommendation_service: Optional pre-constructed RecommendationService.
+            When provided, ``finish_playing`` uses it directly instead of
+            constructing a new instance. Pass ``Any`` type to avoid a circular
+            import between this module and ``recommendation_service``.
     """
 
     def __init__(
         self,
         repo: SQLiteRepository,
         qdrant_repo: QDrantRepository | None = None,
+        recommendation_service: Any = None,
     ) -> None:
         self.repo = repo
         self.qdrant_repo = qdrant_repo
+        self.recommendation_service = recommendation_service
 
     async def get_queue(self, session_id: str) -> list[QueueEntry]:
         """Return active (queued + playing) entries for the session, by position."""
@@ -115,17 +123,12 @@ class QueueService:
         await self.repo.increment_tracks_played(entry.participant_id)
 
         # Update portrait vector and record transition (Phase 8b).
-        if self.qdrant_repo is not None:
+        if self.recommendation_service is not None:
             try:
-                from app.services.recommendation_service import (  # noqa: PLC0415
-                    RecommendationService,
-                )
-
-                rec_service = RecommendationService(self.repo, self.qdrant_repo)
-                await rec_service.update_portrait(
+                await self.recommendation_service.update_portrait(
                     entry.participant_id, entry.track_id
                 )
-                await rec_service.record_transition(
+                await self.recommendation_service.record_transition(
                     entry.participant_id, entry.track_id
                 )
             except Exception as exc:

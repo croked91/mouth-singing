@@ -1,4 +1,4 @@
-"""Audio processing pipeline (v3-rc2).
+"""API audio processing pipeline (v3-rc2 mode).
 
 Orchestrates the pipeline using cloud APIs instead of local GPU:
   1. MVSEP API separation (replaces local UVR)
@@ -25,14 +25,12 @@ from karaoke_shared.repositories.qdrant_repository import QDrantRepository
 from karaoke_shared.repositories.sqlite_repository import SQLiteRepository
 from karaoke_shared.services.job_service import JobService
 
-from app.pipeline.ctc_aligner import CTCAligner
-from app.pipeline.lyrics_searcher import (
-    LyricsNotFoundError,
-    LyricsSearcher,
-)
-from app.pipeline.mvsep_client import MVSEPClient
-from app.pipeline.vad_processor import VADProcessor
-from app.pipeline.whisper_client import WhisperAPIClient
+from worker.api.mvsep_client import MVSEPClient
+from worker.api.whisper_client import WhisperAPIClient
+from worker.common.base_pipeline import BasePipeline
+from worker.common.ctc_aligner import CTCAligner
+from worker.common.lyrics_searcher import LyricsNotFoundError, LyricsSearcher
+from worker.common.vad_processor import VADProcessor
 
 logger = structlog.get_logger(__name__)
 
@@ -42,8 +40,8 @@ _WHISPER_COST_PER_MINUTE = 0.006
 _CHAT_COST_ESTIMATE = 0.001
 
 
-class AudioPipeline:
-    """Orchestrates the v3-rc2 audio processing pipeline.
+class ApiPipeline(BasePipeline):
+    """Orchestrates the v3-rc2 API audio processing pipeline.
 
     Args:
         job_service: For updating job state.
@@ -56,7 +54,7 @@ class AudioPipeline:
         feature_extractor: Audio feature extractor (optional).
         lyric_embedder: Lyrics embedder (optional).
         qdrant_repo: QDrant repository (optional).
-        settings: Worker settings.
+        settings: Worker settings instance.
     """
 
     def __init__(
@@ -86,14 +84,18 @@ class AudioPipeline:
         self.settings = settings
 
     async def process(self, job: Job) -> None:
-        """Run the full pipeline for a single job."""
+        """Run the full API pipeline for a single job."""
         track = await self.repo.get_track(job.track_id)
         if track is None:
-            await self.job_service.mark_failed(job.id, f"Track {job.track_id} not found")
+            await self.job_service.mark_failed(
+                job.id, f"Track {job.track_id} not found"
+            )
             return
 
         if not track.mp3_path:
-            await self.job_service.mark_failed(job.id, f"Track {job.track_id} has no mp3_path")
+            await self.job_service.mark_failed(
+                job.id, f"Track {job.track_id} has no mp3_path"
+            )
             return
 
         vocals_path: str | None = None
@@ -149,7 +151,9 @@ class AudioPipeline:
             await self.job_service.mark_step(job.id, "searching_lyrics", 0)
 
             if self.lyrics_searcher is None:
-                await self.job_service.mark_failed(job.id, "Lyrics searcher not configured")
+                await self.job_service.mark_failed(
+                    job.id, "Lyrics searcher not configured"
+                )
                 return
 
             artist_hint, title_hint = self._parse_hints_from_path(track.mp3_path)
@@ -173,7 +177,9 @@ class AudioPipeline:
                     await self._sync_qdrant_audio_only(
                         job.track_id, track, feature_vector,
                     )
-                await self.job_service.mark_failed(job.id, f"Lyrics not found: {exc}")
+                await self.job_service.mark_failed(
+                    job.id, f"Lyrics not found: {exc}"
+                )
                 return
 
             await self.job_service.mark_step(job.id, "searching_lyrics", 100)
@@ -278,7 +284,7 @@ class AudioPipeline:
     async def _extract_features(
         self, mp3_path: str, job_id: str,
     ) -> list[float] | None:
-        """Extract audio features (parallel with ASR)."""
+        """Extract audio features (runs in parallel with ASR)."""
         if self.feature_extractor is None:
             return None
         await self.job_service.mark_step(job_id, "extracting_features", 0)
@@ -329,7 +335,7 @@ class AudioPipeline:
         feature_vector: list[float] | None,
         lyric_vector: list[float] | None,
     ) -> None:
-        """Sync both audio features and lyrics embeddings to QDrant."""
+        """Sync audio features and lyrics embeddings to QDrant."""
         if self.qdrant_repo is None:
             return
 

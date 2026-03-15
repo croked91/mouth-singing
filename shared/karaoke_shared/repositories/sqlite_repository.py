@@ -446,6 +446,24 @@ class SQLiteRepository:
             )
         await self.db.commit()
 
+    async def get_participants_by_ids(
+        self, participant_ids: list[str]
+    ) -> dict[str, Participant]:
+        """Return a dict of ``{participant_id: Participant}`` for the given IDs.
+
+        Missing IDs are silently omitted.  Uses a single ``IN (...)`` query
+        instead of one query per ID.
+        """
+        if not participant_ids:
+            return {}
+        placeholders = ",".join("?" * len(participant_ids))
+        cursor = await self.db.execute(
+            f"SELECT * FROM participants WHERE id IN ({placeholders})",  # noqa: S608
+            participant_ids,
+        )
+        rows = await cursor.fetchall()
+        return {p.id: p for p in (self._participant_from_row(r) for r in rows)}
+
     async def increment_tracks_played(self, participant_id: str) -> None:
         """Increment the tracks_played counter for a participant by 1."""
         await self.db.execute(

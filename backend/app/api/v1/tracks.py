@@ -150,6 +150,7 @@ async def get_track(
     summary="Upload an MP3 file for processing",
 )
 async def upload_track(
+    request: Request,
     file: UploadFile = FastAPIFile(..., description="MP3 file, max 50 MB"),
     artist: str | None = Form(default=None),
     title: str | None = Form(default=None),
@@ -160,10 +161,31 @@ async def upload_track(
     Validates:
     - File extension must be ``.mp3``.
     - Content-Type must be ``audio/mpeg`` or ``audio/mp3``.
-    - File size must not exceed 50 MB.
+    - File size must not exceed 50 MB (checked via Content-Length header first,
+      then confirmed after reading the body).
 
     Returns a 202 Accepted response with the track ID and job ID.
     """
+    # Early rejection based on the Content-Length header.  This avoids
+    # reading the entire body before we can tell the client the file is
+    # too large.  We still re-check after reading because Content-Length
+    # can be missing or spoofed.
+    content_length_header = request.headers.get("content-length")
+    if content_length_header is not None:
+        try:
+            declared_size = int(content_length_header)
+        except ValueError:
+            declared_size = None
+
+        if declared_size is not None and declared_size > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=(
+                    f"File too large: {declared_size} bytes declared in "
+                    f"Content-Length. Maximum is {MAX_UPLOAD_BYTES} bytes (50 MB)."
+                ),
+            )
+
     # Validate file extension.
     filename = file.filename or ""
     extension = pathlib.Path(filename).suffix.lower()

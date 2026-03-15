@@ -1,7 +1,7 @@
-"""Audio processing pipeline (v3-rc1).
+"""GPU audio processing pipeline (v3-rc1 mode).
 
-Orchestrates the 10-step pipeline:
-  1. UVR separation (GPU)
+Orchestrates the 10-step pipeline using local GPU hardware:
+  1. UVR separation (GPU, BS-Roformer)
   2. Feature extraction (CPU, parallel with 3+4)
   3. VAD on vocals (CPU, parallel with 2)
   4. Whisper ASR (GPU, after VAD)
@@ -25,33 +25,31 @@ from karaoke_shared.repositories.qdrant_repository import QDrantRepository
 from karaoke_shared.repositories.sqlite_repository import SQLiteRepository
 from karaoke_shared.services.job_service import JobService
 
-from app.pipeline.ctc_aligner import CTCAligner
-from app.pipeline.lyrics_searcher import (
-    LyricsNotFoundError,
-    LyricsSearcher,
-)
-from app.pipeline.uvr_separator import UVRSeparator
-from app.pipeline.vad_processor import VADProcessor
-from app.pipeline.whisper_transcriber import WhisperTranscriber
+from worker.common.base_pipeline import BasePipeline
+from worker.common.ctc_aligner import CTCAligner
+from worker.common.lyrics_searcher import LyricsNotFoundError, LyricsSearcher
+from worker.common.vad_processor import VADProcessor
+from worker.gpu.uvr_separator import UVRSeparator
+from worker.gpu.whisper_transcriber import WhisperTranscriber
 
 logger = structlog.get_logger(__name__)
 
 
-class AudioPipeline:
-    """Orchestrates the v3-rc1 audio processing pipeline.
+class GpuPipeline(BasePipeline):
+    """Orchestrates the v3-rc1 GPU audio processing pipeline.
 
     Args:
         job_service: For updating job state.
-        uvr: Vocal/instrumental separator.
+        uvr: Vocal/instrumental separator (local GPU).
         repo: SQLite repository.
-        whisper: Whisper ASR transcriber.
+        whisper: faster-whisper ASR transcriber.
         vad_processor: Voice activity detector.
         lyrics_searcher: LLM-based lyrics finder (optional).
         ctc_aligner: CTC forced alignment.
         feature_extractor: Audio feature extractor (optional).
         lyric_embedder: Lyrics embedder (optional).
         qdrant_repo: QDrant repository (optional).
-        settings: Worker settings (for fallback device config).
+        settings: Worker settings instance.
     """
 
     def __init__(
@@ -81,14 +79,18 @@ class AudioPipeline:
         self.settings = settings
 
     async def process(self, job: Job) -> None:
-        """Run the full pipeline for a single job."""
+        """Run the full GPU pipeline for a single job."""
         track = await self.repo.get_track(job.track_id)
         if track is None:
-            await self.job_service.mark_failed(job.id, f"Track {job.track_id} not found")
+            await self.job_service.mark_failed(
+                job.id, f"Track {job.track_id} not found"
+            )
             return
 
         if not track.mp3_path:
-            await self.job_service.mark_failed(job.id, f"Track {job.track_id} has no mp3_path")
+            await self.job_service.mark_failed(
+                job.id, f"Track {job.track_id} has no mp3_path"
+            )
             return
 
         try:
@@ -101,7 +103,7 @@ class AudioPipeline:
                 track.mp3_path
             )
 
-            # Free VRAM before Whisper
+            # Free VRAM before Whisper.
             await asyncio.to_thread(self.uvr.cleanup)
 
             await self.repo.update_track(
@@ -118,7 +120,7 @@ class AudioPipeline:
                 self._vad_and_transcribe(vocals_path, job.id),
             )
 
-            # Free Whisper VRAM
+            # Free Whisper VRAM.
             await asyncio.to_thread(self.whisper.cleanup)
 
             # ==============================================================
@@ -127,7 +129,9 @@ class AudioPipeline:
             await self.job_service.mark_step(job.id, "searching_lyrics", 0)
 
             if self.lyrics_searcher is None:
-                await self.job_service.mark_failed(job.id, "Lyrics searcher not configured")
+                await self.job_service.mark_failed(
+                    job.id, "Lyrics searcher not configured"
+                )
                 return
 
             artist_hint, title_hint = self._parse_hints_from_path(track.mp3_path)
@@ -151,12 +155,14 @@ class AudioPipeline:
                     await self._sync_qdrant_audio_only(
                         job.track_id, track, feature_vector
                     )
-                await self.job_service.mark_failed(job.id, f"Lyrics not found: {exc}")
+                await self.job_service.mark_failed(
+                    job.id, f"Lyrics not found: {exc}"
+                )
                 return
 
             await self.job_service.mark_step(job.id, "searching_lyrics", 100)
 
-            # Update artist/title from LLM
+            # Update artist/title from LLM.
             await self.repo.update_track(
                 job.track_id,
                 TrackUpdate(
@@ -197,7 +203,7 @@ class AudioPipeline:
                 detect_line_breaks, syllable_timings, vocals_path
             )
 
-            # Clean up vocal files (after line break detection uses them)
+            # Clean up vocal files after line break detection.
             Path(vocals_path).unlink(missing_ok=True)
             cleaned_path = Path(vocals_path).parent / "cleaned_vocals.wav"
             cleaned_path.unlink(missing_ok=True)
@@ -226,7 +232,7 @@ class AudioPipeline:
                 job.id, job.track_id, track, feature_vector, lyric_vector
             )
 
-            # Finalize
+            # Finalize.
             await self.repo.update_track(
                 job.track_id,
                 TrackUpdate(status="ready", qdrant_synced=1),
@@ -243,6 +249,11 @@ class AudioPipeline:
         except Exception as exc:
             logger.error("pipeline_failed", job_id=job.id, error=str(exc), exc_info=True)
             await self.job_service.mark_failed(job.id, str(exc))
+
+    def cleanup(self) -> None:
+        """Release GPU resources (UVR + Whisper models)."""
+        self.uvr.cleanup()
+        self.whisper.cleanup()
 
     # ------------------------------------------------------------------
     # Helper methods
@@ -269,7 +280,7 @@ class AudioPipeline:
     async def _extract_features(
         self, mp3_path: str, job_id: str
     ) -> list[float] | None:
-        """Extract audio features (parallel with ASR)."""
+        """Extract audio features (runs in parallel with ASR)."""
         if self.feature_extractor is None:
             return None
         await self.job_service.mark_step(job_id, "extracting_features", 0)
@@ -283,8 +294,10 @@ class AudioPipeline:
             logger.warning("feature_extraction_failed", error=str(exc))
             return None
 
-    async def _vad_and_transcribe(self, vocals_path: str, job_id: str):
-        """VAD + Whisper ASR (sequential within the parallel branch)."""
+    async def _vad_and_transcribe(
+        self, vocals_path: str, job_id: str
+    ):
+        """VAD + faster-whisper ASR (sequential within the parallel branch)."""
         await self.job_service.mark_step(job_id, "transcribing", 0)
         cleaned_path = await asyncio.to_thread(
             self.vad_processor.process, vocals_path
@@ -301,7 +314,7 @@ class AudioPipeline:
         feature_vector: list[float] | None,
         lyric_vector: list[float] | None,
     ) -> None:
-        """Sync both audio features and lyrics embeddings to QDrant."""
+        """Sync audio features and lyrics embeddings to QDrant."""
         if self.qdrant_repo is None:
             return
 

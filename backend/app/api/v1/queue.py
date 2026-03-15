@@ -13,11 +13,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from karaoke_shared.models.queue import QueueEntry
 from karaoke_shared.models.session import Participant
 from karaoke_shared.models.track import SyllableTiming, Track
-from karaoke_shared.repositories.qdrant_repository import QDrantRepository
 from karaoke_shared.repositories.sqlite_repository import SQLiteRepository
 from pydantic import BaseModel
 
-from app.dependencies import get_qdrant_repo, get_sqlite_repo
+from app.dependencies import get_queue_service, get_sqlite_repo
 from app.services.queue_service import QueueService
 
 router = APIRouter()
@@ -78,13 +77,17 @@ class FinishPlayingResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-async def _enrich_entry(
-    entry: QueueEntry, repo: SQLiteRepository
+def _enrich_entry(
+    entry: QueueEntry,
+    participants: dict,
+    tracks: dict,
 ) -> QueueEntryWithDetails:
-    """Attach participant and track data to a bare QueueEntry."""
-    participant = await repo.get_participant(entry.participant_id)
-    track = await repo.get_track(entry.track_id)
+    """Attach participant and track data to a bare QueueEntry.
 
+    Expects pre-loaded lookup dicts so that callers can batch-load all
+    participants and tracks in a single query per table rather than issuing
+    one query per entry (N+1 problem).
+    """
     return QueueEntryWithDetails(
         id=entry.id,
         session_id=entry.session_id,
@@ -93,8 +96,8 @@ async def _enrich_entry(
         added_at=entry.added_at,
         started_at=entry.started_at,
         finished_at=entry.finished_at,
-        participant=participant,
-        track=track,
+        participant=participants.get(entry.participant_id),
+        track=tracks.get(entry.track_id),
     )
 
 
@@ -124,13 +127,20 @@ async def get_queue(
     if not entries:
         return QueueResponse(current=None, upcoming=[])
 
+    # Batch-load all participants and tracks referenced by the queue entries
+    # in two queries rather than 2*N individual lookups.
+    participant_ids = [e.participant_id for e in entries]
+    track_ids = [e.track_id for e in entries]
+    participants = await repo.get_participants_by_ids(participant_ids)
+    tracks = await repo.get_tracks_by_ids(track_ids)
+
     # The first entry in the ordered list is the current one (playing or
     # first-queued). Everything after it is upcoming.
     current_entry = entries[0]
     upcoming_entries = entries[1:]
 
-    current = await _enrich_entry(current_entry, repo)
-    upcoming = [await _enrich_entry(e, repo) for e in upcoming_entries]
+    current = _enrich_entry(current_entry, participants, tracks)
+    upcoming = [_enrich_entry(e, participants, tracks) for e in upcoming_entries]
 
     return QueueResponse(current=current, upcoming=upcoming)
 
@@ -232,7 +242,7 @@ async def start_playing(
 async def finish_playing(
     entry_id: str,
     repo: SQLiteRepository = Depends(get_sqlite_repo),
-    qdrant_repo: QDrantRepository = Depends(get_qdrant_repo),
+    service: QueueService = Depends(get_queue_service),
 ) -> FinishPlayingResponse:
     """Mark a queue entry as done and advance to the next entry.
 
@@ -253,7 +263,6 @@ async def finish_playing(
             detail=f"Queue entry '{entry_id}' not found.",
         )
 
-    service = QueueService(repo, qdrant_repo=qdrant_repo)
     next_entry = await service.finish_playing(entry_id)
 
     if next_entry is None:

@@ -12,6 +12,7 @@ Usage in a route::
         repo: SQLiteRepository = Depends(get_sqlite_repo),
         qdrant: QdrantClient = Depends(get_qdrant),
         qdrant_repo: QDrantRepository = Depends(get_qdrant_repo),
+        queue_service: QueueService = Depends(get_queue_service),
     ):
         ...
 """
@@ -20,6 +21,9 @@ import aiosqlite
 from fastapi import Request
 from karaoke_shared import QDrantRepository, SQLiteRepository
 from qdrant_client import QdrantClient
+
+from app.services.queue_service import QueueService
+from app.services.recommendation_service import RecommendationService
 
 
 def get_db(request: Request) -> aiosqlite.Connection:
@@ -56,6 +60,23 @@ def get_qdrant_repo(request: Request) -> QDrantRepository:
     ``asyncio.to_thread()`` since the underlying client is synchronous.
     """
     return QDrantRepository(request.app.state.qdrant)
+
+
+def get_queue_service(request: Request) -> QueueService:
+    """Return a QueueService with a pre-wired RecommendationService.
+
+    Building both objects here (rather than inside route handlers) keeps the
+    circular-import fix in one place: dependencies.py is the only module
+    that imports both QueueService and RecommendationService.
+    """
+    sqlite_repo = get_sqlite_repo(request)
+    qdrant_repo = get_qdrant_repo(request)
+    recommendation_service = RecommendationService(sqlite_repo, qdrant_repo)
+    return QueueService(
+        repo=sqlite_repo,
+        qdrant_repo=qdrant_repo,
+        recommendation_service=recommendation_service,
+    )
 
 
 def get_embedder(request: Request):

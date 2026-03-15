@@ -5,6 +5,7 @@ All settings have sensible defaults for local development. In production
 in docker-compose.yml.
 """
 
+import structlog
 from pydantic_settings import BaseSettings
 
 
@@ -28,3 +29,9 @@ class Settings(BaseSettings):
 
 # Module-level singleton used by other modules.
 settings = Settings()
+
+if settings.admin_secret == "changeme":
+    structlog.get_logger(__name__).warning(
+        "admin_secret_is_default",
+        hint="Set ADMIN_SECRET environment variable for production",
+    )
