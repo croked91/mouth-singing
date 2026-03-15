@@ -33,6 +33,8 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       GENIUS_TOKEN: ${GENIUS_TOKEN:-}
+      # Model cache
+      HF_HOME: /data/models/huggingface
     volumes:
       - sqlite_data:/data/sqlite
       - media_data:/data/media

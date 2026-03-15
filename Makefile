@@ -14,22 +14,29 @@ help: ## Show this help
 # Local development (named volumes, no GPU required for up-api)
 # ---------------------------------------------------------------------------
 
-up-gpu: ## Start all services with GPU worker (requires NVIDIA GPU)
+up-gpu: .env ## Start all services with GPU worker (requires NVIDIA GPU)
 	docker compose -f $(BASE) -f $(GPU) up -d --build
 	@echo ""
 	@echo "=== Karaoke (GPU mode) ==="
 	@echo "Frontend: http://localhost:$${APP_PORT:-80}"
 	@echo "Backend:  http://localhost:8000/health (internal)"
 	@echo "QDrant:   http://localhost:6333/dashboard"
+	@echo ""
+	@echo "NOTE: First start downloads ~1.5 GB of ML models. Watch: make logs-worker"
 
-up-api: ## Start all services with API worker (CPU-only, requires API keys)
-	@test -n "$${OPENAI_API_KEY:-}" || (echo "ERROR: OPENAI_API_KEY not set" && exit 1)
-	@test -n "$${GENIUS_TOKEN:-}" || (echo "ERROR: GENIUS_TOKEN not set" && exit 1)
-	@test -n "$${MVSEP_API_KEY:-}" || (echo "ERROR: MVSEP_API_KEY not set" && exit 1)
+up-api: .env ## Start all services with API worker (CPU-only, requires API keys)
 	docker compose -f $(BASE) -f $(API) up -d --build
 	@echo ""
 	@echo "=== Karaoke (API mode) ==="
 	@echo "Frontend: http://localhost:$${APP_PORT:-80}"
+	@echo ""
+	@echo "NOTE: First start downloads ~1.5 GB of ML models. Watch: make logs-worker"
+
+.env:
+	@echo "ERROR: .env file not found. Copy and fill in:" && \
+	echo "  cp .env.example .env" && \
+	echo "  # then edit .env and set OPENAI_API_KEY, GENIUS_TOKEN, etc." && \
+	exit 1
 
 # ---------------------------------------------------------------------------
 # Production (bind mounts, server paths)
