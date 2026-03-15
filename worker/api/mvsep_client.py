@@ -140,7 +140,7 @@ class MVSEPClient:
         """Upload the audio file and return the MVSEP job ID."""
         url = f"{self._api_url}/separation/create"
 
-        upload_timeout = httpx.Timeout(connect=30.0, read=300.0, write=300.0)
+        upload_timeout = httpx.Timeout(30.0, read=300.0, write=300.0)
 
         last_error: Exception | None = None
 
@@ -224,7 +224,7 @@ class MVSEPClient:
         """
         url = f"{self._api_url}/separation/get"
         params = {"id": job_id, "api_token": self._api_key}
-        poll_timeout = httpx.Timeout(connect=15.0, read=30.0, write=10.0)
+        poll_timeout = httpx.Timeout(15.0, read=30.0, write=10.0)
 
         start_time = time.monotonic()
         poll_count = 0
@@ -409,7 +409,7 @@ class MVSEPClient:
             dest: Destination Path on the local filesystem.
             log: Bound logger carrying context for this job.
         """
-        download_timeout = httpx.Timeout(connect=30.0, read=300.0, write=10.0)
+        download_timeout = httpx.Timeout(30.0, read=300.0, write=10.0)
         last_error: Exception | None = None
 
         for attempt in range(1 + self._max_retries):
