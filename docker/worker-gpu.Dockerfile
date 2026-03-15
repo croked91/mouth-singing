@@ -19,7 +19,7 @@ WORKDIR /project
 
 # Layer 1: PyTorch with CUDA 12.1 (heaviest, cached first)
 RUN pip install --no-cache-dir \
-    torch==2.3.1 torchaudio==2.3.1 \
+    torch==2.3.1 torchaudio \
     --index-url https://download.pytorch.org/whl/cu121
 
 # Layer 2: shared package with ML extras
