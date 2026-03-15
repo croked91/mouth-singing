@@ -18,13 +18,13 @@ ENV PYTHONPATH=/project
 WORKDIR /project
 
 # Layer 1: PyTorch with CUDA 12.1 (heaviest, cached first)
-# --require-hashes is off by default but the cu121 index embeds hashes
-# that sometimes mismatch on the r2 mirror; --no-deps avoids pulling
-# transitive deps that trigger re-downloads with stale hashes.
-RUN pip install --no-cache-dir --no-deps \
-    torch==2.3.1 torchaudio==2.3.1 \
+# torchaudio hash on the cu121 index is broken on the r2 CDN mirror,
+# so we install torch from the index and torchaudio via direct URL.
+RUN pip install --no-cache-dir \
+    torch==2.3.1 \
     --index-url https://download.pytorch.org/whl/cu121 && \
-    pip install --no-cache-dir filelock jinja2 sympy networkx typing-extensions nvidia-cuda-nvrtc-cu12 nvidia-cuda-runtime-cu12 nvidia-cudnn-cu12 nvidia-cublas-cu12 nvidia-cufft-cu12 nvidia-curand-cu12 nvidia-cusolver-cu12 nvidia-cusparse-cu12 nvidia-nccl-cu12 nvidia-nvtx-cu12 triton markupsafe
+    pip install --no-cache-dir \
+    https://download.pytorch.org/whl/cu121/torchaudio-2.3.1%2Bcu121-cp311-cp311-linux_x86_64.whl
 
 # Layer 2: shared package with ML extras
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
