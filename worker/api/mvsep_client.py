@@ -152,7 +152,6 @@ class MVSEPClient:
                         "api_token": self._api_key,
                         "sep_type": str(self._sep_type),
                         "add_to_cloud": "0",
-                        "output_format": self._output_format,
                     }
 
                     async with httpx.AsyncClient(timeout=upload_timeout) as client:
