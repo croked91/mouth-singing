@@ -24,10 +24,13 @@ from qdrant_client.models import Distance, VectorParams
 
 from karaoke_shared.repositories import QDrantRepository, SQLiteRepository
 
-# Ensure the backend package is importable when running from the project root.
-_BACKEND_DIR = pathlib.Path(__file__).parent.parent / "backend"
-if str(_BACKEND_DIR) not in sys.path:
-    sys.path.insert(0, str(_BACKEND_DIR))
+# Ensure all packages are importable when running from the project root.
+_PROJECT_ROOT = pathlib.Path(__file__).parent.parent
+_BACKEND_DIR = _PROJECT_ROOT / "backend"
+_SHARED_DIR = _PROJECT_ROOT / "shared"
+for _p in (_PROJECT_ROOT, _BACKEND_DIR, _SHARED_DIR):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
 
 # Path to the canonical SQL schema used by the application.
 _INIT_SQL = (
