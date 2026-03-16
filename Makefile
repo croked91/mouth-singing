@@ -69,13 +69,13 @@ down-v: ## Stop, remove containers AND volumes (full reset)
 	docker compose -f $(BASE) -f $(GPU) -f $(API) down -v 2>/dev/null; true
 
 logs: ## Tail logs from all services
-	docker compose -f $(BASE) logs -f --tail=50
+	docker compose -f $(BASE) -f $(GPU) -f $(API) logs -f --tail=50 2>/dev/null || docker compose -f $(BASE) logs -f --tail=50
 
 logs-worker: ## Tail worker logs only
-	docker compose -f $(BASE) logs -f --tail=100 worker
+	docker logs -f --tail=100 karaoke_worker
 
 logs-backend: ## Tail backend logs only
-	docker compose -f $(BASE) logs -f --tail=100 backend
+	docker logs -f --tail=100 karaoke_backend
 
 ps: ## Show running containers
 	docker compose -f $(BASE) ps
