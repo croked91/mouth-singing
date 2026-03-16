@@ -235,7 +235,7 @@ class GpuPipeline(BasePipeline):
             # Finalize.
             await self.repo.update_track(
                 job.track_id,
-                TrackUpdate(status="ready", qdrant_synced=1),
+                TrackUpdate(status="ready", qdrant_synced=1, mp3_path=None),
             )
             await self.job_service.mark_completed(job.id, {
                 "instrumental_path": instrumental_path,
@@ -245,6 +245,13 @@ class GpuPipeline(BasePipeline):
                     "char_level_used": align_stats.char_level_used,
                 },
             })
+
+            # Remove the original upload — instrumental is sufficient.
+            if track.mp3_path:
+                original = Path(track.mp3_path)
+                if original.exists():
+                    original.unlink()
+                    logger.info("original_mp3_deleted", path=str(original))
 
         except Exception as exc:
             logger.error("pipeline_failed", job_id=job.id, error=str(exc), exc_info=True)
