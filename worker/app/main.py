@@ -135,6 +135,8 @@ def _build_gpu_pipeline(
         syllabifier=Syllabifier(),
         model_cache_dir=settings.model_cache_dir,
         min_frames_for_char=settings.ctc_min_frames_for_char,
+        device=settings.ctc_device,
+        batch_size=settings.ctc_batch_size,
     )
 
     return GpuPipeline(
@@ -208,6 +210,7 @@ def _build_api_pipeline(
         syllabifier=Syllabifier(),
         model_cache_dir=settings.model_cache_dir,
         min_frames_for_char=settings.ctc_min_frames_for_char,
+        device=settings.ctc_device,
     )
 
     return ApiPipeline(

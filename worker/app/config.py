@@ -66,6 +66,12 @@ class WorkerSettings(BaseSettings):
     # ------------------------------------------------------------------
 
     ctc_min_frames_for_char: int = 10
+    ctc_device: str = "cpu"
+    """ONNX execution provider for CTC alignment: 'cuda' or 'cpu'.
+    CPU is recommended — subprocess isolation prevents heap corruption
+    from crashing the main worker, and avoids VRAM contention."""
+    ctc_batch_size: int = 16
+    """Batch size for generate_emissions (CPU has plenty of RAM)."""
 
     # ------------------------------------------------------------------
     # Common: VAD
