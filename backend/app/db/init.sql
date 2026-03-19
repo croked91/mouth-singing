@@ -32,8 +32,8 @@ CREATE INDEX IF NOT EXISTS idx_tracks_status ON tracks(status);
 CREATE INDEX IF NOT EXISTS idx_tracks_source ON tracks(source);
 CREATE INDEX IF NOT EXISTS idx_tracks_play_count ON tracks(play_count DESC) WHERE status = 'ready';
 CREATE INDEX IF NOT EXISTS idx_tracks_artist_title ON tracks(artist, title);
-CREATE INDEX IF NOT EXISTS idx_tracks_cluster ON tracks(catalog_cluster_id);
-CREATE INDEX IF NOT EXISTS idx_tracks_popularity ON tracks(popularity_category) WHERE status = 'ready';
+-- idx_tracks_cluster and idx_tracks_popularity are created in migrations
+-- (main.py lifespan) because existing DBs may not have these columns yet.
 
 -- FTS5 virtual table
 CREATE VIRTUAL TABLE IF NOT EXISTS tracks_fts USING fts5(

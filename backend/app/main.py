@@ -108,6 +108,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except Exception:
             pass  # Column already exists.
 
+    # 2c. Safe index creation for new columns.
+    for index_sql in [
+        "CREATE INDEX IF NOT EXISTS idx_tracks_cluster ON tracks(catalog_cluster_id)",
+        "CREATE INDEX IF NOT EXISTS idx_tracks_popularity ON tracks(popularity_category) WHERE status = 'ready'",
+    ]:
+        try:
+            await db.execute(index_sql)
+            await db.commit()
+        except Exception:
+            pass  # Column may not exist on very old DBs.
+
     # 3. QDrant — create client and ensure collections exist.
     qdrant = QdrantClient(
         host=settings.qdrant_host, port=settings.qdrant_port, timeout=10
