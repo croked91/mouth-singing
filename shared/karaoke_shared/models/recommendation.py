@@ -22,6 +22,7 @@ class RecommendedTrackItem(BaseModel):
     title: str
     duration_sec: int | None
     similarity_score: float
+    artist_image_url: str | None = None
 
 
 class RecommendationResponse(BaseModel):

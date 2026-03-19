@@ -756,6 +756,48 @@ class SQLiteRepository:
         await self.db.commit()
 
     # ------------------------------------------------------------------
+    # Artists
+    # ------------------------------------------------------------------
+
+    async def upsert_artist(
+        self, name: str, image_path: str | None = None, source: str | None = None
+    ) -> None:
+        """Insert or update an artist record."""
+        now = _now_iso()
+        await self.db.execute(
+            """
+            INSERT INTO artists (name, image_path, source, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(name) DO UPDATE SET image_path = ?, source = ?, updated_at = ?
+            """,
+            (name, image_path, source, now, now, image_path, source, now),
+        )
+        await self.db.commit()
+
+    async def get_artist(self, name: str) -> dict | None:
+        """Return artist record by name."""
+        cursor = await self.db.execute("SELECT * FROM artists WHERE name = ?", (name,))
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        return self._row_to_dict(row)
+
+    async def get_artists_without_images(self, limit: int = 100) -> list[str]:
+        """Return artist names that have no image_path set."""
+        cursor = await self.db.execute(
+            """
+            SELECT DISTINCT t.artist FROM tracks t
+            LEFT JOIN artists a ON t.artist = a.name
+            WHERE (a.image_path IS NULL OR a.name IS NULL)
+              AND t.status = 'ready'
+            LIMIT ?
+            """,
+            (limit,),
+        )
+        rows = await cursor.fetchall()
+        return [row[0] for row in rows]
+
+    # ------------------------------------------------------------------
     # Mood tags
     # ------------------------------------------------------------------
 

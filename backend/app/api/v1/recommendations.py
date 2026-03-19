@@ -19,7 +19,20 @@ from app.services.recommendation_service import RecommendationService
 router = APIRouter()
 
 
-def _to_items(recommended) -> list[RecommendedTrackItem]:
+async def _to_items(
+    recommended, repo: SQLiteRepository
+) -> list[RecommendedTrackItem]:
+    """Convert RecommendedTrack list to API items with artist images."""
+    # Batch-fetch artist images.
+    artist_names = {r.track.artist for r in recommended}
+    artist_images: dict[str, str | None] = {}
+    for name in artist_names:
+        artist = await repo.get_artist(name)
+        if artist and artist.get("image_path"):
+            artist_images[name] = f"/data/media/artists/{artist['image_path']}"
+        else:
+            artist_images[name] = None
+
     return [
         RecommendedTrackItem(
             id=r.track.id,
@@ -27,6 +40,7 @@ def _to_items(recommended) -> list[RecommendedTrackItem]:
             title=r.track.title,
             duration_sec=r.track.duration_sec,
             similarity_score=r.similarity_score,
+            artist_image_url=artist_images.get(r.track.artist),
         )
         for r in recommended
     ]
@@ -74,7 +88,7 @@ async def get_recommendations(
         )
         return RecommendationResponse(
             strategy=RecommendationStrategy.POPULAR,
-            tracks=_to_items(results),
+            tracks=await _to_items(results, repo),
         )
 
     # Auto-recommendations
@@ -83,4 +97,4 @@ async def get_recommendations(
         limit=limit,
         language=language,
     )
-    return RecommendationResponse(strategy=strategy, tracks=_to_items(recommended))
+    return RecommendationResponse(strategy=strategy, tracks=await _to_items(recommended, repo))

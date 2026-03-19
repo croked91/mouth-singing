@@ -141,6 +141,15 @@ CREATE TABLE IF NOT EXISTS catalog_clusters (
     updated_at TEXT NOT NULL
 );
 
+-- === artists ===
+CREATE TABLE IF NOT EXISTS artists (
+    name TEXT PRIMARY KEY NOT NULL,
+    image_path TEXT,
+    source TEXT,  -- 'spotify' | 'yandex' | 'placeholder'
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 -- === mood_tags ===
 CREATE TABLE IF NOT EXISTS mood_tags (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
