@@ -23,13 +23,14 @@ async def _to_items(
     recommended, repo: SQLiteRepository
 ) -> list[RecommendedTrackItem]:
     """Convert RecommendedTrack list to API items with artist images."""
-    # Batch-fetch artist images.
-    artist_names = {r.track.artist for r in recommended}
+    # Batch-fetch artist images in a single query.
+    artist_names = list({r.track.artist for r in recommended})
+    artists_map = await repo.get_artists_by_names(artist_names)
     artist_images: dict[str, str | None] = {}
     for name in artist_names:
-        artist = await repo.get_artist(name)
+        artist = artists_map.get(name)
         if artist and artist.get("image_path"):
-            artist_images[name] = f"/data/media/artists/{artist['image_path']}"
+            artist_images[name] = f"/api/v1/media/artists/{artist['image_path']}"
         else:
             artist_images[name] = None
 
@@ -73,21 +74,19 @@ async def get_recommendations(
             return RecommendationResponse(strategy=RecommendationStrategy.POPULAR, tracks=[])
 
         clusters = await repo.get_all_clusters()
-        cluster = next((c for c in clusters if c["id"] == tag["cluster_id"]), None)
+        cluster = next((c for c in clusters if c.id == tag["cluster_id"]), None)
         if cluster is None:
             return RecommendationResponse(strategy=RecommendationStrategy.POPULAR, tracks=[])
 
-        history = await repo.get_history_by_session(session_id)
-        played_ids = {entry.track_id for entry in history}
-
-        results = await service._fused_knn_search(
-            cluster["centroid_audio"],
-            cluster["centroid_lyrics"],
-            played_ids,
-            limit,
+        strategy, results = await service.get_tag_recommendations(
+            tag_centroid_audio=cluster.centroid_audio,
+            tag_centroid_lyrics=cluster.centroid_lyrics,
+            session_id=session_id,
+            limit=limit,
+            language=language,
         )
         return RecommendationResponse(
-            strategy=RecommendationStrategy.POPULAR,
+            strategy=strategy,
             tracks=await _to_items(results, repo),
         )
 

@@ -146,29 +146,15 @@ export const QueuePage: React.FC = () => {
 
   const handleTagClick = useCallback(
     (tagId: number): void => {
-      if (selectedTagId === tagId) {
-        // Deselect — fetch auto recommendations
-        setSelectedTagId(null);
-        void fetchRecommendations(undefined);
-      } else {
-        setSelectedTagId(tagId);
-        void fetchRecommendations(tagId);
-      }
+      // Toggle tag selection — the useEffect on selectedTagId will fetch.
+      setSelectedTagId((prev) => (prev === tagId ? null : tagId));
     },
-    [selectedTagId, fetchRecommendations]
+    []
   );
 
   const handleRussianOnlyToggle = useCallback((): void => {
     setRussianOnly((prev) => !prev);
   }, []);
-
-  // Re-fetch when russianOnly changes
-  useEffect(() => {
-    if (activeTab === TAB_RECOMMENDATIONS) {
-      void fetchRecommendations(selectedTagId ?? undefined);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [russianOnly]);
 
   const handleTrackSelect = useCallback(
     async (trackId: string): Promise<void> => {

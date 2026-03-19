@@ -32,6 +32,8 @@ CREATE INDEX IF NOT EXISTS idx_tracks_status ON tracks(status);
 CREATE INDEX IF NOT EXISTS idx_tracks_source ON tracks(source);
 CREATE INDEX IF NOT EXISTS idx_tracks_play_count ON tracks(play_count DESC) WHERE status = 'ready';
 CREATE INDEX IF NOT EXISTS idx_tracks_artist_title ON tracks(artist, title);
+CREATE INDEX IF NOT EXISTS idx_tracks_cluster ON tracks(catalog_cluster_id);
+CREATE INDEX IF NOT EXISTS idx_tracks_popularity ON tracks(popularity_category) WHERE status = 'ready';
 
 -- FTS5 virtual table
 CREATE VIRTUAL TABLE IF NOT EXISTS tracks_fts USING fts5(
@@ -159,3 +161,16 @@ CREATE TABLE IF NOT EXISTS mood_tags (
 );
 
 CREATE INDEX IF NOT EXISTS idx_mood_tags_cluster ON mood_tags(cluster_id);
+
+-- === api_costs ===
+CREATE TABLE IF NOT EXISTS api_costs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    track_id TEXT NOT NULL,
+    service TEXT NOT NULL,
+    cost_usd REAL NOT NULL DEFAULT 0,
+    tokens INTEGER,
+    duration_sec REAL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_api_costs_service ON api_costs(service, created_at);

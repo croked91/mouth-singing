@@ -25,6 +25,7 @@ const FEATURE_PILLS = [
 export const WelcomePage: React.FC = () => {
   const navigate = useNavigate();
   const createSession = useSessionStore((s) => s.createSession);
+  const addParticipant = useSessionStore((s) => s.addParticipant);
   const [isStarting, setIsStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
 
@@ -33,6 +34,7 @@ export const WelcomePage: React.FC = () => {
     setStartError(null);
     try {
       const sessionId = await createSession('default');
+      await addParticipant('Певец');
       navigate(`/session/${sessionId}/queue`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Ошибка создания сессии';

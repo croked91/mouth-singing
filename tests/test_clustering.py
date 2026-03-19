@@ -65,10 +65,10 @@ class TestSQLiteClusterCRUD:
 
         clusters = await sqlite_repo.get_all_clusters()
         assert len(clusters) == 2
-        assert clusters[0]["track_count"] == 50
-        assert clusters[1]["track_count"] == 30
-        assert len(clusters[0]["centroid_audio"]) == 45
-        assert len(clusters[0]["centroid_lyrics"]) == 384
+        assert clusters[0].track_count == 50
+        assert clusters[1].track_count == 30
+        assert len(clusters[0].centroid_audio) == 45
+        assert len(clusters[0].centroid_lyrics) == 384
 
     async def test_clear_clusters(self, sqlite_repo: SQLiteRepository):
         cid = await sqlite_repo.create_catalog_cluster([0.1] * 45, [0.2] * 384, 10)

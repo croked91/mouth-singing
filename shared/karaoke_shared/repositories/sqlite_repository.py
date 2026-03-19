@@ -35,6 +35,7 @@ from karaoke_shared.constants import (
     SessionStatus,
     TrackStatus,
 )
+from karaoke_shared.models.catalog_cluster import CatalogCluster
 from karaoke_shared.models.track import SyllableTiming, Track, TrackCreate, TrackUpdate
 
 
@@ -724,25 +725,26 @@ class SQLiteRepository:
         await self.db.commit()
         return cursor.lastrowid  # type: ignore[return-value]
 
-    async def get_all_clusters(self) -> list[dict]:
-        """Return all catalog clusters as dicts with parsed centroid vectors."""
+    async def get_all_clusters(self) -> list[CatalogCluster]:
+        """Return all catalog clusters as CatalogCluster models."""
         cursor = await self.db.execute("SELECT * FROM catalog_clusters ORDER BY id")
         rows = await cursor.fetchall()
-        results = []
+        results: list[CatalogCluster] = []
         for row in rows:
             data = self._row_to_dict(row)
-            results.append({
-                "id": data["id"],
-                "centroid_audio": json.loads(data["centroid_audio"]),
-                "centroid_lyrics": json.loads(data["centroid_lyrics"]),
-                "track_count": data["track_count"],
-                "created_at": data["created_at"],
-                "updated_at": data["updated_at"],
-            })
+            results.append(CatalogCluster(
+                id=data["id"],
+                centroid_audio=json.loads(data["centroid_audio"]),
+                centroid_lyrics=json.loads(data["centroid_lyrics"]),
+                track_count=data["track_count"],
+                created_at=data["created_at"],
+                updated_at=data["updated_at"],
+            ))
         return results
 
     async def clear_clusters(self) -> None:
-        """Delete all catalog clusters and reset track assignments."""
+        """Delete all catalog clusters, their mood tags, and reset track assignments."""
+        await self.db.execute("DELETE FROM mood_tags")
         await self.db.execute("DELETE FROM catalog_clusters")
         await self.db.execute("UPDATE tracks SET catalog_cluster_id = NULL")
         await self.db.commit()
@@ -781,6 +783,22 @@ class SQLiteRepository:
         if row is None:
             return None
         return self._row_to_dict(row)
+
+    async def get_artists_by_names(self, names: list[str]) -> dict[str, dict]:
+        """Return a dict of ``{name: artist_dict}`` for the given names.
+
+        Missing names are silently omitted.  Uses a single ``IN (...)``
+        query instead of one query per name.
+        """
+        if not names:
+            return {}
+        placeholders = ",".join("?" * len(names))
+        cursor = await self.db.execute(
+            f"SELECT * FROM artists WHERE name IN ({placeholders})",  # noqa: S608
+            list(names),
+        )
+        rows = await cursor.fetchall()
+        return {self._row_to_dict(r)["name"]: self._row_to_dict(r) for r in rows}
 
     async def get_artists_without_images(self, limit: int = 100) -> list[str]:
         """Return artist names that have no image_path set."""

@@ -14,7 +14,6 @@ Vector searches use **weighted fusion** of two QDrant collections:
 from __future__ import annotations
 
 import asyncio
-import math
 
 import numpy as np
 import structlog
@@ -86,6 +85,21 @@ def _fused_cosine(
     return _AUDIO_WEIGHT * audio_sim + _LYRICS_WEIGHT * lyrics_sim
 
 
+def _update_cluster_centroid(
+    cluster: dict, audio: list[float], lyrics: list[float],
+) -> None:
+    """Add a track to a cluster and recompute its centroid (running mean)."""
+    n = len(cluster["track_ids"]) - 1  # track_id already appended by caller
+    cluster["centroid_audio"] = [
+        (old * n + new) / (n + 1)
+        for old, new in zip(cluster["centroid_audio"], audio)
+    ]
+    cluster["centroid_lyrics"] = [
+        (old * n + new) / (n + 1)
+        for old, new in zip(cluster["centroid_lyrics"], lyrics)
+    ]
+
+
 def auto_cluster_session(
     track_vectors: list[tuple[str, list[float], list[float]]],
 ) -> list[dict]:
@@ -123,16 +137,8 @@ def auto_cluster_session(
         if best_sim >= _CLUSTER_THRESHOLD and best_idx >= 0:
             # Add to existing cluster, recompute centroid (running mean).
             c = clusters[best_idx]
-            n = len(c["track_ids"])
             c["track_ids"].append(track_id)
-            c["centroid_audio"] = [
-                (old * n + new) / (n + 1)
-                for old, new in zip(c["centroid_audio"], audio)
-            ]
-            c["centroid_lyrics"] = [
-                (old * n + new) / (n + 1)
-                for old, new in zip(c["centroid_lyrics"], lyrics)
-            ]
+            _update_cluster_centroid(c, audio, lyrics)
         elif len(clusters) < _MAX_CLUSTERS:
             # Create new cluster.
             clusters.append({
@@ -144,16 +150,8 @@ def auto_cluster_session(
             # Max clusters reached — assign to nearest.
             if best_idx >= 0:
                 c = clusters[best_idx]
-                n = len(c["track_ids"])
                 c["track_ids"].append(track_id)
-                c["centroid_audio"] = [
-                    (old * n + new) / (n + 1)
-                    for old, new in zip(c["centroid_audio"], audio)
-                ]
-                c["centroid_lyrics"] = [
-                    (old * n + new) / (n + 1)
-                    for old, new in zip(c["centroid_lyrics"], lyrics)
-                ]
+                _update_cluster_centroid(c, audio, lyrics)
 
     # Assign weights.
     for c in clusters:
@@ -165,8 +163,9 @@ def auto_cluster_session(
 def distribute_slots(clusters: list[dict], total: int) -> list[int]:
     """Distribute N slots proportionally to weighted cluster sizes.
 
-    Each cluster gets at least 1 slot. Returns list of slot counts
-    aligned with clusters list.
+    When total >= len(clusters), each cluster gets at least 1 slot.
+    When total < len(clusters), only the top clusters by weight receive slots.
+    Returns list of slot counts aligned with clusters list.
     """
     if not clusters:
         return []
@@ -175,6 +174,15 @@ def distribute_slots(clusters: list[dict], total: int) -> list[int]:
     total_weight = sum(weighted)
     if total_weight == 0:
         return [total // len(clusters)] * len(clusters)
+
+    if total < len(clusters):
+        # Not enough slots for all clusters — give 1 slot each to the
+        # top clusters by weight, 0 to the rest.
+        indexed = sorted(enumerate(weighted), key=lambda x: x[1], reverse=True)
+        raw = [0] * len(clusters)
+        for i in range(total):
+            raw[indexed[i][0]] = 1
+        return raw
 
     # Proportional allocation with minimum 1.
     raw = [max(1, round(w / total_weight * total)) for w in weighted]
@@ -196,13 +204,22 @@ def distribute_slots(clusters: list[dict], total: int) -> list[int]:
 def popularity_rerank(
     candidates: list[RecommendedTrack],
 ) -> list[RecommendedTrack]:
-    """Re-rank candidates by similarity * (1 + popularity_weight)."""
+    """Re-rank candidates by similarity * (1 + popularity_weight).
+
+    Returns new RecommendedTrack objects — originals are not mutated.
+    """
+    reranked = []
     for c in candidates:
         category = getattr(c.track, "popularity_category", "regular") or "regular"
         weight = _POPULARITY_WEIGHTS.get(category, 0.1)
-        c.similarity_score = c.similarity_score * (1.0 + weight)
-    candidates.sort(key=lambda c: c.similarity_score, reverse=True)
-    return candidates
+        reranked.append(
+            RecommendedTrack(
+                track=c.track,
+                similarity_score=c.similarity_score * (1.0 + weight),
+            )
+        )
+    reranked.sort(key=lambda c: c.similarity_score, reverse=True)
+    return reranked
 
 
 def mmr_select(
@@ -293,6 +310,30 @@ class RecommendationService:
 
         return await self._cluster_strategy(history, played_ids, limit, language)
 
+    async def get_tag_recommendations(
+        self,
+        tag_centroid_audio: list[float],
+        tag_centroid_lyrics: list[float],
+        session_id: str,
+        limit: int = 5,
+        language: str | None = None,
+    ) -> tuple[RecommendationStrategy, list[RecommendedTrack]]:
+        """Return recommendations for a specific mood-tag cluster centroid.
+
+        Uses fused KNN search with optional language filter. Excludes
+        tracks already played in the session.
+        """
+        history = await self.sqlite_repo.get_history_by_session(session_id)
+        played_ids = {entry.track_id for entry in history}
+        filters: dict = {"status": "ready"}
+        if language:
+            filters["language"] = language
+
+        results = await self._fused_knn_search(
+            tag_centroid_audio, tag_centroid_lyrics, played_ids, limit, filters,
+        )
+        return RecommendationStrategy.CLUSTER, results
+
     # ------------------------------------------------------------------
     # Strategies
     # ------------------------------------------------------------------
@@ -369,11 +410,12 @@ class RecommendationService:
             candidates = popularity_rerank(candidates)
             all_candidates.extend(candidates[:n_slots * 2])
 
-            # Collect audio vectors for MMR.
-            for c in candidates:
-                vec = await self._get_track_vector(c.track.id)
+            # Batch-fetch audio vectors for MMR.
+            cand_ids = [c.track.id for c in candidates if c.track.id not in audio_vecs]
+            vecs = await asyncio.gather(*(self._get_track_vector(tid) for tid in cand_ids))
+            for tid, vec in zip(cand_ids, vecs):
                 if vec:
-                    audio_vecs[c.track.id] = vec
+                    audio_vecs[tid] = vec
 
         # 5. Exploration: popular track far from all cluster centroids.
         if limit > 1:
@@ -402,19 +444,24 @@ class RecommendationService:
         extra = len(exclude_ids) + 20
         top_tracks = await self.sqlite_repo.list_popular(limit=extra)
 
+        # Filter eligible tracks.
+        eligible = [
+            t for t in top_tracks
+            if t.id not in exclude_ids and (not language or t.language == language)
+        ]
+
+        # Batch-fetch vectors for all eligible tracks.
+        vecs_list = await asyncio.gather(
+            *(self._get_track_vector(t.id) for t in eligible)
+        )
+        track_vecs = [
+            (t, vec) for t, vec in zip(eligible, vecs_list) if vec is not None
+        ]
+
         best_track: Track | None = None
         best_min_sim = float("inf")
 
-        for track in top_tracks:
-            if track.id in exclude_ids:
-                continue
-            if language and track.language != language:
-                continue
-
-            vec = await self._get_track_vector(track.id)
-            if vec is None:
-                continue
-
+        for track, vec in track_vecs:
             # Min similarity to any cluster centroid.
             min_sim = float("inf")
             for cluster in clusters:
