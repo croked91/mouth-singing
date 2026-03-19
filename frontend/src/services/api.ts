@@ -6,6 +6,7 @@ import type {
   QueueResponse,
   QueueEntry,
   RecommendationResponse,
+  MoodTag,
   SearchResult,
   UploadResponse,
   StartPlayingResponse,
@@ -117,20 +118,28 @@ export const api = {
   },
 
   getRecommendations: async (
-    participantId: string,
     sessionId: string,
-    limit?: number
+    limit?: number,
+    tagId?: number,
+    language?: string
   ): Promise<RecommendationResponse> => {
+    const params: Record<string, string | number> = {
+      session_id: sessionId,
+      limit: limit ?? 5,
+    };
+    if (tagId !== undefined) params.tag_id = tagId;
+    if (language) params.language = language;
     const response = await apiClient.get<RecommendationResponse>(
       '/recommendations',
-      {
-        params: {
-          participant_id: participantId,
-          session_id: sessionId,
-          limit: limit ?? 10,
-        },
-      }
+      { params }
     );
+    return response.data;
+  },
+
+  getTags: async (sessionId: string, limit?: number): Promise<MoodTag[]> => {
+    const response = await apiClient.get<MoodTag[]>('/tags', {
+      params: { session_id: sessionId, limit: limit ?? 8 },
+    });
     return response.data;
   },
 

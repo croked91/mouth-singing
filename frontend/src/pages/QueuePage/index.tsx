@@ -3,8 +3,11 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   AppBar,
   Box,
+  Chip,
   CircularProgress,
+  FormControlLabel,
   IconButton,
+  Switch,
   Tab,
   Tabs,
   Toolbar,
@@ -24,13 +27,12 @@ import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import { CosmicBackground } from '../../components/CosmicBackground';
 import { TrackCard } from '../../components/TrackCard';
 import { QueueItem } from '../../components/QueueItem';
-import { ParticipantSelector } from '../../components/ParticipantSelector';
 import { SearchTab } from '../../components/SearchTab';
 import { UploadTab } from '../../components/UploadTab';
 import { useSessionStore } from '../../store/sessionStore';
 import { useQueueStore } from '../../store/queueStore';
 import { api } from '../../services/api';
-import type { RecommendationResponse } from '../../types';
+import type { RecommendationResponse, MoodTag } from '../../types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -45,9 +47,7 @@ const QUEUE_POLL_INTERVAL_MS = 5000;
 
 const STRATEGY_LABELS: Record<string, string> = {
   popular: 'ПОПУЛЯРНОЕ',
-  last: 'ПОХОЖЕЕ НА ПОСЛЕДНИЙ ТРЕК',
-  last_two_avg: 'В ВАШЕМ СТИЛЕ',
-  session_avg: 'НА ОСНОВЕ ВАШЕЙ СЕССИИ',
+  cluster: 'НАСТРОЕНИЕ',
 };
 
 const TAB_RECOMMENDATIONS = 1;
@@ -76,12 +76,16 @@ export const QueuePage: React.FC = () => {
 
   // Local state
   const [activeTab, setActiveTab] = useState<number>(TAB_RECOMMENDATIONS);
-  const [selectedParticipantId, setSelectedParticipantId] = useState<string | null>(null);
   const [recommendations, setRecommendations] = useState<RecommendationResponse | null>(null);
   const [recsLoading, setRecsLoading] = useState(false);
   const [recsError, setRecsError] = useState<string | null>(null);
   const [addingTrackId, setAddingTrackId] = useState<string | null>(null);
   const [snackMessage, setSnackMessage] = useState<string | null>(null);
+
+  // Mood tags state
+  const [moodTags, setMoodTags] = useState<MoodTag[]>([]);
+  const [selectedTagId, setSelectedTagId] = useState<number | null>(null);
+  const [russianOnly, setRussianOnly] = useState(false);
 
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -92,6 +96,9 @@ export const QueuePage: React.FC = () => {
 
     void loadSession(sessionId);
     void loadQueue(sessionId);
+
+    // Fetch mood tags
+    void api.getTags(sessionId).then(setMoodTags).catch(() => {});
 
     // Poll queue every 5s
     pollTimerRef.current = setInterval(() => {
@@ -105,25 +112,18 @@ export const QueuePage: React.FC = () => {
     };
   }, [sessionId, loadSession, loadQueue]);
 
-  // ── Auto-select first participant ───────────────────────────────────────────
-
-  useEffect(() => {
-    if (participants.length > 0 && selectedParticipantId === null) {
-      setSelectedParticipantId(participants[0].id);
-    }
-  }, [participants, selectedParticipantId]);
-
-  // ── Fetch recommendations when participant or tab changes ───────────────────
+  // ── Fetch recommendations ─────────────────────────────────────────────────
 
   const fetchRecommendations = useCallback(
-    async (participantId: string): Promise<void> => {
+    async (tagId?: number): Promise<void> => {
       if (!sessionId) return;
 
       setRecsLoading(true);
       setRecsError(null);
 
       try {
-        const data = await api.getRecommendations(participantId, sessionId, 12);
+        const language = russianOnly ? 'ru' : undefined;
+        const data = await api.getRecommendations(sessionId, 5, tagId, language);
         setRecommendations(data);
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Ошибка загрузки рекомендаций';
@@ -132,31 +132,56 @@ export const QueuePage: React.FC = () => {
         setRecsLoading(false);
       }
     },
-    [sessionId]
+    [sessionId, russianOnly]
   );
 
+  // Auto-fetch on mount and after tab change
   useEffect(() => {
-    if (activeTab === TAB_RECOMMENDATIONS && selectedParticipantId) {
-      void fetchRecommendations(selectedParticipantId);
+    if (activeTab === TAB_RECOMMENDATIONS) {
+      void fetchRecommendations(selectedTagId ?? undefined);
     }
-  }, [activeTab, selectedParticipantId, fetchRecommendations]);
+  }, [activeTab, fetchRecommendations, selectedTagId]);
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
-  const handleParticipantSelect = useCallback((id: string): void => {
-    if (id === selectedParticipantId) return;
-    setSelectedParticipantId(id);
-    setRecommendations(null);
-  }, [selectedParticipantId]);
+  const handleTagClick = useCallback(
+    (tagId: number): void => {
+      if (selectedTagId === tagId) {
+        // Deselect — fetch auto recommendations
+        setSelectedTagId(null);
+        void fetchRecommendations(undefined);
+      } else {
+        setSelectedTagId(tagId);
+        void fetchRecommendations(tagId);
+      }
+    },
+    [selectedTagId, fetchRecommendations]
+  );
+
+  const handleRussianOnlyToggle = useCallback((): void => {
+    setRussianOnly((prev) => !prev);
+  }, []);
+
+  // Re-fetch when russianOnly changes
+  useEffect(() => {
+    if (activeTab === TAB_RECOMMENDATIONS) {
+      void fetchRecommendations(selectedTagId ?? undefined);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [russianOnly]);
 
   const handleTrackSelect = useCallback(
     async (trackId: string): Promise<void> => {
-      if (!sessionId || !selectedParticipantId) return;
+      if (!sessionId) return;
+
+      const participantId = participants[0]?.id || 'anonymous';
 
       setAddingTrackId(trackId);
       try {
-        await addToQueue(sessionId, selectedParticipantId, trackId);
+        await addToQueue(sessionId, participantId, trackId);
         setSnackMessage('Трек добавлен в очередь!');
+        // Auto-refresh recommendations after adding a track
+        void fetchRecommendations(selectedTagId ?? undefined);
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Ошибка добавления в очередь';
         setSnackMessage(`Ошибка: ${message}`);
@@ -164,7 +189,7 @@ export const QueuePage: React.FC = () => {
         setAddingTrackId(null);
       }
     },
-    [sessionId, selectedParticipantId, addToQueue]
+    [sessionId, participants, addToQueue, fetchRecommendations, selectedTagId]
   );
 
   const handleSkip = useCallback(async (): Promise<void> => {
@@ -463,33 +488,83 @@ export const QueuePage: React.FC = () => {
   );
 
   const renderRecommendationsTab = (): React.ReactNode => {
-    if (participants.length === 0) {
-      return (
-        <Box
-          sx={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            py: 8,
-            gap: 2,
-          }}
-        >
-          <Typography sx={{ color: 'rgba(255,255,255,0.35)', textAlign: 'center' }}>
-            Нет участников в сессии
-          </Typography>
-        </Box>
-      );
-    }
-
     return (
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-        {/* Participant selector */}
-        <ParticipantSelector
-          participants={participants}
-          selectedId={selectedParticipantId}
-          onSelect={handleParticipantSelect}
+        {/* Language toggle */}
+        <FormControlLabel
+          control={
+            <Switch
+              checked={russianOnly}
+              onChange={handleRussianOnlyToggle}
+              sx={{
+                '& .MuiSwitch-switchBase.Mui-checked': {
+                  color: '#A78BFA',
+                },
+                '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
+                  backgroundColor: '#7C3AED',
+                },
+                '& .MuiSwitch-track': {
+                  backgroundColor: 'rgba(255,255,255,0.2)',
+                },
+              }}
+            />
+          }
+          label="Только на русском"
+          sx={{
+            '& .MuiFormControlLabel-label': {
+              fontSize: '14px',
+              fontWeight: 500,
+              color: 'rgba(255,255,255,0.7)',
+            },
+          }}
         />
+
+        {/* Mood tags strip */}
+        {moodTags.length > 0 && (
+          <Box
+            sx={{
+              display: 'flex',
+              gap: 1,
+              overflowX: 'auto',
+              pb: 0.5,
+              scrollbarWidth: 'none',
+              '&::-webkit-scrollbar': { display: 'none' },
+            }}
+          >
+            {moodTags.map((tag) => (
+              <Chip
+                key={tag.id}
+                label={tag.name}
+                onClick={() => handleTagClick(tag.id)}
+                variant={selectedTagId === tag.id ? 'filled' : 'outlined'}
+                sx={{
+                  flexShrink: 0,
+                  borderRadius: '20px',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  transition: 'all 0.2s ease',
+                  ...(selectedTagId === tag.id
+                    ? {
+                        background: 'linear-gradient(135deg, #7C3AED, #2563EB)',
+                        color: '#FFFFFF',
+                        border: '1px solid rgba(167,139,250,0.5)',
+                        boxShadow: '0 2px 12px rgba(124,58,237,0.4)',
+                      }
+                    : {
+                        background: 'rgba(255,255,255,0.06)',
+                        color: 'rgba(255,255,255,0.6)',
+                        borderColor: 'rgba(255,255,255,0.15)',
+                        '&:hover': {
+                          background: 'rgba(124,58,237,0.15)',
+                          borderColor: 'rgba(167,139,250,0.4)',
+                          color: '#A78BFA',
+                        },
+                      }),
+                }}
+              />
+            ))}
+          </Box>
+        )}
 
         {/* Strategy label */}
         {recommendations && (
@@ -540,26 +615,12 @@ export const QueuePage: React.FC = () => {
           </Alert>
         )}
 
-        {/* No participant selected */}
-        {!selectedParticipantId && !recsLoading && (
-          <Typography
-            sx={{
-              fontSize: '14px',
-              color: 'rgba(255,255,255,0.35)',
-              textAlign: 'center',
-              py: 4,
-            }}
-          >
-            Выберите участника, чтобы увидеть рекомендации
-          </Typography>
-        )}
-
-        {/* Track grid */}
+        {/* Track list (single column, larger cards) */}
         {recommendations && !recsLoading && recommendations.tracks.length > 0 && (
           <Box
             sx={{
               display: 'grid',
-              gridTemplateColumns: '1fr 1fr',
+              gridTemplateColumns: '1fr',
               gap: 1.5,
             }}
           >
@@ -867,7 +928,7 @@ export const QueuePage: React.FC = () => {
               {activeTab === 0 && sessionId && (
                 <SearchTab
                   sessionId={sessionId}
-                  selectedParticipantId={selectedParticipantId}
+                  selectedParticipantId={participants[0]?.id || null}
                   onTrackSelected={(trackId) => { void handleTrackSelect(trackId); }}
                 />
               )}
@@ -875,7 +936,7 @@ export const QueuePage: React.FC = () => {
               {activeTab === 2 && sessionId && (
                 <UploadTab
                   sessionId={sessionId}
-                  selectedParticipantId={selectedParticipantId}
+                  selectedParticipantId={participants[0]?.id || null}
                   onTrackUploaded={(trackId) => { void handleTrackSelect(trackId); }}
                 />
               )}

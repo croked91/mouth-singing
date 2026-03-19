@@ -33,7 +33,7 @@ export const WelcomePage: React.FC = () => {
     setStartError(null);
     try {
       const sessionId = await createSession('default');
-      navigate(`/session/${sessionId}`);
+      navigate(`/session/${sessionId}/queue`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Ошибка создания сессии';
       setStartError(message);

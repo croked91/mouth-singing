@@ -68,11 +68,17 @@ export interface RecommendedTrackItem {
   title: string;
   duration_sec: number | null;
   similarity_score: number;
+  artist_image_url: string | null;
 }
 
 export interface RecommendationResponse {
-  strategy: 'popular' | 'last' | 'last_two_avg' | 'session_avg';
+  strategy: 'popular' | 'cluster';
   tracks: RecommendedTrackItem[];
+}
+
+export interface MoodTag {
+  id: number;
+  name: string;
 }
 
 export interface SessionWithParticipants extends Session {
