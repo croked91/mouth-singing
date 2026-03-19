@@ -20,6 +20,9 @@ CREATE TABLE IF NOT EXISTS tracks (
     error_message TEXT,
     play_count INTEGER NOT NULL DEFAULT 0,
     qdrant_synced INTEGER NOT NULL DEFAULT 0,
+    popularity_category TEXT NOT NULL DEFAULT 'regular',
+    chart_count INTEGER NOT NULL DEFAULT 0,
+    chart_last_seen TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );

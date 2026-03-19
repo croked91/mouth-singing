@@ -79,11 +79,13 @@ class SQLiteRepository:
                 id, artist, title, duration_sec, mp3_path, instrumental_path,
                 clip_path, lyrics_text, syllable_timings, language, source,
                 status, error_message, play_count, qdrant_synced,
+                popularity_category, chart_count, chart_last_seen,
                 created_at, updated_at
             ) VALUES (
                 :id, :artist, :title, :duration_sec, :mp3_path, :instrumental_path,
                 :clip_path, :lyrics_text, :syllable_timings, :language, :source,
                 :status, :error_message, :play_count, :qdrant_synced,
+                :popularity_category, :chart_count, :chart_last_seen,
                 :created_at, :updated_at
             )
             """,
@@ -103,6 +105,9 @@ class SQLiteRepository:
                 "error_message": None,
                 "play_count": data.play_count,
                 "qdrant_synced": data.qdrant_synced,
+                "popularity_category": data.popularity_category,
+                "chart_count": data.chart_count,
+                "chart_last_seen": data.chart_last_seen,
                 "created_at": data.created_at,
                 "updated_at": data.updated_at,
             },
@@ -146,6 +151,9 @@ class SQLiteRepository:
             "error_message",
             "play_count",
             "qdrant_synced",
+            "popularity_category",
+            "chart_count",
+            "chart_last_seen",
         ):
             value = getattr(data, field)
             if value is not None:
@@ -231,6 +239,24 @@ class SQLiteRepository:
         rows = await cursor.fetchall()
         return [self._track_from_row(row) for row in rows]
 
+    async def update_popularity(
+        self,
+        track_id: str,
+        category: str,
+        chart_count: int = 0,
+        chart_last_seen: str | None = None,
+    ) -> None:
+        """Update popularity fields for a track."""
+        await self.db.execute(
+            """
+            UPDATE tracks
+            SET popularity_category = ?, chart_count = ?, chart_last_seen = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (category, chart_count, chart_last_seen, _now_iso(), track_id),
+        )
+        await self.db.commit()
+
     async def increment_play_count(self, track_id: str) -> None:
         """Increment the play_count counter for a track by 1."""
         await self.db.execute(
@@ -295,6 +321,9 @@ class SQLiteRepository:
             error_message=data.get("error_message"),
             play_count=data.get("play_count", 0),
             qdrant_synced=data.get("qdrant_synced", 0),
+            popularity_category=data.get("popularity_category", "regular"),
+            chart_count=data.get("chart_count", 0),
+            chart_last_seen=data.get("chart_last_seen"),
             created_at=data["created_at"],
             updated_at=data["updated_at"],
         )

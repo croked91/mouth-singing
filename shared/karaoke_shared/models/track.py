@@ -13,7 +13,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from karaoke_shared.constants import TrackSource, TrackStatus
+from karaoke_shared.constants import PopularityCategory, TrackSource, TrackStatus
 
 
 class SyllableTiming(BaseModel):
@@ -42,6 +42,9 @@ class Track(BaseModel):
     error_message: str | None = None
     play_count: int = 0
     qdrant_synced: int = 0
+    popularity_category: str = PopularityCategory.REGULAR
+    chart_count: int = 0
+    chart_last_seen: str | None = None
     created_at: str
     updated_at: str
 
@@ -63,6 +66,9 @@ class TrackCreate(BaseModel):
     status: str = TrackStatus.PENDING
     play_count: int = 0
     qdrant_synced: int = 0
+    popularity_category: str = PopularityCategory.REGULAR
+    chart_count: int = 0
+    chart_last_seen: str | None = None
     created_at: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
@@ -91,6 +97,9 @@ class TrackUpdate(BaseModel):
     error_message: str | None = None
     play_count: int | None = None
     qdrant_synced: int | None = None
+    popularity_category: str | None = None
+    chart_count: int | None = None
+    chart_last_seen: str | None = None
     updated_at: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )

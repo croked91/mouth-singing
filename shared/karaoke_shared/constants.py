@@ -54,6 +54,16 @@ class TrackSource(StrEnum):
     USER_UPLOAD = "user_upload"
 
 
+class PopularityCategory(StrEnum):
+    """Track popularity tier for recommendation re-ranking."""
+
+    ETERNAL_HIT = "eternal_hit"
+    CURRENT_HIT = "current_hit"
+    FORMER_HIT = "former_hit"
+    ARTIST_BEST = "artist_best"
+    REGULAR = "regular"
+
+
 # ------------------------------------------------------------------
 # QDrant collection names
 # ------------------------------------------------------------------
