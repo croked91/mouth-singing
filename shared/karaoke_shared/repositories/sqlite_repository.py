@@ -756,6 +756,61 @@ class SQLiteRepository:
         await self.db.commit()
 
     # ------------------------------------------------------------------
+    # Mood tags
+    # ------------------------------------------------------------------
+
+    async def create_mood_tag(self, name: str, cluster_id: int) -> int:
+        """Insert a mood tag and return its auto-generated ID."""
+        now = _now_iso()
+        cursor = await self.db.execute(
+            "INSERT INTO mood_tags (name, cluster_id, created_at) VALUES (?, ?, ?)",
+            (name, cluster_id, now),
+        )
+        await self.db.commit()
+        return cursor.lastrowid  # type: ignore[return-value]
+
+    async def get_all_tags(self) -> list[dict]:
+        """Return all mood tags."""
+        cursor = await self.db.execute("SELECT * FROM mood_tags ORDER BY id")
+        rows = await cursor.fetchall()
+        return [self._row_to_dict(row) for row in rows]
+
+    async def get_tags_excluding_clusters(
+        self, excluded_cluster_ids: set[int], limit: int = 8
+    ) -> list[dict]:
+        """Return tags from clusters NOT in the excluded set.
+
+        Used to show tags for vibes not yet covered by the session.
+        """
+        if excluded_cluster_ids:
+            placeholders = ",".join("?" * len(excluded_cluster_ids))
+            cursor = await self.db.execute(
+                f"SELECT * FROM mood_tags WHERE cluster_id NOT IN ({placeholders}) ORDER BY RANDOM() LIMIT ?",  # noqa: S608
+                [*excluded_cluster_ids, limit],
+            )
+        else:
+            cursor = await self.db.execute(
+                "SELECT * FROM mood_tags ORDER BY RANDOM() LIMIT ?", (limit,)
+            )
+        rows = await cursor.fetchall()
+        return [self._row_to_dict(row) for row in rows]
+
+    async def get_tag(self, tag_id: int) -> dict | None:
+        """Return a single mood tag by ID."""
+        cursor = await self.db.execute(
+            "SELECT * FROM mood_tags WHERE id = ?", (tag_id,)
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        return self._row_to_dict(row)
+
+    async def clear_mood_tags(self) -> None:
+        """Delete all mood tags."""
+        await self.db.execute("DELETE FROM mood_tags")
+        await self.db.commit()
+
+    # ------------------------------------------------------------------
     # Job queue
     # ------------------------------------------------------------------
 

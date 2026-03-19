@@ -7,7 +7,7 @@ so it has no /api/v1 prefix.
 
 from fastapi import APIRouter
 
-from app.api.v1 import playback, queue, recommendations, sessions, sse, tracks
+from app.api.v1 import playback, queue, recommendations, sessions, sse, tags, tracks
 
 v1_router = APIRouter()
 
@@ -28,6 +28,9 @@ v1_router.include_router(playback.router, tags=["playback"])
 
 # Recommendations — no prefix, paths are declared in recommendations.py.
 v1_router.include_router(recommendations.router, tags=["recommendations"])
+
+# Mood tags — no prefix, paths are declared in tags.py.
+v1_router.include_router(tags.router, tags=["tags"])
 
 # SSE job status stream — no prefix, paths are declared in sse.py.
 v1_router.include_router(sse.router, tags=["jobs"])

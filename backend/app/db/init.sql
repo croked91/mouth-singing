@@ -140,3 +140,13 @@ CREATE TABLE IF NOT EXISTS catalog_clusters (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+-- === mood_tags ===
+CREATE TABLE IF NOT EXISTS mood_tags (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    cluster_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_mood_tags_cluster ON mood_tags(cluster_id);
