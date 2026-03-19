@@ -561,6 +561,7 @@ class TestRecommendationStrategy:
         "name, expected_value",
         [
             ("POPULAR", "popular"),
+            ("CLUSTER", "cluster"),
         ],
     )
     def test_enum_values(self, name, expected_value):
@@ -569,7 +570,7 @@ class TestRecommendationStrategy:
 
     def test_all_members_present(self):
         values = {m.value for m in RecommendationStrategy}
-        assert values == {"popular"}
+        assert values == {"popular", "cluster"}
 
     def test_is_str_enum(self):
         assert isinstance(RecommendationStrategy.POPULAR, str)

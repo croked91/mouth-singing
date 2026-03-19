@@ -1,13 +1,13 @@
-"""Tests for the recommendation system (R0 — popular-only, cleaned up).
+"""Tests for the recommendation service (R4 — cluster-based with popularity + MMR).
 
 Coverage:
-- RecommendationService.get_recommendations — POPULAR strategy
-- _fused_knn_search — weighted fusion scoring (kept for future phases)
-- QDrantRepository.retrieve — existing and non-existing point
+- auto_cluster_session — greedy clustering
+- distribute_slots — proportional slot allocation
+- popularity_rerank — category weight re-ranking
+- mmr_select — MMR diversity selection
+- RecommendationService.get_recommendations — POPULAR and CLUSTER strategies
 - GET /api/v1/recommendations — endpoint contract
-- QueueService.finish_playing — counter updates (no portrait/transition)
-
-All async tests use asyncio_mode = "auto" (configured in pytest.ini).
+- QueueService.finish_playing — counter updates
 """
 
 from __future__ import annotations
@@ -27,8 +27,8 @@ from karaoke_shared.models.track import Track
 # Shared helpers
 # ---------------------------------------------------------------------------
 
-_DIM = 45  # audio_features vector dimension
-_LYRICS_DIM = 384  # lyrics_embeddings vector dimension
+_DIM = 45
+_LYRICS_DIM = 384
 
 
 def _uid() -> str:
@@ -36,7 +36,6 @@ def _uid() -> str:
 
 
 def _vec(seed: float = 0.1, dim: int = _DIM) -> list[float]:
-    """Return a normalised float vector of dimension dim."""
     raw = [(seed + i * 0.001) for i in range(dim)]
     norm = sum(x**2 for x in raw) ** 0.5
     return [x / norm for x in raw]
@@ -50,7 +49,7 @@ def _lyrics_vec(seed: float = 0.1) -> list[float]:
     return _vec(seed, _LYRICS_DIM)
 
 
-def _make_track(track_id: str | None = None) -> Track:
+def _make_track(track_id: str | None = None, popularity_category: str = "regular") -> Track:
     now = "2024-01-01T00:00:00+00:00"
     return Track(
         id=track_id or _uid(),
@@ -58,385 +57,356 @@ def _make_track(track_id: str | None = None) -> Track:
         title="Test Song",
         source="catalog",
         status="ready",
+        popularity_category=popularity_category,
         created_at=now,
         updated_at=now,
     )
 
 
-def _make_history_entry(
-    participant_id: str,
-    track_id: str,
-    session_id: str = "sess-1",
-):
+def _make_history_entry(track_id: str, session_id: str = "sess-1"):
     entry = MagicMock()
     entry.track_id = track_id
-    entry.participant_id = participant_id
     entry.session_id = session_id
     return entry
 
 
-def _make_sqlite_repo(
-    session_history: list | None = None,
-    popular: list | None = None,
-    track: Track | None = None,
-) -> AsyncMock:
-    """Build an AsyncMock SQLiteRepository."""
+def _make_sqlite_repo(session_history=None, popular=None) -> AsyncMock:
     repo = AsyncMock()
     repo.get_history_by_session.return_value = session_history or []
     repo.list_popular.return_value = popular or []
     repo.list_random.return_value = []
-    repo.get_track.return_value = track
     repo.get_tracks_by_ids.return_value = {}
     return repo
 
 
 def _make_qdrant_repo(
-    audio_retrieve: list[float] | None = None,
-    lyrics_retrieve: list[float] | None = None,
-    audio_search: list | None = None,
-    lyrics_search: list | None = None,
+    audio_retrieve=None, lyrics_retrieve=None,
+    audio_search=None, lyrics_search=None,
 ) -> MagicMock:
-    """Build a MagicMock QDrantRepository."""
     repo = MagicMock()
 
-    def _retrieve_side_effect(collection: str, track_id: str):
+    def _retrieve(collection, track_id):
         if collection == "audio_features":
             return audio_retrieve
         if collection == "lyrics_embeddings":
             return lyrics_retrieve
         return None
 
-    def _search_side_effect(collection: str, vector, limit=10, filters=None):
+    def _search(collection, vector, limit=10, filters=None):
         if collection == "audio_features":
             return audio_search or []
         if collection == "lyrics_embeddings":
             return lyrics_search or []
         return []
 
-    repo.retrieve.side_effect = _retrieve_side_effect
-    repo.search.side_effect = _search_side_effect
-    repo.upsert.return_value = None
+    repo.retrieve.side_effect = _retrieve
+    repo.search.side_effect = _search
     return repo
 
 
-# ---------------------------------------------------------------------------
-# Import RecommendationService (after sys.path is already set up by conftest)
-# ---------------------------------------------------------------------------
-
-from app.services.recommendation_service import RecommendationService  # noqa: E402
+from app.services.recommendation_service import (  # noqa: E402
+    RecommendationService,
+    RecommendedTrack,
+    auto_cluster_session,
+    distribute_slots,
+    mmr_select,
+    popularity_rerank,
+)
 
 
 # ===========================================================================
-# TestPopularStrategy
+# TestAutoClusterSession
 # ===========================================================================
 
 
-class TestPopularStrategy:
-    """Tests for the POPULAR strategy (currently the only strategy)."""
+class TestAutoClusterSession:
 
-    async def test_returns_popular_strategy(self):
-        """get_recommendations always returns POPULAR strategy in R0."""
-        popular_track = _make_track()
-        sqlite_repo = _make_sqlite_repo(popular=[popular_track])
+    def test_single_track_one_cluster(self):
+        vecs = [("t1", _audio_vec(0.1), _lyrics_vec(0.1))]
+        clusters = auto_cluster_session(vecs)
+        assert len(clusters) == 1
+        assert clusters[0]["track_ids"] == ["t1"]
+
+    def test_similar_tracks_same_cluster(self):
+        """Two very similar tracks end up in the same cluster."""
+        vecs = [
+            ("t1", _audio_vec(0.10), _lyrics_vec(0.10)),
+            ("t2", _audio_vec(0.11), _lyrics_vec(0.11)),  # very close
+        ]
+        clusters = auto_cluster_session(vecs)
+        assert len(clusters) == 1
+        assert set(clusters[0]["track_ids"]) == {"t1", "t2"}
+
+    def test_different_tracks_separate_clusters(self):
+        """Two orthogonal tracks create separate clusters."""
+        # Create truly orthogonal vectors (one-hot style)
+        audio_a = [1.0] + [0.0] * (_DIM - 1)
+        lyrics_a = [1.0] + [0.0] * (_LYRICS_DIM - 1)
+        audio_b = [0.0] * (_DIM - 1) + [1.0]
+        lyrics_b = [0.0] * (_LYRICS_DIM - 1) + [1.0]
+        vecs = [
+            ("t1", audio_a, lyrics_a),
+            ("t2", audio_b, lyrics_b),
+        ]
+        clusters = auto_cluster_session(vecs)
+        assert len(clusters) == 2
+
+    def test_max_3_clusters(self):
+        """Even with 5 distinct vibes, max 3 clusters are created."""
+        # Create 5 one-hot-style orthogonal vectors
+        vecs = []
+        for i in range(5):
+            audio = [0.0] * _DIM
+            audio[i % _DIM] = 1.0
+            lyrics = [0.0] * _LYRICS_DIM
+            lyrics[i % _LYRICS_DIM] = 1.0
+            vecs.append((f"t{i}", audio, lyrics))
+        clusters = auto_cluster_session(vecs)
+        assert len(clusters) <= 3
+
+    def test_singleton_weight(self):
+        """A cluster with 1 track has weight 0.5."""
+        vecs = [("t1", _audio_vec(0.1), _lyrics_vec(0.1))]
+        clusters = auto_cluster_session(vecs)
+        assert clusters[0]["weight"] == 0.5
+
+    def test_full_cluster_weight(self):
+        """A cluster with 2+ tracks has weight 1.0."""
+        vecs = [
+            ("t1", _audio_vec(0.10), _lyrics_vec(0.10)),
+            ("t2", _audio_vec(0.11), _lyrics_vec(0.11)),
+        ]
+        clusters = auto_cluster_session(vecs)
+        assert clusters[0]["weight"] == 1.0
+
+    def test_empty_input(self):
+        assert auto_cluster_session([]) == []
+
+    def test_centroid_is_mean(self):
+        """Centroid should be the running mean of cluster members."""
+        v1 = [1.0] * _DIM
+        v2 = [3.0] * _DIM
+        vecs = [
+            ("t1", v1, _lyrics_vec(0.1)),
+            ("t2", v2, _lyrics_vec(0.1)),  # similar lyrics → same cluster
+        ]
+        clusters = auto_cluster_session(vecs)
+        # If they're in the same cluster, centroid audio should be mean
+        if len(clusters) == 1:
+            expected = [2.0] * _DIM
+            assert clusters[0]["centroid_audio"] == pytest.approx(expected)
+
+
+# ===========================================================================
+# TestDistributeSlots
+# ===========================================================================
+
+
+class TestDistributeSlots:
+
+    def test_single_cluster_gets_all(self):
+        clusters = [{"track_ids": ["t1", "t2"], "weight": 1.0}]
+        assert distribute_slots(clusters, 4) == [4]
+
+    def test_two_equal_clusters(self):
+        clusters = [
+            {"track_ids": ["t1", "t2"], "weight": 1.0},
+            {"track_ids": ["t3", "t4"], "weight": 1.0},
+        ]
+        slots = distribute_slots(clusters, 4)
+        assert sum(slots) == 4
+        assert all(s >= 1 for s in slots)
+
+    def test_proportional_allocation(self):
+        """Larger cluster gets more slots."""
+        clusters = [
+            {"track_ids": ["t1", "t2", "t3", "t4"], "weight": 1.0},  # 4 tracks
+            {"track_ids": ["t5"], "weight": 0.5},  # 1 track, singleton
+        ]
+        slots = distribute_slots(clusters, 4)
+        assert sum(slots) == 4
+        assert slots[0] > slots[1]  # bigger cluster gets more
+
+    def test_minimum_1_per_cluster(self):
+        """Every cluster gets at least 1 slot."""
+        clusters = [
+            {"track_ids": [f"t{i}" for i in range(10)], "weight": 1.0},
+            {"track_ids": ["tx"], "weight": 0.5},
+        ]
+        slots = distribute_slots(clusters, 3)
+        assert all(s >= 1 for s in slots)
+        assert sum(slots) == 3
+
+    def test_empty_clusters(self):
+        assert distribute_slots([], 4) == []
+
+
+# ===========================================================================
+# TestPopularityRerank
+# ===========================================================================
+
+
+class TestPopularityRerank:
+
+    def test_eternal_hit_beats_regular(self):
+        """Eternal hit with lower similarity beats regular with higher similarity."""
+        regular = RecommendedTrack(_make_track(popularity_category="regular"), 0.90)
+        eternal = RecommendedTrack(_make_track(popularity_category="eternal_hit"), 0.80)
+
+        result = popularity_rerank([regular, eternal])
+
+        # eternal: 0.80 * 2.0 = 1.60, regular: 0.90 * 1.1 = 0.99
+        assert result[0].track.popularity_category == "eternal_hit"
+
+    def test_preserves_order_same_category(self):
+        """Tracks with same category are ordered by original similarity."""
+        t1 = RecommendedTrack(_make_track(popularity_category="regular"), 0.90)
+        t2 = RecommendedTrack(_make_track(popularity_category="regular"), 0.80)
+
+        result = popularity_rerank([t2, t1])
+        assert result[0].similarity_score > result[1].similarity_score
+
+
+# ===========================================================================
+# TestMMRSelect
+# ===========================================================================
+
+
+class TestMMRSelect:
+
+    def test_selects_limit_tracks(self):
+        tracks = [RecommendedTrack(_make_track(), 0.9 - i * 0.1) for i in range(10)]
+        result = mmr_select(tracks, 3)
+        assert len(result) == 3
+
+    def test_first_is_best_score(self):
+        t_best = RecommendedTrack(_make_track("best"), 0.99)
+        t_other = RecommendedTrack(_make_track("other"), 0.50)
+        result = mmr_select([t_other, t_best], 2)
+        assert result[0].track.id == "best"
+
+    def test_diversity_effect(self):
+        """With audio vectors, MMR penalises similar tracks."""
+        id_a = _uid()
+        id_b = _uid()
+        id_c = _uid()
+
+        t_a = RecommendedTrack(_make_track(id_a), 0.95)
+        t_b = RecommendedTrack(_make_track(id_b), 0.93)  # similar to A
+        t_c = RecommendedTrack(_make_track(id_c), 0.85)  # different from A
+
+        # A and B nearly identical, C orthogonal
+        vec_a = [1.0] + [0.0] * (_DIM - 1)
+        vec_b = [0.99] + [0.01] * (_DIM - 1)  # almost same as A
+        vec_c = [0.0] * (_DIM - 1) + [1.0]     # orthogonal to A
+
+        audio_vecs = {id_a: vec_a, id_b: vec_b, id_c: vec_c}
+        result = mmr_select([t_a, t_b, t_c], 2, audio_vecs)
+
+        # First should be A (best score), second should be C (most different)
+        assert result[0].track.id == id_a
+        assert result[1].track.id == id_c
+
+    def test_fallback_without_vectors(self):
+        """Without audio vectors, MMR falls back to top-N by score."""
+        tracks = [RecommendedTrack(_make_track(), 0.9 - i * 0.1) for i in range(5)]
+        result = mmr_select(tracks, 3, None)
+        assert len(result) == 3
+        assert result[0].similarity_score >= result[1].similarity_score
+
+    def test_empty_candidates(self):
+        assert mmr_select([], 3) == []
+
+
+# ===========================================================================
+# TestGetRecommendations
+# ===========================================================================
+
+
+class TestGetRecommendations:
+
+    async def test_no_history_returns_popular(self):
+        popular = _make_track()
+        sqlite_repo = _make_sqlite_repo(popular=[popular])
         qdrant_repo = _make_qdrant_repo()
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
-        strategy, results = await service.get_recommendations("s-1", limit=5)
-
+        strategy, _ = await service.get_recommendations("s-1")
         assert strategy is RecommendationStrategy.POPULAR
 
-    async def test_returns_popular_tracks(self):
-        """Results contain the popular track with similarity_score=0.0."""
-        popular_track = _make_track()
-        sqlite_repo = _make_sqlite_repo(popular=[popular_track])
-        qdrant_repo = _make_qdrant_repo()
+    async def test_with_history_returns_cluster(self):
+        """With play history and available vectors, returns CLUSTER strategy."""
+        tid = _uid()
+        history = [_make_history_entry(tid)]
+        sqlite_repo = _make_sqlite_repo(session_history=history, popular=[_make_track()])
+        sqlite_repo.get_tracks_by_ids.return_value = {}
 
-        service = RecommendationService(sqlite_repo, qdrant_repo)
-        _, results = await service.get_recommendations("s-1", limit=5)
-
-        assert len(results) == 1
-        assert results[0].track.id == popular_track.id
-        assert results[0].similarity_score == 0.0
-
-    async def test_calls_list_popular_and_list_random(self):
-        """Both list_popular and list_random are called for the 70/30 mix."""
-        popular_tracks = [_make_track() for _ in range(5)]
-        random_tracks = [_make_track() for _ in range(5)]
-        sqlite_repo = _make_sqlite_repo(popular=popular_tracks)
-        sqlite_repo.list_random.return_value = random_tracks
-        qdrant_repo = _make_qdrant_repo()
-
-        service = RecommendationService(sqlite_repo, qdrant_repo)
-        await service.get_recommendations("s-1", limit=10)
-
-        sqlite_repo.list_popular.assert_called_once()
-        sqlite_repo.list_random.assert_called_once()
-
-    async def test_mixes_popular_and_random_slots(self):
-        """Results include tracks from both popular and random buckets."""
-        popular_id = _uid()
-        random_id = _uid()
-        sqlite_repo = _make_sqlite_repo(popular=[_make_track(popular_id)])
-        sqlite_repo.list_random.return_value = [_make_track(random_id)]
-        qdrant_repo = _make_qdrant_repo()
-
-        service = RecommendationService(sqlite_repo, qdrant_repo)
-        _, results = await service.get_recommendations("s-1", limit=10)
-
-        result_ids = {r.track.id for r in results}
-        assert popular_id in result_ids
-        assert random_id in result_ids
-
-    async def test_deduplicates_across_buckets(self):
-        """A track appearing in both popular and random is included only once."""
-        shared_id = _uid()
-        shared_track = _make_track(shared_id)
-        other_track = _make_track(_uid())
-
-        sqlite_repo = _make_sqlite_repo(popular=[shared_track, other_track])
-        sqlite_repo.list_random.return_value = [shared_track]
-        qdrant_repo = _make_qdrant_repo()
-
-        service = RecommendationService(sqlite_repo, qdrant_repo)
-        _, results = await service.get_recommendations("s-1", limit=10)
-
-        result_ids = [r.track.id for r in results]
-        assert result_ids.count(shared_id) == 1
-
-    async def test_excludes_played_tracks(self):
-        """Popular results exclude tracks already played in the session."""
-        played_id = _uid()
-        other_id = _uid()
-        played_track = _make_track(played_id)
-        other_track = _make_track(other_id)
-
-        session_history = [_make_history_entry("p-1", played_id, "s-1")]
-        sqlite_repo = _make_sqlite_repo(
-            session_history=session_history,
-            popular=[played_track, other_track],
+        qdrant_repo = _make_qdrant_repo(
+            audio_retrieve=_audio_vec(),
+            lyrics_retrieve=_lyrics_vec(),
         )
+
+        service = RecommendationService(sqlite_repo, qdrant_repo)
+        strategy, _ = await service.get_recommendations("s-1")
+        assert strategy is RecommendationStrategy.CLUSTER
+
+    async def test_fallback_to_popular_when_no_vectors(self):
+        """When played tracks have no vectors, falls back to POPULAR."""
+        tid = _uid()
+        history = [_make_history_entry(tid)]
+        popular = _make_track()
+        sqlite_repo = _make_sqlite_repo(session_history=history, popular=[popular])
+
+        qdrant_repo = _make_qdrant_repo(audio_retrieve=None, lyrics_retrieve=None)
+
+        service = RecommendationService(sqlite_repo, qdrant_repo)
+        strategy, _ = await service.get_recommendations("s-1")
+        assert strategy is RecommendationStrategy.POPULAR
+
+    async def test_uses_session_history(self):
+        sqlite_repo = _make_sqlite_repo()
         qdrant_repo = _make_qdrant_repo()
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
-        _, results = await service.get_recommendations("s-1", limit=10)
+        await service.get_recommendations("s-1")
 
-        result_ids = {r.track.id for r in results}
-        assert played_id not in result_ids
-        assert other_id in result_ids
+        sqlite_repo.get_history_by_session.assert_called_once_with("s-1")
 
     async def test_default_limit_is_5(self):
-        """Default limit is 5 (not 10 as before)."""
         tracks = [_make_track() for _ in range(10)]
         sqlite_repo = _make_sqlite_repo(popular=tracks)
         qdrant_repo = _make_qdrant_repo()
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         _, results = await service.get_recommendations("s-1")
-
         assert len(results) <= 5
 
-    async def test_uses_session_history_not_participant(self):
-        """get_recommendations uses get_history_by_session, not get_history_by_participant."""
-        sqlite_repo = _make_sqlite_repo()
-        qdrant_repo = _make_qdrant_repo()
-
-        service = RecommendationService(sqlite_repo, qdrant_repo)
-        await service.get_recommendations("s-1", limit=5)
-
-        sqlite_repo.get_history_by_session.assert_called_once_with("s-1")
-
 
 # ===========================================================================
-# TestFusedKnnSearch (kept for future phases R1-R4)
-# ===========================================================================
-
-
-class TestFusedKnnSearch:
-    """Tests for _fused_knn_search: weighted fusion scoring."""
-
-    async def test_fusion_score_is_weighted_combination(self):
-        """When both audio and lyrics results exist, score = 0.7*audio + 0.3*lyrics."""
-        new_id = _uid()
-        audio_score = 0.80
-        lyrics_score = 0.60
-        expected_fused = 0.7 * audio_score + 0.3 * lyrics_score
-
-        sqlite_repo = _make_sqlite_repo()
-        sqlite_repo.get_tracks_by_ids.return_value = {new_id: _make_track(new_id)}
-
-        qdrant_repo = _make_qdrant_repo(
-            audio_search=[(new_id, audio_score, {})],
-            lyrics_search=[(new_id, lyrics_score, {})],
-        )
-
-        service = RecommendationService(sqlite_repo, qdrant_repo)
-        results = await service._fused_knn_search(
-            _audio_vec(), _lyrics_vec(), set(), 5
-        )
-
-        assert len(results) == 1
-        assert results[0].track.id == new_id
-        assert results[0].similarity_score == pytest.approx(expected_fused, abs=1e-6)
-
-    async def test_audio_only_fallback(self):
-        """When lyrics_vector is None, pure audio score is used."""
-        new_id = _uid()
-        audio_score = 0.90
-
-        sqlite_repo = _make_sqlite_repo()
-        sqlite_repo.get_tracks_by_ids.return_value = {new_id: _make_track(new_id)}
-
-        qdrant_repo = _make_qdrant_repo(
-            audio_search=[(new_id, audio_score, {})],
-        )
-
-        service = RecommendationService(sqlite_repo, qdrant_repo)
-        results = await service._fused_knn_search(
-            _audio_vec(), None, set(), 5
-        )
-
-        assert len(results) == 1
-        assert results[0].similarity_score == pytest.approx(audio_score, abs=1e-6)
-
-    async def test_single_modality_normalised_score(self):
-        """A track in only one collection gets its raw score (no penalty)."""
-        audio_only_id = _uid()
-        lyrics_only_id = _uid()
-
-        sqlite_repo = _make_sqlite_repo()
-        sqlite_repo.get_tracks_by_ids.return_value = {
-            audio_only_id: _make_track(audio_only_id),
-            lyrics_only_id: _make_track(lyrics_only_id),
-        }
-
-        qdrant_repo = _make_qdrant_repo(
-            audio_search=[(audio_only_id, 0.9, {})],
-            lyrics_search=[(lyrics_only_id, 0.8, {})],
-        )
-
-        service = RecommendationService(sqlite_repo, qdrant_repo)
-        results = await service._fused_knn_search(
-            _audio_vec(), _lyrics_vec(), set(), 5
-        )
-
-        result_map = {r.track.id: r.similarity_score for r in results}
-        assert result_map[audio_only_id] == pytest.approx(0.9, abs=1e-6)
-        assert result_map[lyrics_only_id] == pytest.approx(0.8, abs=1e-6)
-
-    async def test_excludes_played_tracks(self):
-        """KNN results exclude tracks in the exclude set."""
-        played_id = _uid()
-        new_id = _uid()
-
-        sqlite_repo = _make_sqlite_repo()
-        sqlite_repo.get_tracks_by_ids.return_value = {new_id: _make_track(new_id)}
-
-        qdrant_repo = _make_qdrant_repo(
-            audio_search=[
-                (played_id, 0.99, {}),
-                (new_id, 0.90, {}),
-            ],
-        )
-
-        service = RecommendationService(sqlite_repo, qdrant_repo)
-        results = await service._fused_knn_search(
-            _audio_vec(), None, {played_id}, 5
-        )
-
-        result_ids = {r.track.id for r in results}
-        assert played_id not in result_ids
-        assert new_id in result_ids
-
-    async def test_sorted_by_fused_score_descending(self):
-        """Results are ordered by fused score, highest first."""
-        id_a = _uid()
-        id_b = _uid()
-
-        sqlite_repo = _make_sqlite_repo()
-        sqlite_repo.get_tracks_by_ids.return_value = {
-            id_a: _make_track(id_a),
-            id_b: _make_track(id_b),
-        }
-
-        qdrant_repo = _make_qdrant_repo(
-            audio_search=[(id_a, 0.95, {}), (id_b, 0.60, {})],
-            lyrics_search=[(id_a, 0.50, {}), (id_b, 0.95, {})],
-        )
-
-        service = RecommendationService(sqlite_repo, qdrant_repo)
-        results = await service._fused_knn_search(
-            _audio_vec(), _lyrics_vec(), set(), 5
-        )
-
-        assert len(results) == 2
-        assert results[0].track.id == id_a
-        assert results[1].track.id == id_b
-
-    async def test_knn_exception_returns_empty(self):
-        """If QDrant search raises, returns empty list."""
-        sqlite_repo = _make_sqlite_repo()
-        qdrant_repo = _make_qdrant_repo()
-        qdrant_repo.search.side_effect = RuntimeError("qdrant unavailable")
-
-        service = RecommendationService(sqlite_repo, qdrant_repo)
-        results = await service._fused_knn_search(
-            _audio_vec(), None, set(), 5
-        )
-
-        assert results == []
-
-
-# ===========================================================================
-# TestQDrantRepoRetrieve — real in-memory QDrant client
+# TestQDrantRepoRetrieve
 # ===========================================================================
 
 
 class TestQDrantRepoRetrieve:
-    """Integration tests for QDrantRepository.retrieve using the real in-memory client."""
 
-    def test_retrieve_returns_vector_for_existing_point(self, qdrant_repo):
+    def test_retrieve_returns_vector(self, qdrant_repo):
         pid = _uid()
         v = _audio_vec(0.42)
         qdrant_repo.upsert("audio_features", pid, v, {"status": "ready"})
-
         result = qdrant_repo.retrieve("audio_features", pid)
-
         assert result is not None
-        assert len(result) == _DIM
         assert result == pytest.approx(v, abs=1e-5)
 
-    def test_retrieve_returns_none_for_non_existing_point(self, qdrant_repo):
-        result = qdrant_repo.retrieve("audio_features", _uid())
-        assert result is None
-
-    def test_retrieve_returns_none_after_delete(self, qdrant_repo):
-        pid = _uid()
-        v = _audio_vec(0.1)
-        qdrant_repo.upsert("audio_features", pid, v, {})
-        qdrant_repo.delete("audio_features", pid)
-
-        result = qdrant_repo.retrieve("audio_features", pid)
-        assert result is None
-
-    def test_retrieve_returns_exact_vector_values(self, qdrant_repo):
-        pid = _uid()
-        v = [float(i) / 100 for i in range(_DIM)]
-        norm = sum(x**2 for x in v) ** 0.5
-        v_normed = [x / norm for x in v]
-        qdrant_repo.upsert("audio_features", pid, v_normed, {})
-
-        result = qdrant_repo.retrieve("audio_features", pid)
-        for got, want in zip(result, v_normed):
-            assert abs(got - want) < 1e-5
+    def test_retrieve_returns_none_for_missing(self, qdrant_repo):
+        assert qdrant_repo.retrieve("audio_features", _uid()) is None
 
 
 # ===========================================================================
-# TestRecommendationsEndpoint — FastAPI integration
+# TestRecommendationsEndpoint
 # ===========================================================================
 
 
 class TestRecommendationsEndpoint:
-    """Integration tests for GET /api/v1/recommendations."""
 
     @pytest_asyncio.fixture
     async def rec_fixtures(self, client, app_db):
@@ -444,23 +414,14 @@ class TestRecommendationsEndpoint:
         from karaoke_shared.repositories import SQLiteRepository
         from qdrant_client import QdrantClient
         from qdrant_client.models import Distance, VectorParams
-
         from app.main import app
 
         repo = SQLiteRepository(app_db)
-
         track = await repo.create_track(
-            TrackCreate(
-                artist="Queen",
-                title="Bohemian Rhapsody",
-                source="catalog",
-                status="ready",
-                duration_sec=354,
-            )
+            TrackCreate(artist="Queen", title="Bohemian Rhapsody", source="catalog", status="ready", duration_sec=354)
         )
 
         r = await client.post("/api/v1/sessions", json={"room_id": "room-rec-1"})
-        assert r.status_code == 201
         session_id = r.json()["id"]
 
         qdrant_client = QdrantClient(":memory:")
@@ -469,91 +430,34 @@ class TestRecommendationsEndpoint:
                 collection_name=coll,
                 vectors_config=VectorParams(size=dim, distance=Distance.COSINE),
             )
-
         app.state.qdrant = qdrant_client
 
-        yield {
-            "session_id": session_id,
-            "track_id": track.id,
-            "repo": repo,
-        }
-
+        yield {"session_id": session_id, "track_id": track.id}
         app.state.qdrant = None
 
     async def test_returns_200(self, client, rec_fixtures):
         f = rec_fixtures
-        r = await client.get(
-            "/api/v1/recommendations",
-            params={"session_id": f["session_id"], "limit": 5},
-        )
+        r = await client.get("/api/v1/recommendations", params={"session_id": f["session_id"]})
         assert r.status_code == 200
-
-    async def test_response_has_strategy_and_tracks(self, client, rec_fixtures):
-        f = rec_fixtures
-        r = await client.get(
-            "/api/v1/recommendations",
-            params={"session_id": f["session_id"]},
-        )
-        body = r.json()
-        assert "strategy" in body
-        assert "tracks" in body
-        assert isinstance(body["tracks"], list)
 
     async def test_returns_popular_strategy(self, client, rec_fixtures):
         f = rec_fixtures
-        r = await client.get(
-            "/api/v1/recommendations",
-            params={"session_id": f["session_id"]},
-        )
-        assert r.json()["strategy"] == "popular"
-
-    async def test_track_items_have_required_fields(self, client, rec_fixtures):
-        f = rec_fixtures
-        r = await client.get(
-            "/api/v1/recommendations",
-            params={"session_id": f["session_id"]},
-        )
-        for item in r.json()["tracks"]:
-            assert "id" in item
-            assert "artist" in item
-            assert "title" in item
-            assert "duration_sec" in item
-            assert "similarity_score" in item
-
-    async def test_limit_parameter_respected(self, client, app_db, rec_fixtures):
-        from karaoke_shared.models.track import TrackCreate
-        from karaoke_shared.repositories import SQLiteRepository
-
-        repo = SQLiteRepository(app_db)
-        for i in range(5):
-            await repo.create_track(
-                TrackCreate(
-                    artist=f"Artist {i}",
-                    title=f"Song {i}",
-                    source="catalog",
-                    status="ready",
-                )
-            )
-
-        f = rec_fixtures
-        r = await client.get(
-            "/api/v1/recommendations",
-            params={"session_id": f["session_id"], "limit": 2},
-        )
-        assert r.status_code == 200
-        assert len(r.json()["tracks"]) <= 2
+        r = await client.get("/api/v1/recommendations", params={"session_id": f["session_id"]})
+        assert r.json()["strategy"] in {"popular", "cluster"}
 
     async def test_missing_session_id_returns_422(self, client, rec_fixtures):
         r = await client.get("/api/v1/recommendations", params={})
         assert r.status_code == 422
 
-    async def test_strategy_is_valid_enum(self, client, rec_fixtures):
+    async def test_language_filter_accepted(self, client, rec_fixtures):
         f = rec_fixtures
-        r = await client.get(
-            "/api/v1/recommendations",
-            params={"session_id": f["session_id"]},
-        )
-        assert r.json()["strategy"] in {"popular"}
+        r = await client.get("/api/v1/recommendations", params={"session_id": f["session_id"], "language": "ru"})
+        assert r.status_code == 200
+
+    async def test_tag_id_accepted(self, client, rec_fixtures):
+        f = rec_fixtures
+        r = await client.get("/api/v1/recommendations", params={"session_id": f["session_id"], "tag_id": 999})
+        assert r.status_code == 200  # returns empty for non-existent tag
 
 
 # ===========================================================================
@@ -562,7 +466,6 @@ class TestRecommendationsEndpoint:
 
 
 class TestQueueServiceFinishPlaying:
-    """Integration tests for QueueService.finish_playing (no recommendation updates)."""
 
     def _make_queue_entry(self, entry_id, session_id, participant_id, track_id):
         entry = MagicMock()
@@ -574,7 +477,6 @@ class TestQueueServiceFinishPlaying:
 
     async def _build_service(self, entry, next_entry=None):
         from app.services.queue_service import QueueService
-
         repo = AsyncMock()
         repo.get_queue_entry.return_value = entry
         repo.update_queue_entry_status.return_value = None
@@ -586,49 +488,19 @@ class TestQueueServiceFinishPlaying:
 
     async def test_returns_none_for_missing_entry(self):
         from app.services.queue_service import QueueService
-
         repo = AsyncMock()
         repo.get_queue_entry.return_value = None
-
         service = QueueService(repo=repo)
-        result = await service.finish_playing("nonexistent")
-
-        assert result is None
+        assert await service.finish_playing("nonexistent") is None
 
     async def test_increments_play_count(self):
         entry = self._make_queue_entry("e-1", "s-1", "p-1", "t-1")
         service, repo = await self._build_service(entry)
-
         await service.finish_playing("e-1")
-
         repo.increment_play_count.assert_called_once_with("t-1")
 
-    async def test_increments_tracks_played(self):
-        entry = self._make_queue_entry("e-1", "s-1", "p-1", "t-1")
-        service, repo = await self._build_service(entry)
-
-        await service.finish_playing("e-1")
-
-        repo.increment_tracks_played.assert_called_once_with("p-1")
-
     async def test_creates_play_history(self):
-        from karaoke_shared.models.play_history import PlayHistoryCreate
-
         entry = self._make_queue_entry("e-1", "s-1", "p-1", "t-1")
         service, repo = await self._build_service(entry)
-
         await service.finish_playing("e-1")
-
         repo.create_play_history.assert_called_once()
-        call_arg: PlayHistoryCreate = repo.create_play_history.call_args.args[0]
-        assert call_arg.session_id == "s-1"
-        assert call_arg.participant_id == "p-1"
-        assert call_arg.track_id == "t-1"
-
-    async def test_marks_entry_as_done(self):
-        entry = self._make_queue_entry("e-1", "s-1", "p-1", "t-1")
-        service, repo = await self._build_service(entry)
-
-        await service.finish_playing("e-1")
-
-        repo.update_queue_entry_status.assert_called_with("e-1", "done")

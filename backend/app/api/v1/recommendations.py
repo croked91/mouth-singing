@@ -40,6 +40,7 @@ def _to_items(recommended) -> list[RecommendedTrackItem]:
 async def get_recommendations(
     session_id: str = Query(..., description="Session UUID"),
     tag_id: int | None = Query(None, description="Mood tag ID (overrides auto mode)"),
+    language: str | None = Query(None, description="Language filter (e.g. 'ru')"),
     limit: int = Query(5, ge=1, le=50, description="Max results"),
     repo: SQLiteRepository = Depends(get_sqlite_repo),
     qdrant_repo: QDrantRepository = Depends(get_qdrant_repo),
@@ -80,5 +81,6 @@ async def get_recommendations(
     strategy, recommended = await service.get_recommendations(
         session_id=session_id,
         limit=limit,
+        language=language,
     )
     return RecommendationResponse(strategy=strategy, tracks=_to_items(recommended))

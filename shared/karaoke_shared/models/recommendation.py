@@ -11,6 +11,7 @@ class RecommendationStrategy(str, Enum):
     """Strategy used to compute the recommendation list."""
 
     POPULAR = "popular"
+    CLUSTER = "cluster"
 
 
 class RecommendedTrackItem(BaseModel):
