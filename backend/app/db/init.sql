@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS tracks (
     popularity_category TEXT NOT NULL DEFAULT 'regular',
     chart_count INTEGER NOT NULL DEFAULT 0,
     chart_last_seen TEXT,
+    catalog_cluster_id INTEGER,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -129,3 +130,13 @@ CREATE TABLE IF NOT EXISTS job_queue (
 
 CREATE INDEX IF NOT EXISTS idx_jobs_status_priority ON job_queue(status, priority DESC, created_at ASC)
     WHERE status = 'pending';
+
+-- === catalog_clusters ===
+CREATE TABLE IF NOT EXISTS catalog_clusters (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    centroid_audio TEXT NOT NULL,
+    centroid_lyrics TEXT NOT NULL,
+    track_count INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);

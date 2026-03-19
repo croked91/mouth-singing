@@ -45,6 +45,7 @@ class Track(BaseModel):
     popularity_category: str = PopularityCategory.REGULAR
     chart_count: int = 0
     chart_last_seen: str | None = None
+    catalog_cluster_id: int | None = None
     created_at: str
     updated_at: str
 
@@ -69,6 +70,7 @@ class TrackCreate(BaseModel):
     popularity_category: str = PopularityCategory.REGULAR
     chart_count: int = 0
     chart_last_seen: str | None = None
+    catalog_cluster_id: int | None = None
     created_at: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
@@ -100,6 +102,7 @@ class TrackUpdate(BaseModel):
     popularity_category: str | None = None
     chart_count: int | None = None
     chart_last_seen: str | None = None
+    catalog_cluster_id: int | None = None
     updated_at: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )

@@ -80,13 +80,13 @@ class SQLiteRepository:
                 clip_path, lyrics_text, syllable_timings, language, source,
                 status, error_message, play_count, qdrant_synced,
                 popularity_category, chart_count, chart_last_seen,
-                created_at, updated_at
+                catalog_cluster_id, created_at, updated_at
             ) VALUES (
                 :id, :artist, :title, :duration_sec, :mp3_path, :instrumental_path,
                 :clip_path, :lyrics_text, :syllable_timings, :language, :source,
                 :status, :error_message, :play_count, :qdrant_synced,
                 :popularity_category, :chart_count, :chart_last_seen,
-                :created_at, :updated_at
+                :catalog_cluster_id, :created_at, :updated_at
             )
             """,
             {
@@ -108,6 +108,7 @@ class SQLiteRepository:
                 "popularity_category": data.popularity_category,
                 "chart_count": data.chart_count,
                 "chart_last_seen": data.chart_last_seen,
+                "catalog_cluster_id": data.catalog_cluster_id,
                 "created_at": data.created_at,
                 "updated_at": data.updated_at,
             },
@@ -154,6 +155,7 @@ class SQLiteRepository:
             "popularity_category",
             "chart_count",
             "chart_last_seen",
+            "catalog_cluster_id",
         ):
             value = getattr(data, field)
             if value is not None:
@@ -324,6 +326,7 @@ class SQLiteRepository:
             popularity_category=data.get("popularity_category", "regular"),
             chart_count=data.get("chart_count", 0),
             chart_last_seen=data.get("chart_last_seen"),
+            catalog_cluster_id=data.get("catalog_cluster_id"),
             created_at=data["created_at"],
             updated_at=data["updated_at"],
         )
@@ -698,6 +701,59 @@ class SQLiteRepository:
             played_at=data["played_at"],
             completed=data.get("completed", 0),
         )
+
+    # ------------------------------------------------------------------
+    # Catalog clusters
+    # ------------------------------------------------------------------
+
+    async def create_catalog_cluster(
+        self,
+        centroid_audio: list[float],
+        centroid_lyrics: list[float],
+        track_count: int,
+    ) -> int:
+        """Insert a catalog cluster and return its auto-generated ID."""
+        now = _now_iso()
+        cursor = await self.db.execute(
+            """
+            INSERT INTO catalog_clusters (centroid_audio, centroid_lyrics, track_count, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (json.dumps(centroid_audio), json.dumps(centroid_lyrics), track_count, now, now),
+        )
+        await self.db.commit()
+        return cursor.lastrowid  # type: ignore[return-value]
+
+    async def get_all_clusters(self) -> list[dict]:
+        """Return all catalog clusters as dicts with parsed centroid vectors."""
+        cursor = await self.db.execute("SELECT * FROM catalog_clusters ORDER BY id")
+        rows = await cursor.fetchall()
+        results = []
+        for row in rows:
+            data = self._row_to_dict(row)
+            results.append({
+                "id": data["id"],
+                "centroid_audio": json.loads(data["centroid_audio"]),
+                "centroid_lyrics": json.loads(data["centroid_lyrics"]),
+                "track_count": data["track_count"],
+                "created_at": data["created_at"],
+                "updated_at": data["updated_at"],
+            })
+        return results
+
+    async def clear_clusters(self) -> None:
+        """Delete all catalog clusters and reset track assignments."""
+        await self.db.execute("DELETE FROM catalog_clusters")
+        await self.db.execute("UPDATE tracks SET catalog_cluster_id = NULL")
+        await self.db.commit()
+
+    async def assign_cluster(self, track_id: str, cluster_id: int) -> None:
+        """Assign a track to a catalog cluster."""
+        await self.db.execute(
+            "UPDATE tracks SET catalog_cluster_id = ? WHERE id = ?",
+            (cluster_id, track_id),
+        )
+        await self.db.commit()
 
     # ------------------------------------------------------------------
     # Job queue

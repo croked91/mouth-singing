@@ -99,6 +99,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         "ALTER TABLE tracks ADD COLUMN popularity_category TEXT DEFAULT 'regular'",
         "ALTER TABLE tracks ADD COLUMN chart_count INTEGER DEFAULT 0",
         "ALTER TABLE tracks ADD COLUMN chart_last_seen TEXT",
+        "ALTER TABLE tracks ADD COLUMN catalog_cluster_id INTEGER",
     ]:
         try:
             await db.execute(migration)
