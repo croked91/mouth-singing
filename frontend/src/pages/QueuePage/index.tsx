@@ -86,6 +86,7 @@ export const QueuePage: React.FC = () => {
   const [moodTags, setMoodTags] = useState<MoodTag[]>([]);
   const [selectedTagId, setSelectedTagId] = useState<number | null>(null);
   const [russianOnly, setRussianOnly] = useState(false);
+  const [recsRefreshCounter, setRecsRefreshCounter] = useState(0);
 
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -135,12 +136,16 @@ export const QueuePage: React.FC = () => {
     [sessionId, russianOnly]
   );
 
-  // Auto-fetch on mount and after tab change
+  // Auto-fetch on mount, tab change, tag change, or after adding a track
   useEffect(() => {
     if (activeTab === TAB_RECOMMENDATIONS) {
       void fetchRecommendations(selectedTagId ?? undefined);
     }
-  }, [activeTab, fetchRecommendations, selectedTagId]);
+    // Also refresh tags
+    if (sessionId && recsRefreshCounter > 0) {
+      void api.getTags(sessionId).then(setMoodTags).catch(() => {});
+    }
+  }, [activeTab, fetchRecommendations, selectedTagId, recsRefreshCounter]);
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
@@ -156,18 +161,26 @@ export const QueuePage: React.FC = () => {
     setRussianOnly((prev) => !prev);
   }, []);
 
+  const ensureParticipant = useCallback(async (): Promise<string> => {
+    if (participants.length > 0) return participants[0].id;
+    // Auto-create default participant on first track selection
+    const { addParticipant } = useSessionStore.getState();
+    const p = await addParticipant('Певец');
+    return p.id;
+  }, [participants]);
+
   const handleTrackSelect = useCallback(
     async (trackId: string): Promise<void> => {
       if (!sessionId) return;
 
-      const participantId = participants[0]?.id || 'anonymous';
-
       setAddingTrackId(trackId);
       try {
+        const participantId = await ensureParticipant();
         await addToQueue(sessionId, participantId, trackId);
         setSnackMessage('Трек добавлен в очередь!');
-        // Auto-refresh recommendations after adding a track
-        void fetchRecommendations(selectedTagId ?? undefined);
+        // Refresh recommendations and tags after adding a track.
+        // Use fresh sessionId/selectedTagId via closures that are always current.
+        setRecsRefreshCounter((c) => c + 1);
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Ошибка добавления в очередь';
         setSnackMessage(`Ошибка: ${message}`);
@@ -175,18 +188,19 @@ export const QueuePage: React.FC = () => {
         setAddingTrackId(null);
       }
     },
-    [sessionId, participants, addToQueue, fetchRecommendations, selectedTagId]
+    [sessionId, ensureParticipant, addToQueue]
   );
+
+  const { skipTurn } = useQueueStore();
 
   const handleSkip = useCallback(async (): Promise<void> => {
     if (!currentEntry || !sessionId) return;
     try {
-      await api.skipTurn(currentEntry.id);
-      void loadQueue(sessionId);
+      await skipTurn(currentEntry.id, sessionId);
     } catch {
-      // Silently ignore — queue will be refreshed by poll
+      // Silently ignore — queue will be refreshed by store
     }
-  }, [currentEntry, sessionId, loadQueue]);
+  }, [currentEntry, sessionId, skipTurn]);
 
   const handleAdminClick = useCallback((): void => {
     navigate('/admin');

@@ -798,7 +798,7 @@ class SQLiteRepository:
             list(names),
         )
         rows = await cursor.fetchall()
-        return {self._row_to_dict(r)["name"]: self._row_to_dict(r) for r in rows}
+        return {d["name"]: d for r in rows if (d := self._row_to_dict(r))}
 
     async def get_artists_without_images(self, limit: int = 100) -> list[str]:
         """Return artist names that have no image_path set."""

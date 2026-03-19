@@ -298,7 +298,6 @@ export const SearchTab: React.FC<SearchTabProps> = ({
   };
 
   const handleTrackSelect = async (trackId: string): Promise<void> => {
-    if (!selectedParticipantId) return;
     setAddingTrackId(trackId);
     try {
       await onTrackSelected(trackId);

@@ -25,6 +25,8 @@ export const useQueueStore = create<QueueState>((set, get) => ({
   error: null,
 
   loadQueue: async (sessionId: string): Promise<void> => {
+    // Skip if already loading (prevents concurrent poll + manual refresh)
+    if (get().isLoading) return;
     set({ isLoading: true, error: null });
     try {
       const queue = await api.getQueue(sessionId);
@@ -36,7 +38,7 @@ export const useQueueStore = create<QueueState>((set, get) => ({
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Ошибка загрузки очереди';
       set({ isLoading: false, error: message });
-      throw err;
+      // Don't throw — polling should not generate unhandled rejections
     }
   },
 

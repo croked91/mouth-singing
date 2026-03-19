@@ -180,7 +180,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({
     );
 
     unsubscribeRef.current = unsubscribe;
-  }, [file, artist, title]);
+  }, [file, artist, title, selectedParticipantId, onTrackUploaded]);
 
   const handleReset = (): void => {
     unsubscribeRef.current?.();
