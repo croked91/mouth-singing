@@ -60,7 +60,6 @@ class TrackSource(StrEnum):
 
 COLLECTION_AUDIO_FEATURES = "audio_features"
 COLLECTION_LYRICS_EMBEDDINGS = "lyrics_embeddings"
-COLLECTION_TRANSITIONS = "transitions"
 
 # ------------------------------------------------------------------
 # Vector dimensions
@@ -68,7 +67,6 @@ COLLECTION_TRANSITIONS = "transitions"
 
 AUDIO_FEATURE_DIM = 45
 LYRICS_EMBEDDING_DIM = 384
-TRANSITION_DIM = AUDIO_FEATURE_DIM  # transitions use audio feature vectors
 
 # ------------------------------------------------------------------
 # Pipeline step names (used in job_queue.current_step)

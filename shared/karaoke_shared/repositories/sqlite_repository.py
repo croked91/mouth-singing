@@ -699,6 +699,41 @@ class SQLiteRepository:
         )
 
     # ------------------------------------------------------------------
+    # Transitions
+    # ------------------------------------------------------------------
+
+    async def upsert_transition(
+        self, from_track_id: str, to_track_id: str
+    ) -> None:
+        """Atomically increment the weight of a transition, or insert with weight=1."""
+        await self.db.execute(
+            """
+            INSERT INTO transitions (from_track_id, to_track_id, weight)
+            VALUES (?, ?, 1)
+            ON CONFLICT(from_track_id, to_track_id)
+            DO UPDATE SET weight = weight + 1
+            """,
+            (from_track_id, to_track_id),
+        )
+        await self.db.commit()
+
+    async def get_transitions(
+        self, from_track_id: str, limit: int = 20
+    ) -> list[tuple[str, int]]:
+        """Return transitions from a track, sorted by weight descending."""
+        cursor = await self.db.execute(
+            """
+            SELECT to_track_id, weight FROM transitions
+            WHERE from_track_id = ?
+            ORDER BY weight DESC
+            LIMIT ?
+            """,
+            (from_track_id, limit),
+        )
+        rows = await cursor.fetchall()
+        return [(row[0], row[1]) for row in rows]
+
+    # ------------------------------------------------------------------
     # Job queue
     # ------------------------------------------------------------------
 

@@ -763,3 +763,21 @@ Intel Core i3-14100, 32 GB DDR5, Tesla T4 16 GB, 2 TB NVMe
   - Удалён torch_device из Separator() в download_models.py (API изменился)
 - **2026-03-08**: Обновление QDrant v1.13.6 → v1.16.2 (совместимость с qdrant-client 1.17)
 - **2026-03-08**: Все 4 контейнера запущены и healthy. Worker polling for jobs
+
+## Экспертный аудит и фиксы рекомендательной системы
+
+### Контекст
+Перед финальной доработкой MVP проведён экспертный аудит системы рекомендаций: 7 подагентов-экспертов (пользователь-одиночка, малая группа 2-3, большая группа 4-10, эксперт по музыке, эксперт по рекомендательным системам, архитектор, UX-дизайнер) провели мысленную симуляцию всех сценариев использования. Результаты собраны в `journals/RECOMMENDATIONS_REVIEW.md`.
+
+### Выявленные баги (исправлены)
+1. **Fusion bias**: треки без лирики получали заниженный fused score (0.7*audio вместо audio) из-за penalty за отсутствующую модальность. Фикс: per-candidate нормализация по доступным весам.
+2. **Transitions race condition**: read-modify-write weight в QDrant без блокировки. Два concurrent finish_entry могли потерять инкремент. Фикс: миграция transitions в SQLite с атомарным `INSERT ON CONFLICT DO UPDATE SET weight = weight + 1` (ADR-019).
+3. **Transitions в QDrant без необходимости**: коллекция хранила 45-D вектор, который никогда не использовался для KNN (только payload-фильтрация). Перенесено в SQLite-таблицу.
+4. **N+1 в semantic search**: цикл `get_track()` заменён на batch `get_tracks_by_ids()`.
+5. **Sequential QDrant calls**: 3 метода (`_last_strategy`, `_last_two_avg_strategy`, `update_portrait`) делали 2-4 sequential retrieve — переведены на `asyncio.gather()`.
+6. **Нет timeout у QdrantClient**: добавлен `timeout=10`.
+
+### Хронология
+- **2026-03-19**: Запуск 7 подагентов-экспертов для аудита системы рекомендаций
+- **2026-03-19**: Сбор обратной связи, составление `RECOMMENDATIONS_REVIEW.md` (8 разделов, 6 предложенных фаз улучшений)
+- **2026-03-19**: Исправление 6 багов: fusion bias, transitions → SQLite, N+1, parallel QDrant calls, timeout. 77/77 тестов pass

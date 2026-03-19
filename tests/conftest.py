@@ -45,7 +45,6 @@ _INIT_SQL = (
 _QDRANT_COLLECTIONS: dict[str, int] = {
     "audio_features": 45,
     "lyrics_embeddings": 384,
-    "transitions": 45,
 }
 
 

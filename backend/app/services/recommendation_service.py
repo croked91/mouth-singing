@@ -22,14 +22,12 @@ lyrics portraits are maintained independently.
 from __future__ import annotations
 
 import asyncio
-from uuid import NAMESPACE_URL, uuid5
 
 import numpy as np
 import structlog
 from karaoke_shared.constants import (
     COLLECTION_AUDIO_FEATURES,
     COLLECTION_LYRICS_EMBEDDINGS,
-    COLLECTION_TRANSITIONS,
 )
 from karaoke_shared.models.recommendation import RecommendationStrategy
 from karaoke_shared.models.track import Track
@@ -40,7 +38,6 @@ logger = structlog.get_logger(__name__)
 
 _AUDIO_COLLECTION = COLLECTION_AUDIO_FEATURES
 _LYRICS_COLLECTION = COLLECTION_LYRICS_EMBEDDINGS
-_TRANSITIONS_COLLECTION = COLLECTION_TRANSITIONS
 
 # Weight of the most recent track in EMA portrait update.
 # Effective window ≈ 1/alpha ≈ 3-4 most recent tracks.
@@ -195,9 +192,11 @@ class RecommendationService:
         trans_limit = limit // 2
         trans_ids = await self._transition_candidates(track_id, played_ids, trans_limit)
 
-        # Fetch both vectors for the track.
-        audio_vec = await self._get_track_vector(track_id)
-        lyrics_vec = await self._get_track_lyrics_vector(track_id)
+        # Fetch both vectors for the track in parallel.
+        audio_vec, lyrics_vec = await asyncio.gather(
+            self._get_track_vector(track_id),
+            self._get_track_lyrics_vector(track_id),
+        )
 
         if audio_vec is None and lyrics_vec is None and not trans_ids:
             return await self._popular_strategy(played_ids, limit)
@@ -230,10 +229,12 @@ class RecommendationService:
         limit: int,
     ) -> tuple[RecommendationStrategy, list[RecommendedTrack]]:
         """Fused KNN on the L2-normalised average of the two most recent vectors."""
-        a1 = await self._get_track_vector(track_id_1)
-        a2 = await self._get_track_vector(track_id_2)
-        l1 = await self._get_track_lyrics_vector(track_id_1)
-        l2 = await self._get_track_lyrics_vector(track_id_2)
+        a1, a2, l1, l2 = await asyncio.gather(
+            self._get_track_vector(track_id_1),
+            self._get_track_vector(track_id_2),
+            self._get_track_lyrics_vector(track_id_1),
+            self._get_track_lyrics_vector(track_id_2),
+        )
 
         audio_avg = _avg_vectors(a1, a2)
         lyrics_avg = _avg_vectors(l1, l2)
@@ -338,12 +339,22 @@ class RecommendationService:
 
         # Compute fused scores.
         if audio_scores and lyrics_scores:
-            # Both available — weighted fusion.
+            # Both collections returned results — weighted fusion with
+            # per-candidate normalisation so that candidates appearing in
+            # only one collection are not penalised.
             fused: list[tuple[str, float]] = []
             for pid in all_ids:
+                has_audio = pid in audio_scores
+                has_lyrics = pid in lyrics_scores
                 a = audio_scores.get(pid, 0.0)
                 l = lyrics_scores.get(pid, 0.0)
-                fused.append((pid, _AUDIO_WEIGHT * a + _LYRICS_WEIGHT * l))
+                w = (
+                    (_AUDIO_WEIGHT if has_audio else 0.0)
+                    + (_LYRICS_WEIGHT if has_lyrics else 0.0)
+                )
+                fused.append(
+                    (pid, (_AUDIO_WEIGHT * a + _LYRICS_WEIGHT * l) / w if w > 0 else 0.0)
+                )
         elif audio_scores:
             # Audio only.
             fused = [(pid, score) for pid, score in audio_scores.items()]
@@ -394,27 +405,19 @@ class RecommendationService:
     ) -> list[str]:
         """Return to_track_ids from the transition graph, sorted by weight.
 
-        Queries the ``transitions`` collection using a payload filter on
-        ``from_track_id``, then sorts results by weight descending.
-        Returns an empty list if no transitions exist.
+        Queries the SQLite ``transitions`` table for the given from_track_id,
+        filtering out already-played tracks.
         """
         try:
-            hits = await asyncio.to_thread(
-                self.qdrant_repo.scroll_filtered,
-                _TRANSITIONS_COLLECTION,
-                {"from_track_id": from_track_id},
-                limit * 4,
+            rows = await self.sqlite_repo.get_transitions(
+                from_track_id, limit=limit * 4
             )
         except Exception:
             return []
 
-        # Sort by weight descending (higher = more times played in sequence).
-        hits.sort(key=lambda h: h[2].get("weight", 1), reverse=True)
-
         result: list[str] = []
-        for _, _, payload in hits:
-            to_id = payload.get("to_track_id")
-            if to_id and to_id not in exclude_ids and to_id not in result:
+        for to_id, _weight in rows:
+            if to_id not in exclude_ids and to_id not in result:
                 result.append(to_id)
                 if len(result) >= limit:
                     break
@@ -431,8 +434,10 @@ class RecommendationService:
         Returns the updated audio portrait vector, or ``None`` if the
         track has no audio vector in QDrant.
         """
-        audio_vec = await self._get_track_vector(track_id)
-        lyrics_vec = await self._get_track_lyrics_vector(track_id)
+        audio_vec, lyrics_vec = await asyncio.gather(
+            self._get_track_vector(track_id),
+            self._get_track_lyrics_vector(track_id),
+        )
 
         if audio_vec is None:
             return None
@@ -466,9 +471,9 @@ class RecommendationService:
         """Record a track transition for collaborative filtering.
 
         Looks at the participant's play history to find the previous track.
-        If found, upserts a transition vector in QDrant's ``transitions``
-        collection.  The weight field is **incremented** (read-modify-write)
-        so that frequently-observed transitions accumulate higher weight.
+        If found, atomically upserts the transition in the SQLite
+        ``transitions`` table using INSERT … ON CONFLICT, eliminating the
+        read-modify-write race condition.
         """
         history = await self.sqlite_repo.get_history_by_participant(
             participant_id, limit=2
@@ -479,42 +484,15 @@ class RecommendationService:
             return
 
         previous_track_id = history[1].track_id  # history is most-recent-first
-        current_vector = await self._get_track_vector(current_track_id)
-        if current_vector is None:
-            return
-
-        # Use a deterministic UUID v5 based on the from→to pair.
-        transition_id = str(
-            uuid5(NAMESPACE_URL, f"{previous_track_id}_{current_track_id}")
-        )
 
         try:
-            # Read existing weight (if any).
-            existing = await asyncio.to_thread(
-                self.qdrant_repo.retrieve_payload,
-                _TRANSITIONS_COLLECTION,
-                transition_id,
-            )
-            new_weight = (
-                (existing.get("weight", 0) if existing else 0) + 1
-            )
-
-            await asyncio.to_thread(
-                self.qdrant_repo.upsert,
-                _TRANSITIONS_COLLECTION,
-                transition_id,
-                current_vector,
-                {
-                    "from_track_id": previous_track_id,
-                    "to_track_id": current_track_id,
-                    "weight": new_weight,
-                },
+            await self.sqlite_repo.upsert_transition(
+                previous_track_id, current_track_id
             )
             logger.info(
                 "transition_recorded",
                 from_track=previous_track_id,
                 to_track=current_track_id,
-                weight=new_weight,
             )
         except Exception as exc:
             logger.warning("transition_record_failed", error=str(exc))

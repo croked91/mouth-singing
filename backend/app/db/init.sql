@@ -126,3 +126,13 @@ CREATE TABLE IF NOT EXISTS job_queue (
 
 CREATE INDEX IF NOT EXISTS idx_jobs_status_priority ON job_queue(status, priority DESC, created_at ASC)
     WHERE status = 'pending';
+
+-- === transitions ===
+CREATE TABLE IF NOT EXISTS transitions (
+    from_track_id TEXT NOT NULL,
+    to_track_id TEXT NOT NULL,
+    weight INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (from_track_id, to_track_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_transitions_from ON transitions(from_track_id);

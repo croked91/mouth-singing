@@ -136,6 +136,8 @@ def _make_sqlite_repo(
     repo.get_tracks_by_ids.return_value = {}
     repo.get_participant.return_value = participant
     repo.update_portrait.return_value = None
+    repo.upsert_transition.return_value = None
+    repo.get_transitions.return_value = []
     return repo
 
 
@@ -180,8 +182,6 @@ def _make_qdrant_repo(
     repo.retrieve.side_effect = _retrieve_side_effect
     repo.search.side_effect = _search_side_effect
     repo.upsert.return_value = None
-    repo.retrieve_payload.return_value = None  # no existing transition by default
-    repo.scroll_filtered.return_value = []     # no transition candidates by default
     return repo
 
 
@@ -609,8 +609,8 @@ class TestFusedKnnSearch:
         assert audio_only_id in result_ids
         assert lyrics_only_id in result_ids
 
-    async def test_fusion_audio_only_track_gets_weighted_score(self):
-        """A track only in audio results gets score = 0.7 * audio_score + 0 (lyrics absent)."""
+    async def test_fusion_single_modality_track_gets_normalised_score(self):
+        """A track appearing in only one collection gets its raw score (no penalty)."""
         track_id = _uid()
         audio_only_id = _uid()
         lyrics_only_id = _uid()
@@ -637,10 +637,10 @@ class TestFusedKnnSearch:
         _, results = await service.get_recommendations("p-1", "s-1", limit=5)
 
         result_map = {r.track.id: r.similarity_score for r in results}
-        # audio_only_id: 0.7 * 0.9 + 0.3 * 0 = 0.63
-        assert result_map[audio_only_id] == pytest.approx(0.7 * audio_score, abs=1e-6)
-        # lyrics_only_id: 0.7 * 0 + 0.3 * 0.8 = 0.24
-        assert result_map[lyrics_only_id] == pytest.approx(0.3 * lyrics_score, abs=1e-6)
+        # audio_only_id: normalised to raw audio_score (no lyrics penalty)
+        assert result_map[audio_only_id] == pytest.approx(audio_score, abs=1e-6)
+        # lyrics_only_id: normalised to raw lyrics_score (no audio penalty)
+        assert result_map[lyrics_only_id] == pytest.approx(lyrics_score, abs=1e-6)
 
     async def test_fusion_results_sorted_by_fused_score_descending(self):
         """Results are ordered by fused score, highest first."""
@@ -1262,10 +1262,10 @@ class TestUpdatePortrait:
 
 
 class TestRecordTransition:
-    """Tests for RecommendationService.record_transition."""
+    """Tests for RecommendationService.record_transition (SQLite-based)."""
 
     async def test_records_transition_when_two_history_entries(self):
-        """With 2 history entries, a transition is upserted to QDrant."""
+        """With 2 history entries, a transition is upserted to SQLite."""
         participant_id = "p-1"
         prev_id = _uid()
         curr_id = _uid()
@@ -1274,73 +1274,12 @@ class TestRecordTransition:
             _make_history_entry(participant_id, prev_id),
         ]
         sqlite_repo = _make_sqlite_repo(history=history)
-        qdrant_repo = _make_qdrant_repo(audio_retrieve=_audio_vec())
+        qdrant_repo = _make_qdrant_repo()
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         await service.record_transition(participant_id, curr_id)
 
-        qdrant_repo.upsert.assert_called_once()
-
-    async def test_transition_point_id_is_deterministic_uuid(self):
-        """The transition point_id is a deterministic UUID v5 based on the from→to pair."""
-        from uuid import NAMESPACE_URL, uuid5
-
-        participant_id = "p-1"
-        prev_id = _uid()
-        curr_id = _uid()
-        history = [
-            _make_history_entry(participant_id, curr_id),
-            _make_history_entry(participant_id, prev_id),
-        ]
-        sqlite_repo = _make_sqlite_repo(history=history)
-        qdrant_repo = _make_qdrant_repo(audio_retrieve=_audio_vec())
-
-        service = RecommendationService(sqlite_repo, qdrant_repo)
-        await service.record_transition(participant_id, curr_id)
-
-        _, point_id, _, payload = qdrant_repo.upsert.call_args.args
-        expected_id = str(uuid5(NAMESPACE_URL, f"{prev_id}_{curr_id}"))
-        assert point_id == expected_id
-
-    async def test_transition_payload_contains_from_to_tracks(self):
-        """Transition payload contains from_track_id, to_track_id, and weight=1 (new transition)."""
-        participant_id = "p-1"
-        prev_id = _uid()
-        curr_id = _uid()
-        history = [
-            _make_history_entry(participant_id, curr_id),
-            _make_history_entry(participant_id, prev_id),
-        ]
-        sqlite_repo = _make_sqlite_repo(history=history)
-        qdrant_repo = _make_qdrant_repo(audio_retrieve=_audio_vec())
-        # retrieve_payload returns None → no existing transition → weight starts at 1
-        qdrant_repo.retrieve_payload.return_value = None
-
-        service = RecommendationService(sqlite_repo, qdrant_repo)
-        await service.record_transition(participant_id, curr_id)
-
-        _, _, _, payload = qdrant_repo.upsert.call_args.args
-        assert payload["from_track_id"] == prev_id
-        assert payload["to_track_id"] == curr_id
-        assert payload["weight"] == 1
-
-    async def test_transition_uses_transitions_collection(self):
-        """Transition upsert targets the 'transitions' QDrant collection."""
-        participant_id = "p-1"
-        prev_id = _uid()
-        curr_id = _uid()
-        history = [
-            _make_history_entry(participant_id, curr_id),
-            _make_history_entry(participant_id, prev_id),
-        ]
-        sqlite_repo = _make_sqlite_repo(history=history)
-        qdrant_repo = _make_qdrant_repo(audio_retrieve=_audio_vec())
-
-        service = RecommendationService(sqlite_repo, qdrant_repo)
-        await service.record_transition(participant_id, curr_id)
-
-        collection, _, _, _ = qdrant_repo.upsert.call_args.args
-        assert collection == "transitions"
+        sqlite_repo.upsert_transition.assert_called_once_with(prev_id, curr_id)
 
     async def test_does_nothing_when_fewer_than_two_history_entries(self):
         """record_transition is a no-op when there is only 1 history entry."""
@@ -1348,44 +1287,27 @@ class TestRecordTransition:
         curr_id = _uid()
         history = [_make_history_entry(participant_id, curr_id)]
         sqlite_repo = _make_sqlite_repo(history=history)
-        qdrant_repo = _make_qdrant_repo(audio_retrieve=_audio_vec())
+        qdrant_repo = _make_qdrant_repo()
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         await service.record_transition(participant_id, curr_id)
 
-        qdrant_repo.upsert.assert_not_called()
+        sqlite_repo.upsert_transition.assert_not_called()
 
     async def test_does_nothing_when_empty_history(self):
         """record_transition is a no-op when history is empty."""
         participant_id = "p-1"
         curr_id = _uid()
         sqlite_repo = _make_sqlite_repo(history=[])
-        qdrant_repo = _make_qdrant_repo(audio_retrieve=_audio_vec())
+        qdrant_repo = _make_qdrant_repo()
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         await service.record_transition(participant_id, curr_id)
 
-        qdrant_repo.upsert.assert_not_called()
-
-    async def test_does_nothing_when_current_track_has_no_vector(self):
-        """If the current track has no vector, upsert is not called."""
-        participant_id = "p-1"
-        prev_id = _uid()
-        curr_id = _uid()
-        history = [
-            _make_history_entry(participant_id, curr_id),
-            _make_history_entry(participant_id, prev_id),
-        ]
-        sqlite_repo = _make_sqlite_repo(history=history)
-        qdrant_repo = _make_qdrant_repo(audio_retrieve=None, lyrics_retrieve=None)
-
-        service = RecommendationService(sqlite_repo, qdrant_repo)
-        await service.record_transition(participant_id, curr_id)
-
-        qdrant_repo.upsert.assert_not_called()
+        sqlite_repo.upsert_transition.assert_not_called()
 
     async def test_upsert_exception_is_swallowed(self):
-        """If QDrant upsert raises, record_transition does not propagate the error."""
+        """If SQLite upsert raises, record_transition does not propagate the error."""
         participant_id = "p-1"
         prev_id = _uid()
         curr_id = _uid()
@@ -1394,52 +1316,12 @@ class TestRecordTransition:
             _make_history_entry(participant_id, prev_id),
         ]
         sqlite_repo = _make_sqlite_repo(history=history)
-        qdrant_repo = _make_qdrant_repo(audio_retrieve=_audio_vec())
-        # retrieve_payload succeeds but upsert raises
-        qdrant_repo.retrieve_payload.return_value = None
-        qdrant_repo.upsert.side_effect = RuntimeError("qdrant failed")
+        sqlite_repo.upsert_transition.side_effect = RuntimeError("db failed")
+        qdrant_repo = _make_qdrant_repo()
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         # Must not raise
         await service.record_transition(participant_id, curr_id)
-
-    async def test_transition_weight_increments_when_existing(self):
-        """When retrieve_payload returns an existing payload with weight=3, new weight is 4."""
-        participant_id = "p-1"
-        prev_id = _uid()
-        curr_id = _uid()
-        history = [
-            _make_history_entry(participant_id, curr_id),
-            _make_history_entry(participant_id, prev_id),
-        ]
-        sqlite_repo = _make_sqlite_repo(history=history)
-        qdrant_repo = _make_qdrant_repo(audio_retrieve=_audio_vec())
-        # Simulate an existing transition with weight=3
-        qdrant_repo.retrieve_payload.return_value = {"weight": 3}
-
-        service = RecommendationService(sqlite_repo, qdrant_repo)
-        await service.record_transition(participant_id, curr_id)
-
-        _, _, _, payload = qdrant_repo.upsert.call_args.args
-        assert payload["weight"] == 4
-
-    async def test_retrieve_payload_called_before_upsert(self):
-        """retrieve_payload is called (read step) before upsert (write step)."""
-        participant_id = "p-1"
-        prev_id = _uid()
-        curr_id = _uid()
-        history = [
-            _make_history_entry(participant_id, curr_id),
-            _make_history_entry(participant_id, prev_id),
-        ]
-        sqlite_repo = _make_sqlite_repo(history=history)
-        qdrant_repo = _make_qdrant_repo(audio_retrieve=_audio_vec())
-
-        service = RecommendationService(sqlite_repo, qdrant_repo)
-        await service.record_transition(participant_id, curr_id)
-
-        qdrant_repo.retrieve_payload.assert_called_once()
-        qdrant_repo.upsert.assert_called_once()
 
 
 # ===========================================================================
@@ -1451,7 +1333,7 @@ class TestTransitionCandidates:
     """Tests for the _transition_candidates helper and its use in _last_strategy."""
 
     async def test_transition_candidates_used_in_last_strategy(self):
-        """When scroll_filtered returns transitions, they appear as top results."""
+        """When get_transitions returns transitions, they appear as top results."""
         track_id = _uid()
         transition_to_id = _uid()
         history = [_make_history_entry("p-1", track_id)]
@@ -1459,20 +1341,12 @@ class TestTransitionCandidates:
 
         transition_track = _make_track(transition_to_id)
         sqlite_repo = _make_sqlite_repo(history=history, participant=participant)
-        # get_tracks_by_ids used for both transition candidates and KNN results
+        sqlite_repo.get_transitions.return_value = [(transition_to_id, 5)]
         sqlite_repo.get_tracks_by_ids.return_value = {
             transition_to_id: transition_track
         }
 
         qdrant_repo = _make_qdrant_repo(audio_retrieve=_audio_vec())
-        # Return a transition candidate from scroll_filtered
-        qdrant_repo.scroll_filtered.return_value = [
-            ("trans-point-id", 0.0, {
-                "from_track_id": track_id,
-                "to_track_id": transition_to_id,
-                "weight": 5,
-            })
-        ]
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         strategy, results = await service.get_recommendations("p-1", "s-1", limit=5)
@@ -1481,8 +1355,8 @@ class TestTransitionCandidates:
         result_ids = [r.track.id for r in results]
         assert transition_to_id in result_ids
 
-    async def test_scroll_filtered_called_with_transitions_collection(self):
-        """_last_strategy calls scroll_filtered on the 'transitions' collection."""
+    async def test_get_transitions_called_with_correct_from_track_id(self):
+        """_last_strategy calls get_transitions with the last played track_id."""
         track_id = _uid()
         history = [_make_history_entry("p-1", track_id)]
         participant = _make_participant("p-1", tracks_played=1)
@@ -1492,35 +1366,26 @@ class TestTransitionCandidates:
         service = RecommendationService(sqlite_repo, qdrant_repo)
         await service.get_recommendations("p-1", "s-1", limit=5)
 
-        qdrant_repo.scroll_filtered.assert_called_once()
-        call_collection = qdrant_repo.scroll_filtered.call_args.args[0]
-        assert call_collection == "transitions"
+        sqlite_repo.get_transitions.assert_called_once()
+        call_args = sqlite_repo.get_transitions.call_args
+        assert call_args.args[0] == track_id
 
     async def test_transition_candidates_exclude_played_tracks(self):
         """Transition candidates that were already played are excluded from results."""
-        track_id = _uid()
-        played_id = _uid()  # This is in played_ids (history)
-        history = [
-            _make_history_entry("p-1", track_id),
-            _make_history_entry("p-1", played_id),  # already played
-        ]
-        # tracks_played=2 → LAST_TWO_AVG strategy (not LAST)
-        # To test LAST strategy filtering, use tracks_played=1 with 1 history entry
-        # and set played_ids via history[0].track_id
         track_id2 = _uid()
         history2 = [_make_history_entry("p-1", track_id2)]
         participant = _make_participant("p-1", tracks_played=1)
 
         fresh_id = _uid()
         sqlite_repo = _make_sqlite_repo(history=history2, participant=participant)
+        # get_transitions returns track_id2 (played) and fresh_id (not played)
+        sqlite_repo.get_transitions.return_value = [
+            (track_id2, 2),  # played — should be excluded
+            (fresh_id, 1),
+        ]
         sqlite_repo.get_tracks_by_ids.return_value = {fresh_id: _make_track(fresh_id)}
 
         qdrant_repo = _make_qdrant_repo(audio_retrieve=_audio_vec())
-        # scroll_filtered returns transition to track_id2 (played) and fresh_id (not played)
-        qdrant_repo.scroll_filtered.return_value = [
-            ("p1", 0.0, {"from_track_id": track_id2, "to_track_id": track_id2, "weight": 2}),  # played
-            ("p2", 0.0, {"from_track_id": track_id2, "to_track_id": fresh_id, "weight": 1}),
-        ]
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         _, results = await service.get_recommendations("p-1", "s-1", limit=5)
@@ -1529,14 +1394,14 @@ class TestTransitionCandidates:
         assert track_id2 not in result_ids  # played track excluded
         assert fresh_id in result_ids
 
-    async def test_scroll_filtered_exception_returns_empty_candidates(self):
-        """If scroll_filtered raises, _transition_candidates returns [] (exception swallowed)."""
+    async def test_get_transitions_exception_returns_empty_candidates(self):
+        """If get_transitions raises, _transition_candidates returns [] (exception swallowed)."""
         track_id = _uid()
         history = [_make_history_entry("p-1", track_id)]
         participant = _make_participant("p-1", tracks_played=1)
         sqlite_repo = _make_sqlite_repo(history=history, participant=participant)
+        sqlite_repo.get_transitions.side_effect = RuntimeError("db down")
         qdrant_repo = _make_qdrant_repo(audio_retrieve=_audio_vec())
-        qdrant_repo.scroll_filtered.side_effect = RuntimeError("qdrant down")
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
         # Should not raise; falls through to KNN only
@@ -1641,7 +1506,7 @@ class TestRecommendationsEndpoint:
 
         # Inject an in-memory QDrant client into app.state for this test
         qdrant_client = QdrantClient(":memory:")
-        for coll, dim in [("audio_features", 45), ("lyrics_embeddings", 384), ("transitions", 45)]:
+        for coll, dim in [("audio_features", 45), ("lyrics_embeddings", 384)]:
             qdrant_client.create_collection(
                 collection_name=coll,
                 vectors_config=VectorParams(size=dim, distance=Distance.COSINE),

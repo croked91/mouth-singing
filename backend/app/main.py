@@ -27,9 +27,7 @@ from karaoke_shared.constants import (
     AUDIO_FEATURE_DIM,
     COLLECTION_AUDIO_FEATURES,
     COLLECTION_LYRICS_EMBEDDINGS,
-    COLLECTION_TRANSITIONS,
     LYRICS_EMBEDDING_DIM,
-    TRANSITION_DIM,
 )
 
 logger = structlog.get_logger(__name__)
@@ -41,7 +39,6 @@ logger = structlog.get_logger(__name__)
 _QDRANT_COLLECTIONS: list[tuple[str, int, Distance]] = [
     (COLLECTION_AUDIO_FEATURES, AUDIO_FEATURE_DIM, Distance.COSINE),
     (COLLECTION_LYRICS_EMBEDDINGS, LYRICS_EMBEDDING_DIM, Distance.COSINE),
-    (COLLECTION_TRANSITIONS, TRANSITION_DIM, Distance.COSINE),
 ]
 
 # Payload fields to index for efficient filtered searches.
@@ -79,25 +76,6 @@ def _ensure_qdrant_collections(client: QdrantClient) -> None:
                 field=field,
             )
 
-    # Transitions collection needs an extra index on from_track_id for
-    # efficient filtered scrolling when querying the transition graph.
-    if COLLECTION_TRANSITIONS in existing or COLLECTION_TRANSITIONS in {
-        name for name, _, _ in _QDRANT_COLLECTIONS
-    }:
-        try:
-            client.create_payload_index(
-                collection_name=COLLECTION_TRANSITIONS,
-                field_name="from_track_id",
-                field_schema=PayloadSchemaType.KEYWORD,
-            )
-            logger.info(
-                "qdrant_payload_index_created",
-                collection=COLLECTION_TRANSITIONS,
-                field="from_track_id",
-            )
-        except Exception:
-            # Index may already exist; QDrant raises on duplicate creation.
-            pass
 
 
 # ---------------------------------------------------------------------------
@@ -126,7 +104,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         pass  # Column already exists.
 
     # 3. QDrant — create client and ensure collections exist.
-    qdrant = QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port)
+    qdrant = QdrantClient(
+        host=settings.qdrant_host, port=settings.qdrant_port, timeout=10
+    )
     app.state.qdrant = qdrant
 
     # Collection creation is sync; run it off the event loop thread.

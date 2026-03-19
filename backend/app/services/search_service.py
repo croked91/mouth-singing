@@ -159,13 +159,10 @@ class SearchService:
             return []
 
         # hits is list[tuple[str, float, dict]] — id, score, payload
-        tracks = []
-        for point_id, _score, _payload in hits:
-            track = await self.sqlite_repo.get_track(point_id)
-            if track is not None:
-                tracks.append(track)
-
-        return tracks
+        point_ids = [point_id for point_id, _score, _payload in hits]
+        tracks_map = await self.sqlite_repo.get_tracks_by_ids(point_ids)
+        # Preserve QDrant relevance ordering.
+        return [tracks_map[pid] for pid in point_ids if pid in tracks_map]
 
     def _merge_results(
         self, fts_tracks: list[Track], semantic_tracks: list[Track]
