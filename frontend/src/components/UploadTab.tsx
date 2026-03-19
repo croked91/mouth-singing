@@ -19,7 +19,7 @@ import type { JobStatusEvent } from '../types';
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const MAX_FILE_SIZE_MB = 50;
-const ACCEPTED_TYPES = '.mp3,.wav,.m4a,audio/mpeg,audio/wav,audio/x-m4a,audio/mp4';
+const ACCEPTED_TYPES = '.mp3,audio/mpeg';
 
 const STEP_LABELS: Record<string, string> = {
   separating: 'Разделение вокала и музыки',
@@ -148,10 +148,8 @@ export const UploadTab: React.FC<UploadTabProps> = ({
     const { job_id, track_id } = uploadResponse;
 
     // Auto-add to queue immediately (even while still processing)
-    if (selectedParticipantId) {
-      onTrackUploaded(track_id);
-      setAddedToQueue(true);
-    }
+    onTrackUploaded(track_id);
+    setAddedToQueue(true);
 
     unsubscribeRef.current?.();
 
@@ -180,7 +178,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({
     );
 
     unsubscribeRef.current = unsubscribe;
-  }, [file, artist, title, selectedParticipantId, onTrackUploaded]);
+  }, [file, artist, title, onTrackUploaded]);
 
   const handleReset = (): void => {
     unsubscribeRef.current?.();
@@ -327,7 +325,6 @@ export const UploadTab: React.FC<UploadTabProps> = ({
                 ) : (
                   <ButtonBase
                     onClick={handleAddToQueue}
-                    disabled={!selectedParticipantId}
                     sx={{
                       px: 3,
                       py: 1.25,
@@ -434,7 +431,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({
               {isDragOver ? 'Отпустите здесь!' : 'Перетащите MP3 сюда'}
             </Typography>
             <Typography sx={{ fontSize: '12px', color: 'rgba(255,255,255,0.3)' }}>
-              MP3, WAV, M4A — до {MAX_FILE_SIZE_MB} МБ
+              MP3 — до {MAX_FILE_SIZE_MB} МБ
             </Typography>
           </>
         )}

@@ -15,6 +15,7 @@ import type {
 
 const apiClient = axios.create({
   baseURL: '/api/v1',
+  timeout: 15000,
   headers: {
     'Content-Type': 'application/json',
   },

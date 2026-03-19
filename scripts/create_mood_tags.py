@@ -51,7 +51,7 @@ def create_tags(conn: sqlite3.Connection, tags: dict[int, list[str]]) -> int:
     for cluster_id, names in tags.items():
         for name in names:
             conn.execute(
-                "INSERT INTO mood_tags (name, cluster_id, created_at) VALUES (?, ?, ?)",
+                "INSERT OR IGNORE INTO mood_tags (name, cluster_id, created_at) VALUES (?, ?, ?)",
                 (name, cluster_id, now),
             )
             count += 1

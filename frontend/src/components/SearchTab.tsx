@@ -37,7 +37,7 @@ function formatDuration(seconds: number | null): string {
 interface SearchTabProps {
   sessionId: string;
   selectedParticipantId: string | null;
-  onTrackSelected: (trackId: string) => void;
+  onTrackSelected: (trackId: string) => void | Promise<void>;
 }
 
 // ─── SearchResultCard ─────────────────────────────────────────────────────────

@@ -306,7 +306,7 @@ class RecommendationService:
         played_ids = {entry.track_id for entry in history}
 
         if not history:
-            return await self._popular_strategy(played_ids, limit)
+            return await self._popular_strategy(played_ids, limit, language)
 
         return await self._cluster_strategy(history, played_ids, limit, language)
 
@@ -339,7 +339,7 @@ class RecommendationService:
     # ------------------------------------------------------------------
 
     async def _popular_strategy(
-        self, played_ids: set[str], limit: int
+        self, played_ids: set[str], limit: int, language: str | None = None
     ) -> tuple[RecommendationStrategy, list[RecommendedTrack]]:
         """Return a mix of popular and random tracks."""
         n_top = max(1, int(limit * 0.7))
@@ -353,14 +353,14 @@ class RecommendationService:
         results: list[RecommendedTrack] = []
 
         for t in top_tracks:
-            if t.id not in seen:
+            if t.id not in seen and (not language or t.language == language):
                 seen.add(t.id)
                 results.append(RecommendedTrack(track=t, similarity_score=0.0))
                 if len(results) >= n_top:
                     break
 
         for t in random_tracks:
-            if t.id not in seen:
+            if t.id not in seen and (not language or t.language == language):
                 seen.add(t.id)
                 results.append(RecommendedTrack(track=t, similarity_score=0.0))
                 if len(results) >= limit:
@@ -381,12 +381,12 @@ class RecommendationService:
         vectors = await self._fetch_track_vectors(track_ids)
 
         if not vectors:
-            return await self._popular_strategy(played_ids, limit)
+            return await self._popular_strategy(played_ids, limit, language)
 
         # 2. Auto-cluster session.
         clusters = auto_cluster_session(vectors)
         if not clusters:
-            return await self._popular_strategy(played_ids, limit)
+            return await self._popular_strategy(played_ids, limit, language)
 
         # 3. Distribute slots: (limit - 1) for clusters, 1 for exploration.
         cluster_slots = limit - 1 if limit > 1 else limit
@@ -450,35 +450,47 @@ class RecommendationService:
             if t.id not in exclude_ids and (not language or t.language == language)
         ]
 
-        # Batch-fetch vectors for all eligible tracks.
-        vecs_list = await asyncio.gather(
+        # Batch-fetch audio + lyrics vectors for all eligible tracks.
+        audio_vecs_list = await asyncio.gather(
             *(self._get_track_vector(t.id) for t in eligible)
         )
+        lyrics_vecs_list = await asyncio.gather(
+            *(self._get_track_lyrics_vector(t.id) for t in eligible)
+        )
         track_vecs = [
-            (t, vec) for t, vec in zip(eligible, vecs_list) if vec is not None
+            (t, audio_vec, lyrics_vec)
+            for t, audio_vec, lyrics_vec in zip(eligible, audio_vecs_list, lyrics_vecs_list)
+            if audio_vec is not None
         ]
 
         best_track: Track | None = None
-        best_min_sim = float("inf")
+        best_max_sim = float("inf")
 
-        for track, vec in track_vecs:
-            # Min similarity to any cluster centroid.
-            min_sim = float("inf")
+        for track, audio_vec, lyrics_vec in track_vecs:
+            # Max similarity to the nearest (closest) cluster centroid.
+            max_sim = -float("inf")
             for cluster in clusters:
-                sim = float(np.dot(vec, cluster["centroid_audio"]) / (
-                    np.linalg.norm(vec) * np.linalg.norm(cluster["centroid_audio"]) + 1e-9
-                ))
-                if sim < min_sim:
-                    min_sim = sim
+                sim = _fused_cosine(
+                    audio_vec, lyrics_vec if lyrics_vec else [],
+                    cluster["centroid_audio"], cluster["centroid_lyrics"],
+                )
+                if sim > max_sim:
+                    max_sim = sim
 
-            if min_sim < best_min_sim:
-                best_min_sim = min_sim
+            if max_sim < best_max_sim:
+                best_max_sim = max_sim
                 best_track = track
 
         if best_track is None:
             return None
 
-        return RecommendedTrack(track=best_track, similarity_score=0.5)
+        # Apply popularity weight to the exploration score.
+        base_score = 0.5
+        category = getattr(best_track, "popularity_category", "regular") or "regular"
+        weight = _POPULARITY_WEIGHTS.get(category, 0.1)
+        exploration_score = base_score * (1.0 + weight)
+
+        return RecommendedTrack(track=best_track, similarity_score=exploration_score)
 
     # ------------------------------------------------------------------
     # Helpers

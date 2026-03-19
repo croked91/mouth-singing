@@ -27,7 +27,7 @@ import type { StartPlayingResponse, QueueEntryWithDetails } from '../../types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const SEEK_STEP_SEC = 15;
+const SEEK_STEP_SEC = 10;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -128,6 +128,7 @@ export const PlayerPage: React.FC = () => {
 
     return () => {
       audio.removeEventListener('canplay', handleCanPlay);
+      audio.pause();
     };
   }, [currentEntry]);
 
@@ -261,6 +262,8 @@ export const PlayerPage: React.FC = () => {
   const handleFinish = useCallback(async (): Promise<void> => {
     if (isFinishingRef.current || !entryId || !sessionId) return;
     isFinishingRef.current = true;
+
+    audioRef.current?.pause();
 
     try {
       await api.finishPlaying(entryId);
@@ -600,8 +603,8 @@ export const PlayerPage: React.FC = () => {
           {formatTime(currentTime)}
         </Typography>
 
-        {/* Rewind -15s */}
-        <Tooltip title="-15 секунд" placement="top">
+        {/* Rewind -10s */}
+        <Tooltip title="-10 секунд" placement="top">
           <IconButton
             onClick={handleRewind}
             sx={{
@@ -639,8 +642,8 @@ export const PlayerPage: React.FC = () => {
           )}
         </IconButton>
 
-        {/* Forward +15s */}
-        <Tooltip title="+15 секунд" placement="top">
+        {/* Forward +10s */}
+        <Tooltip title="+10 секунд" placement="top">
           <IconButton
             onClick={handleForward}
             sx={{

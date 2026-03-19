@@ -47,7 +47,7 @@ export const useQueueStore = create<QueueState>((set, get) => ({
     participantId: string,
     trackId: string
   ): Promise<void> => {
-    set({ isLoading: true, error: null });
+    set({ error: null });
     try {
       await api.addToQueue(sessionId, participantId, trackId);
       await get().loadQueue(sessionId);
@@ -59,7 +59,7 @@ export const useQueueStore = create<QueueState>((set, get) => ({
   },
 
   skipTurn: async (entryId: string, sessionId: string): Promise<void> => {
-    set({ isLoading: true, error: null });
+    set({ error: null });
     try {
       await api.skipTurn(entryId);
       await get().loadQueue(sessionId);

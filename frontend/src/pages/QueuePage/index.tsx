@@ -648,7 +648,7 @@ export const QueuePage: React.FC = () => {
           >
             <AutoAwesomeIcon sx={{ fontSize: 36, color: 'rgba(124,58,237,0.4)' }} />
             <Typography sx={{ color: 'rgba(255,255,255,0.35)', textAlign: 'center' }}>
-              Рекомендаций пока нет — сыграйте несколько треков
+              Пока нет рекомендаций — найдите трек через поиск или загрузите свой
             </Typography>
           </Box>
         )}
