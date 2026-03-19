@@ -36,7 +36,6 @@ function formatDuration(seconds: number | null): string {
 
 interface SearchTabProps {
   sessionId: string;
-  selectedParticipantId: string | null;
   onTrackSelected: (trackId: string) => void | Promise<void>;
 }
 
@@ -204,7 +203,6 @@ const SkeletonCard: React.FC = () => (
 // ─── SearchTab ────────────────────────────────────────────────────────────────
 
 export const SearchTab: React.FC<SearchTabProps> = ({
-  selectedParticipantId,
   onTrackSelected,
 }) => {
   const [query, setQuery] = useState('');

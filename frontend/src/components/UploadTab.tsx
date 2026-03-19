@@ -53,14 +53,12 @@ function isValidFileSize(file: File): boolean {
 
 interface UploadTabProps {
   sessionId: string;
-  selectedParticipantId: string | null;
   onTrackUploaded: (trackId: string) => void;
 }
 
 // ─── UploadTab ────────────────────────────────────────────────────────────────
 
 export const UploadTab: React.FC<UploadTabProps> = ({
-  selectedParticipantId,
   onTrackUploaded,
 }) => {
   const [file, setFile] = useState<File | null>(null);

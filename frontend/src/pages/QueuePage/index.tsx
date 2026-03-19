@@ -928,7 +928,6 @@ export const QueuePage: React.FC = () => {
               {activeTab === 0 && sessionId && (
                 <SearchTab
                   sessionId={sessionId}
-                  selectedParticipantId={participants[0]?.id || null}
                   onTrackSelected={(trackId) => { void handleTrackSelect(trackId); }}
                 />
               )}
@@ -936,7 +935,6 @@ export const QueuePage: React.FC = () => {
               {activeTab === 2 && sessionId && (
                 <UploadTab
                   sessionId={sessionId}
-                  selectedParticipantId={participants[0]?.id || null}
                   onTrackUploaded={(trackId) => { void handleTrackSelect(trackId); }}
                 />
               )}
