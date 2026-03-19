@@ -1,7 +1,7 @@
 """Recommendations API router.
 
 Endpoints:
-    GET /recommendations  Get track recommendations for a participant
+    GET /recommendations  Get track recommendations for a session
 """
 
 from fastapi import APIRouter, Depends, Query
@@ -21,26 +21,21 @@ router = APIRouter()
 @router.get(
     "/recommendations",
     response_model=RecommendationResponse,
-    summary="Get track recommendations for a participant",
+    summary="Get track recommendations for a session",
 )
 async def get_recommendations(
-    participant_id: str = Query(..., description="Participant UUID"),
     session_id: str = Query(..., description="Session UUID"),
-    limit: int = Query(10, ge=1, le=50, description="Max results"),
+    limit: int = Query(5, ge=1, le=50, description="Max results"),
     repo: SQLiteRepository = Depends(get_sqlite_repo),
     qdrant_repo: QDrantRepository = Depends(get_qdrant_repo),
 ) -> RecommendationResponse:
-    """Return track recommendations based on the participant's play history.
+    """Return track recommendations for the session.
 
-    The strategy is chosen automatically:
-    - 0 tracks played → popular (most-played catalog tracks)
-    - 1 track → last (KNN on last track's audio features)
-    - 2 tracks → last_two_avg (KNN on average of last two)
-    - 3+ tracks → session_avg (KNN on participant's portrait vector)
+    Currently returns popular tracks.  Future phases will add cluster-based
+    recommendations with mood tags and popularity re-ranking.
     """
     service = RecommendationService(repo, qdrant_repo)
     strategy, recommended = await service.get_recommendations(
-        participant_id=participant_id,
         session_id=session_id,
         limit=limit,
     )

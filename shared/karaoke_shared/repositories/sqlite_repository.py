@@ -416,34 +416,6 @@ class SQLiteRepository:
             return None
         return self._participant_from_row(row)
 
-    async def update_portrait(
-        self,
-        participant_id: str,
-        portrait_vector: list[float],
-        lyrics_portrait_vector: list[float] | None = None,
-    ) -> None:
-        """Persist the participant's portrait vectors (audio + lyrics) as JSON.
-
-        When *lyrics_portrait_vector* is ``None`` the lyrics column is left
-        unchanged — this prevents erasing a previously accumulated lyrics
-        portrait when the current track has no lyrics.
-        """
-        if lyrics_portrait_vector is not None:
-            await self.db.execute(
-                "UPDATE participants SET portrait_vector = ?, lyrics_portrait_vector = ? WHERE id = ?",
-                (
-                    json.dumps(portrait_vector),
-                    json.dumps(lyrics_portrait_vector),
-                    participant_id,
-                ),
-            )
-        else:
-            await self.db.execute(
-                "UPDATE participants SET portrait_vector = ? WHERE id = ?",
-                (json.dumps(portrait_vector), participant_id),
-            )
-        await self.db.commit()
-
     async def get_participants_by_ids(
         self, participant_ids: list[str]
     ) -> dict[str, Participant]:
@@ -697,41 +669,6 @@ class SQLiteRepository:
             played_at=data["played_at"],
             completed=data.get("completed", 0),
         )
-
-    # ------------------------------------------------------------------
-    # Transitions
-    # ------------------------------------------------------------------
-
-    async def upsert_transition(
-        self, from_track_id: str, to_track_id: str
-    ) -> None:
-        """Atomically increment the weight of a transition, or insert with weight=1."""
-        await self.db.execute(
-            """
-            INSERT INTO transitions (from_track_id, to_track_id, weight)
-            VALUES (?, ?, 1)
-            ON CONFLICT(from_track_id, to_track_id)
-            DO UPDATE SET weight = weight + 1
-            """,
-            (from_track_id, to_track_id),
-        )
-        await self.db.commit()
-
-    async def get_transitions(
-        self, from_track_id: str, limit: int = 20
-    ) -> list[tuple[str, int]]:
-        """Return transitions from a track, sorted by weight descending."""
-        cursor = await self.db.execute(
-            """
-            SELECT to_track_id, weight FROM transitions
-            WHERE from_track_id = ?
-            ORDER BY weight DESC
-            LIMIT ?
-            """,
-            (from_track_id, limit),
-        )
-        rows = await cursor.fetchall()
-        return [(row[0], row[1]) for row in rows]
 
     # ------------------------------------------------------------------
     # Job queue

@@ -1,29 +1,20 @@
-"""Recommendation service — content-based + collaborative track recommendations.
+"""Recommendation service — session-level track recommendations.
 
-Strategies are selected automatically based on how many tracks the
-participant has already sung in the current session:
+Currently uses a single strategy:
+- ``popular``: mix of most-played + random tracks from the catalog.
 
-- 0 tracks → ``popular``: 70% most-played + 30% random from catalog.
-- 1 track  → ``last``: transition graph candidates + fused KNN on last track.
-- 2 tracks → ``last_two_avg``: fused KNN on the average of the last two vectors.
-- 3+ tracks → ``session_avg``: fused KNN on the participant's EMA portrait vectors.
+Future phases (R1–R4) will add cluster-based recommendations with
+popularity re-ranking, MMR diversity, and mood-tag filtering.
 
 Vector searches use **weighted fusion** of two QDrant collections:
 - ``audio_features`` (45-dim librosa, z-score normalised) — weight 0.7
 - ``lyrics_embeddings`` (384-dim SentenceTransformer) — weight 0.3
-
-When a track has no lyrics vector, the system falls back to pure audio KNN.
-
-Portrait vectors are updated using Exponential Moving Average (EMA) with
-``alpha = 0.3`` and L2-renormalised after each update.  Both audio and
-lyrics portraits are maintained independently.
 """
 
 from __future__ import annotations
 
 import asyncio
 
-import numpy as np
 import structlog
 from karaoke_shared.constants import (
     COLLECTION_AUDIO_FEATURES,
@@ -38,10 +29,6 @@ logger = structlog.get_logger(__name__)
 
 _AUDIO_COLLECTION = COLLECTION_AUDIO_FEATURES
 _LYRICS_COLLECTION = COLLECTION_LYRICS_EMBEDDINGS
-
-# Weight of the most recent track in EMA portrait update.
-# Effective window ≈ 1/alpha ≈ 3-4 most recent tracks.
-_EMA_ALPHA = 0.3
 
 # Fusion weights for audio and lyrics KNN scores.
 _AUDIO_WEIGHT = 0.7
@@ -59,7 +46,7 @@ class RecommendedTrack:
 
 
 class RecommendationService:
-    """Content-based + collaborative recommendation engine.
+    """Session-level recommendation engine.
 
     Args:
         sqlite_repo: Repository for reading tracks and play history.
@@ -76,65 +63,16 @@ class RecommendationService:
 
     async def get_recommendations(
         self,
-        participant_id: str,
         session_id: str,
-        limit: int = 10,
+        limit: int = 5,
     ) -> tuple[RecommendationStrategy, list[RecommendedTrack]]:
-        """Return recommendations for a participant.
+        """Return recommendations for a session.
 
-        The strategy is chosen automatically based on the number of tracks
-        the participant has played in the current session.
-
-        Returns:
-            A tuple of (strategy, recommended_tracks).
+        Currently returns popular tracks only.  Future phases will add
+        cluster-based recommendations when 1+ tracks have been played.
         """
-        # Fetch participant once — used for tracks_played count and portrait.
-        participant = await self.sqlite_repo.get_participant(participant_id)
-        tracks_played = participant.tracks_played if participant else 0
-
-        # Fetch play history for exclusion and vector lookups.
-        history = await self.sqlite_repo.get_history_by_participant(
-            participant_id, limit=50
-        )
+        history = await self.sqlite_repo.get_history_by_session(session_id)
         played_ids = {entry.track_id for entry in history}
-
-        if tracks_played == 0:
-            return await self._popular_strategy(played_ids, limit)
-
-        if tracks_played == 1:
-            if len(history) < 1:
-                return await self._popular_strategy(played_ids, limit)
-            return await self._last_strategy(history[0].track_id, played_ids, limit)
-
-        if tracks_played == 2:
-            if len(history) < 2:
-                if len(history) == 1:
-                    return await self._last_strategy(
-                        history[0].track_id, played_ids, limit
-                    )
-                return await self._popular_strategy(played_ids, limit)
-            return await self._last_two_avg_strategy(
-                history[0].track_id, history[1].track_id, played_ids, limit
-            )
-
-        # 3+ tracks: use the participant's EMA portrait vectors.
-        if participant and participant.portrait_vector:
-            return await self._session_avg_strategy(
-                participant.portrait_vector,
-                participant.lyrics_portrait_vector,
-                played_ids,
-                limit,
-            )
-
-        # Fallback: portrait missing — cascade to a strategy the history can support.
-        if len(history) >= 2:
-            return await self._last_two_avg_strategy(
-                history[0].track_id, history[1].track_id, played_ids, limit
-            )
-        if len(history) == 1:
-            return await self._last_strategy(
-                history[0].track_id, played_ids, limit
-            )
         return await self._popular_strategy(played_ids, limit)
 
     # ------------------------------------------------------------------
@@ -179,89 +117,8 @@ class RecommendationService:
 
         return RecommendationStrategy.POPULAR, results
 
-    async def _last_strategy(
-        self, track_id: str, played_ids: set[str], limit: int
-    ) -> tuple[RecommendationStrategy, list[RecommendedTrack]]:
-        """Transition graph candidates + fused KNN on last track.
-
-        If the transition graph has data for this track, those candidates
-        come first (real human signal). Remaining slots are filled by
-        fused audio+lyrics KNN.
-        """
-        # Transition candidates (up to half the slots).
-        trans_limit = limit // 2
-        trans_ids = await self._transition_candidates(track_id, played_ids, trans_limit)
-
-        # Fetch both vectors for the track in parallel.
-        audio_vec, lyrics_vec = await asyncio.gather(
-            self._get_track_vector(track_id),
-            self._get_track_lyrics_vector(track_id),
-        )
-
-        if audio_vec is None and lyrics_vec is None and not trans_ids:
-            return await self._popular_strategy(played_ids, limit)
-
-        knn_results: list[RecommendedTrack] = []
-        if audio_vec is not None or lyrics_vec is not None:
-            knn_exclude = played_ids | set(trans_ids)
-            knn_results = await self._fused_knn_search(
-                audio_vec, lyrics_vec, knn_exclude, limit - len(trans_ids)
-            )
-
-        # Resolve transition candidates to full tracks.
-        trans_results: list[RecommendedTrack] = []
-        if trans_ids:
-            tracks_map = await self.sqlite_repo.get_tracks_by_ids(trans_ids)
-            for tid in trans_ids:
-                track = tracks_map.get(tid)
-                if track is not None:
-                    trans_results.append(
-                        RecommendedTrack(track=track, similarity_score=1.0)
-                    )
-
-        return RecommendationStrategy.LAST, trans_results + knn_results
-
-    async def _last_two_avg_strategy(
-        self,
-        track_id_1: str,
-        track_id_2: str,
-        played_ids: set[str],
-        limit: int,
-    ) -> tuple[RecommendationStrategy, list[RecommendedTrack]]:
-        """Fused KNN on the L2-normalised average of the two most recent vectors."""
-        a1, a2, l1, l2 = await asyncio.gather(
-            self._get_track_vector(track_id_1),
-            self._get_track_vector(track_id_2),
-            self._get_track_lyrics_vector(track_id_1),
-            self._get_track_lyrics_vector(track_id_2),
-        )
-
-        audio_avg = _avg_vectors(a1, a2)
-        lyrics_avg = _avg_vectors(l1, l2)
-
-        if audio_avg is None and lyrics_avg is None:
-            return await self._popular_strategy(played_ids, limit)
-
-        results = await self._fused_knn_search(
-            audio_avg, lyrics_avg, played_ids, limit
-        )
-        return RecommendationStrategy.LAST_TWO_AVG, results
-
-    async def _session_avg_strategy(
-        self,
-        portrait_vector: list[float],
-        lyrics_portrait_vector: list[float] | None,
-        played_ids: set[str],
-        limit: int,
-    ) -> tuple[RecommendationStrategy, list[RecommendedTrack]]:
-        """Fused KNN on the participant's session EMA portrait vectors."""
-        results = await self._fused_knn_search(
-            portrait_vector, lyrics_portrait_vector, played_ids, limit
-        )
-        return RecommendationStrategy.SESSION_AVG, results
-
     # ------------------------------------------------------------------
-    # Helpers
+    # Helpers (kept for future phases R1-R4)
     # ------------------------------------------------------------------
 
     async def _get_track_vector(self, track_id: str) -> list[float] | None:
@@ -399,146 +256,6 @@ class RecommendationService:
         except Exception as exc:
             logger.warning("knn_search_failed", collection=collection, error=str(exc))
             return []
-
-    async def _transition_candidates(
-        self, from_track_id: str, exclude_ids: set[str], limit: int
-    ) -> list[str]:
-        """Return to_track_ids from the transition graph, sorted by weight.
-
-        Queries the SQLite ``transitions`` table for the given from_track_id,
-        filtering out already-played tracks.
-        """
-        try:
-            rows = await self.sqlite_repo.get_transitions(
-                from_track_id, limit=limit * 4
-            )
-        except Exception:
-            return []
-
-        result: list[str] = []
-        for to_id, _weight in rows:
-            if to_id not in exclude_ids and to_id not in result:
-                result.append(to_id)
-                if len(result) >= limit:
-                    break
-        return result
-
-    async def update_portrait(
-        self, participant_id: str, track_id: str
-    ) -> list[float] | None:
-        """Update the participant's portrait vectors after finishing a track.
-
-        Uses Exponential Moving Average (EMA) for both audio and lyrics
-        portrait vectors independently.  Each is L2-renormalised.
-
-        Returns the updated audio portrait vector, or ``None`` if the
-        track has no audio vector in QDrant.
-        """
-        audio_vec, lyrics_vec = await asyncio.gather(
-            self._get_track_vector(track_id),
-            self._get_track_lyrics_vector(track_id),
-        )
-
-        if audio_vec is None:
-            return None
-
-        participant = await self.sqlite_repo.get_participant(participant_id)
-        if participant is None:
-            return None
-
-        n = participant.tracks_played  # Already incremented by finish_playing.
-
-        # Audio portrait EMA.
-        new_audio = _ema_update(participant.portrait_vector, audio_vec, n)
-
-        # Lyrics portrait EMA — only update if the current track has lyrics.
-        # When lyrics_vec is None (instrumental / no transcription), we
-        # preserve the previously accumulated lyrics portrait as-is.
-        new_lyrics: list[float] | None = None
-        if lyrics_vec is not None:
-            new_lyrics = _ema_update(
-                participant.lyrics_portrait_vector, lyrics_vec, n
-            )
-
-        await self.sqlite_repo.update_portrait(
-            participant_id, new_audio, new_lyrics
-        )
-        return new_audio
-
-    async def record_transition(
-        self, participant_id: str, current_track_id: str
-    ) -> None:
-        """Record a track transition for collaborative filtering.
-
-        Looks at the participant's play history to find the previous track.
-        If found, atomically upserts the transition in the SQLite
-        ``transitions`` table using INSERT … ON CONFLICT, eliminating the
-        read-modify-write race condition.
-        """
-        history = await self.sqlite_repo.get_history_by_participant(
-            participant_id, limit=2
-        )
-
-        # Need at least 2 entries: current (just recorded) + previous.
-        if len(history) < 2:
-            return
-
-        previous_track_id = history[1].track_id  # history is most-recent-first
-
-        try:
-            await self.sqlite_repo.upsert_transition(
-                previous_track_id, current_track_id
-            )
-            logger.info(
-                "transition_recorded",
-                from_track=previous_track_id,
-                to_track=current_track_id,
-            )
-        except Exception as exc:
-            logger.warning("transition_record_failed", error=str(exc))
-
-
-# ------------------------------------------------------------------
-# Module-level helpers
-# ------------------------------------------------------------------
-
-def _ema_update(
-    old_portrait: list[float] | None,
-    current_vector: list[float],
-    n: int,
-) -> list[float]:
-    """Apply EMA update to a portrait vector and L2-renormalise."""
-    if old_portrait is None or n <= 1:
-        new = current_vector
-    else:
-        new = [
-            _EMA_ALPHA * cur + (1 - _EMA_ALPHA) * old
-            for old, cur in zip(old_portrait, current_vector)
-        ]
-
-    arr = np.array(new, dtype=np.float64)
-    norm = np.linalg.norm(arr)
-    if norm > 1e-8:
-        arr = arr / norm
-    return arr.tolist()
-
-
-def _avg_vectors(
-    v1: list[float] | None, v2: list[float] | None
-) -> list[float] | None:
-    """Average two vectors with L2-renormalisation.  Returns None if both are None."""
-    if v1 is None and v2 is None:
-        return None
-    if v1 is None:
-        return v2
-    if v2 is None:
-        return v1
-
-    avg = np.array([(a + b) / 2.0 for a, b in zip(v1, v2)], dtype=np.float64)
-    norm = np.linalg.norm(avg)
-    if norm > 1e-8:
-        avg = avg / norm
-    return avg.tolist()
 
 
 async def _empty_coro() -> list:

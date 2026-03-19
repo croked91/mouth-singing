@@ -8,12 +8,9 @@ from pydantic import BaseModel
 
 
 class RecommendationStrategy(str, Enum):
-    """Strategy used to compute the recommendation query vector."""
+    """Strategy used to compute the recommendation list."""
 
     POPULAR = "popular"
-    LAST = "last"
-    LAST_TWO_AVG = "last_two_avg"
-    SESSION_AVG = "session_avg"
 
 
 class RecommendedTrackItem(BaseModel):
