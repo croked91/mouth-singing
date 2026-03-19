@@ -164,7 +164,8 @@ def main() -> None:
     print(f"\nWriting to database...")
     now = datetime.now(timezone.utc).isoformat()
 
-    # Clear existing clusters
+    # Clear existing clusters and their mood tags
+    conn.execute("DELETE FROM mood_tags")
     conn.execute("DELETE FROM catalog_clusters")
     conn.execute("DELETE FROM sqlite_sequence WHERE name='catalog_clusters'")
     conn.execute("UPDATE tracks SET catalog_cluster_id = NULL")

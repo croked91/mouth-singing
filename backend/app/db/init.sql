@@ -157,7 +157,8 @@ CREATE TABLE IF NOT EXISTS mood_tags (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     cluster_id INTEGER NOT NULL,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    UNIQUE(name, cluster_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_mood_tags_cluster ON mood_tags(cluster_id);
