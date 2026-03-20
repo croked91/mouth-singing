@@ -152,3 +152,27 @@
 - **Решение:** 8-фазная перестройка (R0-R7): очистка старого кода → popularity scoring (5 категорий треков) → кластеризация каталога (K-Means, 15-20 вайб-кластеров) → теги настроения (100-200 тегов на кластеры) → новый алгоритм (автокластеры сессии, макс. 3, MMR λ=0.7, popularity re-ranking, exploration-слот) → фото артистов (Spotify API) → фронтенд v2 (без участников, теги, 5 карточек, язык) → очистка.
 - **Обоснование:** Кластерный подход решает проблему "среднего портрета" для компании с разными вкусами. Теги дают ручное управление поверх автоматики. Popularity scoring гарантирует, что рекомендуются узнаваемые песни. MMR обеспечивает разнообразие в пятёрке.
 - **Последствия:** Удалены: EMA-портреты, 4 стратегии (last/last_two/session_avg), transitions, ParticipantSelector, SessionPage. Добавлены: 4 новые таблицы (catalog_clusters, mood_tags, artists, transitions удалена), 5 скриптов (parse_karaoke_charts, cluster_catalog, create_mood_tags, fetch_artist_images). API изменён: session_id вместо participant_id, tag_id/language параметры. Требуется: запуск скриптов кластеризации и парсинга на production данных.
+
+### ADR-021: CTC Hybrid вместо Sonoix+WhisperX (заменяет ADR-002)
+- **Статус:** Принято
+- **Заменяет:** ADR-002 (Гибридный ASR — Sonoix + WhisperX)
+- **Контекст:** Эксперимент M3 (7 методов, 5 треков) показал, что Sonoix BPE-токены дают плохие тайминги при LLM-коррекции (MAE 13-54с). CTC Forced Aligner (MMS-300m ONNX) с гибридным word+char подходом — лучшие результаты: MAE 0.240с, hit rate 71%, CPU-only, ~22с/трек. При этом текст берётся не из ASR, а ищется через LLM (OpenAI gpt-4o-mini) — из проверенных источников (Genius, lyrics-сайты).
+- **Решение:** Новый pipeline: UVR → VAD → Whisper tiny (только идентификация) → LLM поиск текста → CTC word-level align → proportional syllable split. Sonoix API полностью убран. WhisperX используется только при бутстрапе (если нужен).
+- **Обоснование:** CTC Hybrid не зависит от качества ASR, работает на CPU, даёт тайминги на уровне WhisperX force_align. Единственный внешний API — OpenAI (~$0.001/трек).
+- **Последствия:** Зависимость `ctc-forced-aligner` (~300MB модель). CTC запускается в subprocess для изоляции от GPU VRAM. Нет необходимости в Sonoix API ключе.
+
+### ADR-022: GPU worker вместо CPU-only (заменяет ADR-007)
+- **Статус:** Принято
+- **Заменяет:** ADR-007 (Без GPU — CPU-only или аутсорс)
+- **Контекст:** CPU-only worker с MDX-NET + Sonoix обрабатывал трек ~7 мин (UVR на CPU ~5-8 мин). Переход на CTC Hybrid (ADR-021) убрал Sonoix, но UVR на CPU оставался бутылочным горлышком. BS-Roformer (SDR 12.9) на GPU даёт значительно лучшее качество за ~60-90с.
+- **Решение:** Два режима worker: (1) GPU — выделенный сервер с Tesla T4, BS-Roformer + faster-whisper локально; (2) API — CPU VPS + MVSEP API + OpenAI Whisper API. Выбор через `WORKER_MODE` env var. Docker Compose: `docker-compose.gpu.yml` overlay с nvidia-container-toolkit.
+- **Обоснование:** GPU-режим: полный контроль, нет зависимости от внешних API (кроме OpenAI ~$0.0005/трек), фиксированная стоимость ~$50/мес. API-режим: дешевле в простое, но ~$0.15-0.30/трек при нагрузке.
+- **Последствия:** Требуется nvidia-container-toolkit и "Above 4G Decoding" в BIOS для T4. Dockerfile сложный (CUDA 12.1 + cuDNN 8). sentence-transformers<3 и transformers<5 из-за совместимости.
+
+### ADR-023: Код в корне репозитория вместо v2/ (заменяет ADR-010)
+- **Статус:** Принято
+- **Заменяет:** ADR-010 (Реструктуризация — перенос реализации в v2/)
+- **Контекст:** Директория v2/ была создана для разделения с experiments/ (ADR-010). После удаления experiments/ и завершения v3-rc1 worker, код мигрировал в корень: backend/, worker/, frontend/, shared/ — все на верхнем уровне. Директория v2/ больше не существует.
+- **Решение:** Весь код в корне. Запуск: `make up-gpu` / `make up-api`. Тесты: `pytest tests/`. Docker build context = корень.
+- **Обоснование:** Один уровень вложенности проще для навигации. v2/ потерял смысл после удаления экспериментов.
+- **Последствия:** Все пути в docker-compose.yml, Dockerfile, conftest.py обновлены. Старые ссылки на v2/ в документации заменены.
