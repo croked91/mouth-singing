@@ -49,6 +49,7 @@ RUN pip install --no-cache-dir \
 
 # Layer 7: project code
 COPY worker/ /project/worker/
+COPY scripts/ /project/scripts/
 
 COPY worker/entrypoint.sh /project/entrypoint.sh
 RUN chmod +x /project/entrypoint.sh
