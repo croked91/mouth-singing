@@ -1,7 +1,15 @@
 """Multi-GPU bootstrap worker for bulk catalog processing.
 
-Spawns N worker processes across M GPUs, each running a simplified
-pipeline (no Whisper, no LLM, no VAD).
+Architecture: 1 process per GPU, N concurrent async tasks per process.
+This avoids CUDA context conflicts that cause SIGSEGV with multiple
+processes on the same GPU.
+
+Each GPU process:
+  - Has a single CUDA context (one process = one context)
+  - Runs N async tasks that share the thread pool
+  - Each task has its own pipeline instance (own UVR/CTC/etc.)
+  - UVR calls go through asyncio.to_thread → thread pool
+  - While one task waits for UVR (GPU), others do CTC (CPU)
 
 Usage (inside Docker with all GPUs):
     python3 -m scripts.bootstrap_worker \
@@ -10,7 +18,7 @@ Usage (inside Docker with all GPUs):
         --model-cache-dir /data/models \
         --qdrant-host qdrant \
         --gpu-ids 0,1 \
-        --workers-per-gpu 10
+        --workers-per-gpu 5
 """
 
 from __future__ import annotations
@@ -38,8 +46,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--workers-per-gpu",
         type=int,
-        default=3,
-        help="Workers per GPU (RTX4090: 3-4, A100-40: 5-6, A100-80: 10-12)",
+        default=5,
+        help="Concurrent async tasks per GPU (optimal for RTX 4090)",
     )
     p.add_argument("--normalization-stats", default="", help="Feature norm JSON path")
     p.add_argument(
@@ -52,7 +60,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
-    multiprocessing.set_start_method("spawn")  # Required for CUDA safety
+    multiprocessing.set_start_method("spawn")
     args = parse_args()
     gpu_ids = [int(x) for x in args.gpu_ids.split(",")]
     total_workers = len(gpu_ids) * args.workers_per_gpu
@@ -60,91 +68,83 @@ def main() -> None:
 
     stop_event = multiprocessing.Event()
 
-    # --- Phase 1: Download models in single process (avoid race) ---
-    print("Phase 1: Warming up models (single process)...")
+    # --- Phase 1: Warmup models (single process) ---
+    print("Phase 1: Warming up models...")
     _warmup_models(args)
     print("  Models ready.\n")
 
-    # --- Phase 2: Ensure QDrant collections exist ---
+    # --- Phase 2: QDrant collections ---
     print("Phase 2: Verifying QDrant collections...")
     _ensure_collections(args)
     print()
 
-    # --- Phase 3: Reset stale bootstrap jobs from previous runs ---
+    # --- Phase 3: Reset stale jobs ---
     _reset_all_stale(args.db)
 
-    # --- Phase 4: Spawn worker processes ---
+    # --- Phase 4: 1 process per GPU, N tasks inside ---
     procs: list[multiprocessing.Process] = []
     for gpu_id in gpu_ids:
-        for w_idx in range(args.workers_per_gpu):
-            worker_id = f"bootstrap-gpu{gpu_id}-w{w_idx}"
-            p = multiprocessing.Process(
-                target=_worker_entry,
-                args=(gpu_id, worker_id, omp_threads, stop_event, args),
-                name=worker_id,
-            )
-            p.start()
-            procs.append(p)
+        p = multiprocessing.Process(
+            target=_gpu_process_entry,
+            args=(gpu_id, args.workers_per_gpu, omp_threads, stop_event, args),
+            name=f"gpu-{gpu_id}",
+        )
+        p.start()
+        procs.append(p)
 
     print(
-        f"Phase 4: Started {total_workers} workers on GPUs {gpu_ids} "
-        f"(OMP_NUM_THREADS={omp_threads})\n"
+        f"Phase 4: Started {len(gpu_ids)} GPU processes "
+        f"({args.workers_per_gpu} tasks each = {total_workers} total) "
+        f"on GPUs {gpu_ids}\n"
     )
 
-    # --- Signal handling for graceful shutdown ---
     def _handle_signal(signum, frame):
-        print("\n>>> Received signal, shutting down gracefully...")
+        print("\n>>> Shutting down gracefully...")
         stop_event.set()
 
     signal.signal(signal.SIGINT, _handle_signal)
     signal.signal(signal.SIGTERM, _handle_signal)
 
-    # --- Phase 5: Monitor loop ---
     _monitor_loop(procs, stop_event, args.db)
     print("\nBootstrap complete.")
 
 
 # ---------------------------------------------------------------------------
-# Initialization helpers (run in main process before spawning workers)
+# Init helpers
 # ---------------------------------------------------------------------------
 
 
 def _warmup_models(args: argparse.Namespace) -> None:
-    """Download/cache all ML models once to avoid download races."""
+    """Download/cache all models once before spawning."""
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     from karaoke_shared.ml.feature_extractor import FeatureExtractor
     from karaoke_shared.ml.lyric_embedder import LyricEmbedder
     from worker.common.ctc_aligner import CTCAligner
+
     from worker.gpu.uvr_separator import UVRSeparator
 
-    # UVR / BS-Roformer
     uvr = UVRSeparator(
-        model_cache_dir=args.model_cache_dir,
-        media_root=args.media_root,
+        model_cache_dir=args.model_cache_dir, media_root=args.media_root,
     )
     uvr.cleanup()
     del uvr
-    print("  UVR model cached")
+    print("  BS-RoFormer model cached")
 
-    # CTC aligner (ONNX model)
     CTCAligner(batch_size=16)
-    print("  CTC aligner model cached")
+    print("  CTC aligner cached")
 
-    # Feature extractor (no model download, but validates stats file)
     fe_kw: dict = {}
     if args.normalization_stats:
         fe_kw["normalization_stats_path"] = args.normalization_stats
     FeatureExtractor(**fe_kw)
     print("  Feature extractor ready")
 
-    # Lyric embedder (sentence-transformers download)
     LyricEmbedder(cache_dir=args.model_cache_dir)
-    print("  Lyric embedder model cached")
+    print("  Lyric embedder cached")
 
 
 def _ensure_collections(args: argparse.Namespace) -> None:
-    """Create QDrant collections if they don't exist."""
     from qdrant_client import QdrantClient
     from qdrant_client.models import Distance, VectorParams
 
@@ -163,12 +163,10 @@ def _ensure_collections(args: argparse.Namespace) -> None:
 
 
 def _reset_all_stale(db_path: str) -> None:
-    """Reset ALL running jobs locked by any bootstrap worker."""
     conn = sqlite3.connect(db_path)
     count = conn.execute(
-        """UPDATE job_queue
-           SET status = 'pending', locked_by = NULL, locked_at = NULL
-           WHERE status = 'running' AND locked_by LIKE 'bootstrap-%'"""
+        """UPDATE job_queue SET status='pending', locked_by=NULL, locked_at=NULL
+           WHERE status='running' AND locked_by LIKE 'bootstrap-%'"""
     ).rowcount
     conn.commit()
     conn.close()
@@ -179,35 +177,35 @@ def _reset_all_stale(db_path: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Worker subprocess
+# GPU process: 1 per GPU, runs N async tasks
 # ---------------------------------------------------------------------------
 
 
-def _worker_entry(
+def _gpu_process_entry(
     gpu_id: int,
-    worker_id: str,
+    num_tasks: int,
     omp_threads: int,
     stop_event: multiprocessing.Event,
     args: argparse.Namespace,
 ) -> None:
-    """Entry point for each worker subprocess.
-
-    Sets CUDA device and OMP threads, then runs the async worker loop.
-    """
+    """Entry point for a GPU process. Runs N concurrent async tasks."""
     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
     os.environ["OMP_NUM_THREADS"] = str(omp_threads)
 
     import asyncio
 
-    asyncio.run(_async_worker(worker_id, stop_event, args))
+    asyncio.run(_gpu_async_main(gpu_id, num_tasks, stop_event, args))
 
 
-async def _async_worker(
-    worker_id: str,
+async def _gpu_async_main(
+    gpu_id: int,
+    num_tasks: int,
     stop_event: multiprocessing.Event,
     args: argparse.Namespace,
 ) -> None:
-    """Async worker loop — polls job queue, processes tracks."""
+    """Create N pipeline instances and run them as concurrent tasks."""
+    import asyncio
+
     import aiosqlite
     from qdrant_client import QdrantClient
 
@@ -218,9 +216,8 @@ async def _async_worker(
     from karaoke_shared.services.job_service import JobService
     from worker.bootstrap.pipeline import BootstrapPipeline
     from worker.common.ctc_aligner import CTCAligner
-    from worker.gpu.uvr_separator import UVRSeparator
 
-    # Database connection (WAL mode for concurrent access)
+    # Shared DB connection (single process)
     conn = await aiosqlite.connect(args.db)
     conn.row_factory = aiosqlite.Row
     await conn.execute("PRAGMA journal_mode=WAL")
@@ -230,45 +227,80 @@ async def _async_worker(
     repo = SQLiteRepository(conn)
     job_service = JobService(repo)
 
-    # ML components
-    uvr = UVRSeparator(
-        model_cache_dir=args.model_cache_dir,
-        media_root=args.media_root,
-    )
-    ctc = CTCAligner(batch_size=16)
+    # Shared QDrant client
+    qc = QdrantClient(host=args.qdrant_host, port=args.qdrant_port)
+    qr = QDrantRepository(qc)
 
+    # Shared feature extractor + lyric embedder (read-only, thread-safe)
     fe_kw: dict = {}
     if args.normalization_stats:
         fe_kw["normalization_stats_path"] = args.normalization_stats
     feature_extractor = FeatureExtractor(**fe_kw)
-
     lyric_embedder = LyricEmbedder(cache_dir=args.model_cache_dir)
 
-    qdrant_client = QdrantClient(host=args.qdrant_host, port=args.qdrant_port)
-    qdrant_repo = QDrantRepository(qdrant_client)
+    # Create N pipelines, each with its own UVR separator + CTC
+    from worker.gpu.uvr_separator import UVRSeparator
 
-    # Pipeline
-    pipeline = BootstrapPipeline(
-        job_service=job_service,
-        uvr=uvr,
-        repo=repo,
-        ctc_aligner=ctc,
-        feature_extractor=feature_extractor,
-        lyric_embedder=lyric_embedder,
-        qdrant_repo=qdrant_repo,
-    )
+    pipelines: list[BootstrapPipeline] = []
+    for i in range(num_tasks):
+        sep = UVRSeparator(
+            model_cache_dir=args.model_cache_dir,
+            media_root=args.media_root,
+        )
+        ctc = CTCAligner(batch_size=16)
 
-    print(f"[{worker_id}] Initialized, starting poll loop")
+        pipeline = BootstrapPipeline(
+            job_service=job_service,
+            uvr=sep,
+            repo=repo,
+            ctc_aligner=ctc,
+            feature_extractor=feature_extractor,
+            lyric_embedder=lyric_embedder,
+            qdrant_repo=qr,
+        )
+        pipelines.append(pipeline)
+
+    print(f"[gpu-{gpu_id}] {num_tasks} pipelines initialized")
+
+    # Launch N concurrent task loops
+    tasks = []
+    for i in range(num_tasks):
+        worker_id = f"bootstrap-gpu{gpu_id}-w{i}"
+        task = asyncio.create_task(
+            _task_loop(worker_id, pipelines[i], job_service, repo, stop_event)
+        )
+        tasks.append(task)
+
+    # Wait for all tasks to complete
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Cleanup
+    for p in pipelines:
+        p.cleanup()
+    await conn.close()
+
+    total = sum(r for r in results if isinstance(r, int))
+    print(f"[gpu-{gpu_id}] All tasks done. Total processed: {total}")
+
+
+async def _task_loop(
+    worker_id: str,
+    pipeline,
+    job_service,
+    repo,
+    stop_event: multiprocessing.Event,
+) -> int:
+    """Single async task loop — polls and processes jobs."""
+    import asyncio
 
     processed = 0
     try:
         while not stop_event.is_set():
             job = await job_service.poll_and_lock(worker_id)
             if job is None:
-                # Check if there are any pending jobs left at all
                 pending = await repo.poll_pending(limit=1)
                 if not pending:
-                    print(f"[{worker_id}] No more pending jobs, exiting")
+                    print(f"[{worker_id}] No more jobs")
                     break
                 await asyncio.sleep(2)
                 continue
@@ -277,16 +309,16 @@ async def _async_worker(
             processed += 1
 
             if processed % 10 == 0:
-                print(f"[{worker_id}] Processed {processed} tracks")
+                print(f"[{worker_id}] {processed} done")
+    except Exception as exc:
+        print(f"[{worker_id}] ERROR: {exc}")
 
-    finally:
-        pipeline.cleanup()
-        await conn.close()
-        print(f"[{worker_id}] Finished. Total processed: {processed}")
+    print(f"[{worker_id}] Finished ({processed} tracks)")
+    return processed
 
 
 # ---------------------------------------------------------------------------
-# Monitor loop (main process)
+# Monitor
 # ---------------------------------------------------------------------------
 
 
@@ -295,7 +327,6 @@ def _monitor_loop(
     stop_event: multiprocessing.Event,
     db_path: str,
 ) -> None:
-    """Monitor worker processes and report progress every 30 seconds."""
     start_time = time.time()
 
     while not stop_event.is_set():
@@ -303,23 +334,21 @@ def _monitor_loop(
 
         alive = [p for p in procs if p.is_alive()]
         dead = [p for p in procs if not p.is_alive() and p.exitcode not in (None, 0)]
-
         for p in dead:
-            print(f"  WARNING: {p.name} died with exit code {p.exitcode}")
+            print(f"  WARNING: {p.name} died (exit {p.exitcode})")
 
-        # Query progress from DB
         try:
             conn = sqlite3.connect(db_path)
             conn.execute("PRAGMA busy_timeout=5000")
             total = conn.execute("SELECT COUNT(*) FROM job_queue").fetchone()[0]
             completed = conn.execute(
-                "SELECT COUNT(*) FROM job_queue WHERE status = 'completed'"
+                "SELECT COUNT(*) FROM job_queue WHERE status='completed'"
             ).fetchone()[0]
             failed = conn.execute(
-                "SELECT COUNT(*) FROM job_queue WHERE status = 'failed'"
+                "SELECT COUNT(*) FROM job_queue WHERE status='failed'"
             ).fetchone()[0]
             running = conn.execute(
-                "SELECT COUNT(*) FROM job_queue WHERE status = 'running'"
+                "SELECT COUNT(*) FROM job_queue WHERE status='running'"
             ).fetchone()[0]
             conn.close()
 
@@ -332,21 +361,19 @@ def _monitor_loop(
             print(
                 f"[monitor] {completed}/{total} ({pct:.1f}%) | "
                 f"running={running} failed={failed} | "
-                f"workers={len(alive)} | "
+                f"procs={len(alive)} | "
                 f"rate={rate:.0f}/h ETA={eta_h:.1f}h"
             )
         except Exception:
             pass
 
         if not alive:
-            print("[monitor] All workers exited")
+            print("[monitor] All GPU processes exited")
             break
 
-    # Wait for all processes to finish
     for p in procs:
         p.join(timeout=60)
         if p.is_alive():
-            print(f"  Force-killing {p.name}")
             p.kill()
 
 
