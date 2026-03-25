@@ -7,12 +7,62 @@ import structlog
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from karaoke_shared.repositories.sqlite_repository import SQLiteRepository
+from pydantic import BaseModel
 
 from app.dependencies import get_sqlite_repo
 
 logger = structlog.get_logger(__name__)
 
 router = APIRouter()
+
+
+# ---------------------------------------------------------------------------
+# Response models
+# ---------------------------------------------------------------------------
+
+
+class ActiveJobResponse(BaseModel):
+    """A currently active (pending/running) upload job with track metadata."""
+
+    job_id: str
+    track_id: str
+    status: str
+    current_step: str | None = None
+    progress: int = 0
+    artist: str
+    title: str
+
+
+# ---------------------------------------------------------------------------
+# Active jobs endpoint
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/jobs/active",
+    response_model=list[ActiveJobResponse],
+    summary="List active upload processing jobs",
+)
+async def list_active_jobs(
+    repo: SQLiteRepository = Depends(get_sqlite_repo),
+) -> list[ActiveJobResponse]:
+    """Return all pending/running jobs for user-uploaded tracks."""
+    jobs = await repo.get_active_upload_jobs()
+    results: list[ActiveJobResponse] = []
+    for job in jobs:
+        track = await repo.get_track(job.track_id)
+        results.append(
+            ActiveJobResponse(
+                job_id=job.id,
+                track_id=job.track_id,
+                status=job.status,
+                current_step=job.current_step,
+                progress=job.progress,
+                artist=track.artist if track else "Unknown",
+                title=track.title if track else "Unknown",
+            )
+        )
+    return results
 
 # Maximum time (seconds) to keep an SSE stream open before closing it.
 _STREAM_TIMEOUT_SEC = 300

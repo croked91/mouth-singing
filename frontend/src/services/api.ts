@@ -9,6 +9,7 @@ import type {
   MoodTag,
   SearchResult,
   UploadResponse,
+  ActiveJob,
   StartPlayingResponse,
   FinishPlayingResponse,
 } from '../types';
@@ -162,6 +163,11 @@ export const api = {
     await apiClient.delete(`/sessions/${sessionId}`, {
       headers: { 'X-Admin-Secret': adminSecret },
     });
+  },
+
+  getActiveJobs: async (): Promise<ActiveJob[]> => {
+    const response = await apiClient.get<ActiveJob[]>('/jobs/active');
+    return response.data;
   },
 
   uploadTrack: async (file: File, artist?: string, title?: string): Promise<UploadResponse> => {

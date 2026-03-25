@@ -932,11 +932,13 @@ export const QueuePage: React.FC = () => {
                 />
               )}
               {activeTab === TAB_RECOMMENDATIONS && renderRecommendationsTab()}
-              {activeTab === 2 && sessionId && (
-                <UploadTab
-                  sessionId={sessionId}
-                  onTrackUploaded={(trackId) => { void handleTrackSelect(trackId); }}
-                />
+              {sessionId && (
+                <Box sx={{ display: activeTab === 2 ? 'block' : 'none' }}>
+                  <UploadTab
+                    sessionId={sessionId}
+                    onTrackUploaded={(trackId) => { void handleTrackSelect(trackId); }}
+                  />
+                </Box>
               )}
             </Box>
           </Box>

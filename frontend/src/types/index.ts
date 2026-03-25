@@ -106,6 +106,16 @@ export interface UploadResponse {
   status: string;
 }
 
+export interface ActiveJob {
+  job_id: string;
+  track_id: string;
+  status: string;
+  current_step: string | null;
+  progress: number;
+  artist: string;
+  title: string;
+}
+
 export interface JobStatusEvent {
   job_id: string;
   status: string;

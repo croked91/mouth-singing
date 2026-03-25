@@ -5,16 +5,17 @@ import {
   InputBase,
   LinearProgress,
   ButtonBase,
+  IconButton,
 } from '@mui/material';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
-import AddIcon from '@mui/icons-material/Add';
+import CloseIcon from '@mui/icons-material/Close';
 
 import { api } from '../services/api';
 import { subscribeToJobStatus } from '../services/sseService';
-import type { JobStatusEvent } from '../types';
+import type { ActiveJob, JobStatusEvent } from '../types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -31,12 +32,22 @@ const STEP_LABELS: Record<string, string> = {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type UploadPhase =
-  | { kind: 'idle' }
-  | { kind: 'uploading'; progress: number }
+type JobPhase =
+  | { kind: 'uploading' }
   | { kind: 'processing'; step: string; progress: number }
   | { kind: 'done'; trackId: string }
   | { kind: 'error'; message: string };
+
+interface UploadJob {
+  id: string;
+  fileName: string;
+  phase: JobPhase;
+  /** Backend job ID for SSE subscription */
+  backendJobId?: string;
+  /** Track ID returned by upload endpoint */
+  trackId?: string;
+  unsubscribe?: () => void;
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -49,12 +60,134 @@ function isValidFileSize(file: File): boolean {
   return file.size <= MAX_FILE_SIZE_MB * 1024 * 1024;
 }
 
+/** Convert an ActiveJob from the backend into a local UploadJob. */
+function activeJobToUploadJob(aj: ActiveJob): UploadJob {
+  const stepLabel = aj.current_step
+    ? (STEP_LABELS[aj.current_step] ?? aj.current_step)
+    : 'Обработка...';
+  return {
+    id: `backend-${aj.job_id}`,
+    fileName: `${aj.artist} — ${aj.title}`,
+    phase: { kind: 'processing', step: stepLabel, progress: aj.progress },
+    backendJobId: aj.job_id,
+    trackId: aj.track_id,
+  };
+}
+
+let jobCounter = 0;
+
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface UploadTabProps {
   sessionId: string;
   onTrackUploaded: (trackId: string) => void;
 }
+
+// ─── JobCard ──────────────────────────────────────────────────────────────────
+
+const JobCard: React.FC<{
+  job: UploadJob;
+  onDismiss: (id: string) => void;
+}> = ({ job, onDismiss }) => {
+  const { phase } = job;
+
+  return (
+    <Box
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 1.5,
+        px: 2,
+        py: 1.5,
+        borderRadius: '14px',
+        background: 'rgba(255,255,255,0.04)',
+        border: `1px solid ${
+          phase.kind === 'done'
+            ? 'rgba(16,185,129,0.3)'
+            : phase.kind === 'error'
+              ? 'rgba(248,113,113,0.3)'
+              : 'rgba(6,182,212,0.2)'
+        }`,
+      }}
+    >
+      {/* Icon */}
+      <Box sx={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+        {phase.kind === 'done' && <CheckCircleIcon sx={{ fontSize: 22, color: '#10B981' }} />}
+        {phase.kind === 'error' && <ErrorOutlineIcon sx={{ fontSize: 22, color: '#F87171' }} />}
+        {(phase.kind === 'uploading' || phase.kind === 'processing') && (
+          <CloudUploadIcon sx={{ fontSize: 22, color: '#67E8F9' }} />
+        )}
+      </Box>
+
+      {/* Content */}
+      <Box sx={{ flex: 1, minWidth: 0 }}>
+        <Typography
+          sx={{
+            fontSize: '13px',
+            fontWeight: 600,
+            color: '#FFFFFF',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+        >
+          {job.fileName}
+        </Typography>
+
+        {phase.kind === 'uploading' && (
+          <Typography sx={{ fontSize: '11px', color: '#A78BFA' }}>
+            Загрузка...
+          </Typography>
+        )}
+
+        {phase.kind === 'processing' && (
+          <Box>
+            <Typography sx={{ fontSize: '11px', color: '#67E8F9' }}>
+              {phase.step}
+            </Typography>
+            <LinearProgress
+              variant={phase.progress > 0 ? 'determinate' : 'indeterminate'}
+              value={phase.progress}
+              sx={{
+                mt: 0.5,
+                borderRadius: '4px',
+                height: 4,
+                backgroundColor: 'rgba(255,255,255,0.08)',
+                '& .MuiLinearProgress-bar': {
+                  background: 'linear-gradient(90deg, #06B6D4, #7C3AED)',
+                  borderRadius: '4px',
+                },
+              }}
+            />
+          </Box>
+        )}
+
+        {phase.kind === 'done' && (
+          <Typography sx={{ fontSize: '11px', color: '#10B981' }}>
+            Готово, добавлен в очередь
+          </Typography>
+        )}
+
+        {phase.kind === 'error' && (
+          <Typography sx={{ fontSize: '11px', color: '#FCA5A5' }}>
+            {phase.message}
+          </Typography>
+        )}
+      </Box>
+
+      {/* Dismiss button for done/error */}
+      {(phase.kind === 'done' || phase.kind === 'error') && (
+        <IconButton
+          size="small"
+          onClick={() => onDismiss(job.id)}
+          sx={{ color: 'rgba(255,255,255,0.3)', '&:hover': { color: 'rgba(255,255,255,0.6)' } }}
+        >
+          <CloseIcon sx={{ fontSize: 16 }} />
+        </IconButton>
+      )}
+    </Box>
+  );
+};
 
 // ─── UploadTab ────────────────────────────────────────────────────────────────
 
@@ -65,17 +198,92 @@ export const UploadTab: React.FC<UploadTabProps> = ({
   const [artist, setArtist] = useState('');
   const [title, setTitle] = useState('');
   const [isDragOver, setIsDragOver] = useState(false);
-  const [phase, setPhase] = useState<UploadPhase>({ kind: 'idle' });
   const [fileSizeError, setFileSizeError] = useState<string | null>(null);
-  const [addedToQueue, setAddedToQueue] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [jobs, setJobs] = useState<UploadJob[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const unsubscribeRef = useRef<(() => void) | null>(null);
+  const jobsRef = useRef<UploadJob[]>([]);
+  jobsRef.current = jobs;
+  const onTrackUploadedRef = useRef(onTrackUploaded);
+  onTrackUploadedRef.current = onTrackUploaded;
 
-  // Cleanup SSE on unmount
+  // ── Subscribe a job to SSE ──────────────────────────────────────────────
+
+  const subscribeJob = useCallback((localJobId: string, backendJobId: string, trackId?: string) => {
+    const unsubscribe = subscribeToJobStatus(
+      backendJobId,
+      (event: JobStatusEvent) => {
+        if (event.status === 'completed') {
+          const finalTrackId = event.track_id ?? trackId;
+          setJobs((prev) => prev.map((j) =>
+            j.id === localJobId
+              ? { ...j, phase: { kind: 'done' as const, trackId: finalTrackId! }, unsubscribe: undefined }
+              : j
+          ));
+          if (finalTrackId) onTrackUploadedRef.current(finalTrackId);
+        } else if (event.status === 'error') {
+          setJobs((prev) => prev.map((j) =>
+            j.id === localJobId
+              ? { ...j, phase: { kind: 'error' as const, message: event.error ?? 'Ошибка при обработке' }, unsubscribe: undefined }
+              : j
+          ));
+        } else {
+          const stepLabel = event.step ? (STEP_LABELS[event.step] ?? event.step) : 'Обработка...';
+          setJobs((prev) => prev.map((j) =>
+            j.id === localJobId
+              ? { ...j, phase: { kind: 'processing' as const, step: stepLabel, progress: event.progress ?? 0 } }
+              : j
+          ));
+        }
+      },
+      () => {
+        setJobs((prev) => prev.map((j) => {
+          if (j.id !== localJobId) return j;
+          if (j.phase.kind === 'done') return j;
+          return { ...j, phase: { kind: 'error' as const, message: 'Соединение прервано' }, unsubscribe: undefined };
+        }));
+      }
+    );
+    setJobs((prev) => prev.map((j) =>
+      j.id === localJobId ? { ...j, unsubscribe } : j
+    ));
+  }, []);
+
+  // ── Restore active jobs from backend on mount ───────────────────────────
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void api.getActiveJobs().then((activeJobs) => {
+      if (cancelled || activeJobs.length === 0) return;
+
+      // Only add jobs not already tracked locally
+      setJobs((prev) => {
+        const existingBackendIds = new Set(prev.map((j) => j.backendJobId).filter(Boolean));
+        const newJobs = activeJobs
+          .filter((aj) => !existingBackendIds.has(aj.job_id))
+          .map(activeJobToUploadJob);
+        return [...newJobs, ...prev];
+      });
+
+      // Subscribe each restored job to SSE
+      for (const aj of activeJobs) {
+        const localId = `backend-${aj.job_id}`;
+        // Check not already subscribed
+        const existing = jobsRef.current.find((j) => j.id === localId);
+        if (existing?.unsubscribe) continue;
+        subscribeJob(localId, aj.job_id, aj.track_id);
+      }
+    }).catch(() => { /* network error — ignore, jobs just won't appear */ });
+
+    return () => { cancelled = true; };
+  }, [subscribeJob]);
+
+  // Cleanup all SSE subscriptions on unmount
   useEffect(() => {
     return () => {
-      unsubscribeRef.current?.();
+      jobsRef.current.forEach((j) => j.unsubscribe?.());
     };
   }, []);
 
@@ -88,13 +296,11 @@ export const UploadTab: React.FC<UploadTabProps> = ({
     }
     setFileSizeError(null);
     setFile(incoming);
-    setPhase({ kind: 'idle' });
   }, []);
 
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
     const picked = e.target.files?.[0];
     if (picked) acceptFile(picked);
-    // Reset input so same file can be picked again after a reset
     e.target.value = '';
   };
 
@@ -119,85 +325,72 @@ export const UploadTab: React.FC<UploadTabProps> = ({
     fileInputRef.current?.click();
   };
 
+  // ── Job state helpers ─────────────────────────────────────────────────────
+
+  const updateJob = useCallback((jobId: string, patch: Partial<UploadJob>) => {
+    setJobs((prev) => prev.map((j) => (j.id === jobId ? { ...j, ...patch } : j)));
+  }, []);
+
+  const dismissJob = useCallback((jobId: string) => {
+    setJobs((prev) => {
+      const job = prev.find((j) => j.id === jobId);
+      job?.unsubscribe?.();
+      return prev.filter((j) => j.id !== jobId);
+    });
+  }, []);
+
   // ── Upload ───────────────────────────────────────────────────────────────
 
   const handleUpload = useCallback(async (): Promise<void> => {
-    if (!file) return;
+    if (!file || uploading) return;
 
-    setPhase({ kind: 'uploading', progress: 0 });
+    const localJobId = `local-${++jobCounter}`;
+    const fileName = file.name;
+    const artistVal = artist.trim() || undefined;
+    const titleVal = title.trim() || undefined;
+
+    // Add job card immediately
+    const newJob: UploadJob = {
+      id: localJobId,
+      fileName,
+      phase: { kind: 'uploading' },
+    };
+    setJobs((prev) => [newJob, ...prev]);
+
+    // Reset form so user can upload another
+    setFile(null);
+    setArtist('');
+    setTitle('');
+    setUploading(true);
 
     let uploadResponse: { track_id: string; job_id: string; status: string };
 
     try {
-      uploadResponse = await api.uploadTrack(
-        file,
-        artist.trim() || undefined,
-        title.trim() || undefined
-      );
+      uploadResponse = await api.uploadTrack(file, artistVal, titleVal);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Ошибка загрузки';
-      setPhase({ kind: 'error', message });
+      updateJob(localJobId, { phase: { kind: 'error', message } });
+      setUploading(false);
       return;
     }
 
-    // Start processing phase while SSE streams
-    setPhase({ kind: 'processing', step: 'Начинаем обработку...', progress: 0 });
+    setUploading(false);
 
     const { job_id, track_id } = uploadResponse;
 
-    // Auto-add to queue immediately (even while still processing)
-    onTrackUploaded(track_id);
-    setAddedToQueue(true);
+    // Start processing phase (track is added to queue only after processing completes)
+    updateJob(localJobId, {
+      phase: { kind: 'processing', step: 'Начинаем обработку...', progress: 0 },
+      backendJobId: job_id,
+      trackId: track_id,
+    });
 
-    unsubscribeRef.current?.();
-
-    const unsubscribe = subscribeToJobStatus(
-      job_id,
-      (event: JobStatusEvent) => {
-        if (event.status === 'completed') {
-          unsubscribeRef.current?.();
-          setPhase({ kind: 'done', trackId: event.track_id ?? track_id });
-        } else if (event.status === 'error') {
-          unsubscribeRef.current?.();
-          setPhase({ kind: 'error', message: event.error ?? 'Ошибка при обработке' });
-        } else {
-          // status event with step/progress
-          const stepLabel = event.step ? (STEP_LABELS[event.step] ?? event.step) : 'Обработка...';
-          setPhase({ kind: 'processing', step: stepLabel, progress: event.progress ?? 0 });
-        }
-      },
-      () => {
-        // SSE connection error — only treat as error if not already done
-        setPhase((prev) => {
-          if (prev.kind === 'done') return prev;
-          return { kind: 'error', message: 'Соединение прервано' };
-        });
-      }
-    );
-
-    unsubscribeRef.current = unsubscribe;
-  }, [file, artist, title, onTrackUploaded]);
-
-  const handleReset = (): void => {
-    unsubscribeRef.current?.();
-    unsubscribeRef.current = null;
-    setFile(null);
-    setArtist('');
-    setTitle('');
-    setPhase({ kind: 'idle' });
-    setFileSizeError(null);
-    setAddedToQueue(false);
-  };
-
-  const handleAddToQueue = (): void => {
-    if (phase.kind !== 'done') return;
-    onTrackUploaded(phase.trackId);
-  };
+    subscribeJob(localJobId, job_id, track_id);
+  }, [file, artist, title, uploading, updateJob, subscribeJob]);
 
   // ── Derived ──────────────────────────────────────────────────────────────
 
-  const isActive = phase.kind !== 'idle';
-  const canUpload = file !== null && !isActive;
+  const canUpload = file !== null && !uploading;
 
   // ── Render ───────────────────────────────────────────────────────────────
 
@@ -206,10 +399,10 @@ export const UploadTab: React.FC<UploadTabProps> = ({
 
       {/* Drag & Drop Zone */}
       <Box
-        onClick={!isActive ? handleZoneClick : undefined}
-        onDrop={!isActive ? handleDrop : undefined}
-        onDragOver={!isActive ? handleDragOver : undefined}
-        onDragLeave={!isActive ? handleDragLeave : undefined}
+        onClick={handleZoneClick}
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
         sx={{
           height: 240,
           borderRadius: '20px',
@@ -222,7 +415,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({
           alignItems: 'center',
           justifyContent: 'center',
           gap: 1.5,
-          cursor: !isActive ? 'pointer' : 'default',
+          cursor: 'pointer',
           transition: 'border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease',
           boxShadow: isDragOver
             ? '0 0 32px rgba(6,182,212,0.2), inset 0 0 40px rgba(6,182,212,0.06)'
@@ -231,166 +424,6 @@ export const UploadTab: React.FC<UploadTabProps> = ({
           overflow: 'hidden',
         }}
       >
-        {/* Overlay when active */}
-        {isActive && (
-          <Box
-            sx={{
-              position: 'absolute',
-              inset: 0,
-              background: 'rgba(10,5,30,0.88)',
-              backdropFilter: 'blur(6px)',
-              borderRadius: '18px',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 2.5,
-              zIndex: 2,
-              px: 4,
-            }}
-          >
-            {/* Phase: uploading */}
-            {phase.kind === 'uploading' && (
-              <>
-                <Typography sx={{ fontSize: '15px', fontWeight: 600, color: '#A78BFA' }}>
-                  Загрузка...
-                </Typography>
-                <Box sx={{ width: '100%', maxWidth: 320 }}>
-                  <LinearProgress
-                    variant="indeterminate"
-                    sx={{
-                      borderRadius: '4px',
-                      height: 6,
-                      backgroundColor: 'rgba(255,255,255,0.08)',
-                      '& .MuiLinearProgress-bar': {
-                        background: 'linear-gradient(90deg, #06B6D4, #7C3AED)',
-                        borderRadius: '4px',
-                      },
-                    }}
-                  />
-                </Box>
-              </>
-            )}
-
-            {/* Phase: processing */}
-            {phase.kind === 'processing' && (
-              <>
-                <Typography sx={{ fontSize: '13px', fontWeight: 700, letterSpacing: '0.08em', color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase' }}>
-                  Создаём Karaoke
-                </Typography>
-                {addedToQueue && (
-                  <Typography sx={{ fontSize: '12px', color: '#10B981', fontWeight: 600 }}>
-                    Трек добавлен в очередь
-                  </Typography>
-                )}
-                <Typography sx={{ fontSize: '15px', fontWeight: 600, color: '#67E8F9', textAlign: 'center' }}>
-                  {phase.step}
-                </Typography>
-                <Box sx={{ width: '100%', maxWidth: 320 }}>
-                  <LinearProgress
-                    variant={phase.progress > 0 ? 'determinate' : 'indeterminate'}
-                    value={phase.progress}
-                    sx={{
-                      borderRadius: '4px',
-                      height: 6,
-                      backgroundColor: 'rgba(255,255,255,0.08)',
-                      '& .MuiLinearProgress-bar': {
-                        background: 'linear-gradient(90deg, #06B6D4, #7C3AED)',
-                        borderRadius: '4px',
-                      },
-                    }}
-                  />
-                </Box>
-                {phase.progress > 0 && (
-                  <Typography sx={{ fontSize: '12px', color: 'rgba(255,255,255,0.3)' }}>
-                    {phase.progress}%
-                  </Typography>
-                )}
-              </>
-            )}
-
-            {/* Phase: done */}
-            {phase.kind === 'done' && (
-              <>
-                <CheckCircleIcon sx={{ fontSize: 48, color: '#10B981' }} />
-                <Typography sx={{ fontSize: '16px', fontWeight: 700, color: '#FFFFFF' }}>
-                  Готово к исполнению!
-                </Typography>
-                {addedToQueue ? (
-                  <Typography sx={{ fontSize: '13px', color: '#10B981', fontWeight: 600 }}>
-                    Трек уже в очереди
-                  </Typography>
-                ) : (
-                  <ButtonBase
-                    onClick={handleAddToQueue}
-                    sx={{
-                      px: 3,
-                      py: 1.25,
-                      borderRadius: '24px',
-                      background: 'linear-gradient(135deg, #06B6D4, #7C3AED)',
-                      color: '#FFFFFF',
-                      fontSize: '13px',
-                      fontWeight: 700,
-                      letterSpacing: '0.08em',
-                      textTransform: 'uppercase',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 0.75,
-                      boxShadow: '0 4px 20px rgba(6,182,212,0.35)',
-                      transition: 'opacity 0.2s ease',
-                      '&:hover': { opacity: 0.88 },
-                      '&:disabled': { opacity: 0.4, cursor: 'not-allowed' },
-                    }}
-                  >
-                    <AddIcon sx={{ fontSize: 18 }} />
-                    ДОБАВИТЬ В ОЧЕРЕДЬ
-                  </ButtonBase>
-                )}
-                <ButtonBase
-                  onClick={handleReset}
-                  sx={{
-                    fontSize: '12px',
-                    color: 'rgba(255,255,255,0.35)',
-                    textDecoration: 'underline',
-                    '&:hover': { color: 'rgba(255,255,255,0.6)' },
-                  }}
-                >
-                  Загрузить ещё один трек
-                </ButtonBase>
-              </>
-            )}
-
-            {/* Phase: error */}
-            {phase.kind === 'error' && (
-              <>
-                <ErrorOutlineIcon sx={{ fontSize: 44, color: '#F87171' }} />
-                <Typography sx={{ fontSize: '14px', fontWeight: 600, color: '#FCA5A5', textAlign: 'center', maxWidth: 280 }}>
-                  {phase.message}
-                </Typography>
-                <ButtonBase
-                  onClick={handleReset}
-                  sx={{
-                    px: 2.5,
-                    py: 1,
-                    borderRadius: '20px',
-                    background: 'rgba(248,113,113,0.2)',
-                    border: '1px solid rgba(248,113,113,0.4)',
-                    color: '#FCA5A5',
-                    fontSize: '12px',
-                    fontWeight: 700,
-                    letterSpacing: '0.08em',
-                    textTransform: 'uppercase',
-                    transition: 'background 0.2s ease',
-                    '&:hover': { background: 'rgba(248,113,113,0.3)' },
-                  }}
-                >
-                  Попробовать снова
-                </ButtonBase>
-              </>
-            )}
-          </Box>
-        )}
-
         {/* Default zone content */}
         <Box
           sx={{
@@ -463,7 +496,6 @@ export const UploadTab: React.FC<UploadTabProps> = ({
       {/* Choose file button */}
       <ButtonBase
         onClick={handleZoneClick}
-        disabled={isActive}
         sx={{
           display: 'flex',
           alignItems: 'center',
@@ -481,10 +513,6 @@ export const UploadTab: React.FC<UploadTabProps> = ({
           '&:hover': {
             background: 'rgba(6,182,212,0.1)',
             borderColor: 'rgba(6,182,212,0.7)',
-          },
-          '&:disabled': {
-            opacity: 0.35,
-            cursor: 'not-allowed',
           },
         }}
       >
@@ -528,7 +556,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({
               value={artist}
               onChange={(e) => setArtist(e.target.value)}
               placeholder="напр. Кино"
-              disabled={isActive}
+              disabled={uploading}
               fullWidth
               sx={{
                 color: '#FFFFFF',
@@ -565,7 +593,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="напр. Группа крови"
-              disabled={isActive}
+              disabled={uploading}
               fullWidth
               sx={{
                 color: '#FFFFFF',
@@ -613,6 +641,26 @@ export const UploadTab: React.FC<UploadTabProps> = ({
         <CloudUploadIcon sx={{ fontSize: 18 }} />
         ЗАГРУЗИТЬ И СОЗДАТЬ KARAOKE
       </ButtonBase>
+
+      {/* Active/completed job cards */}
+      {jobs.length > 0 && (
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+          <Typography
+            sx={{
+              fontSize: '11px',
+              fontWeight: 700,
+              letterSpacing: '0.12em',
+              color: 'rgba(255,255,255,0.3)',
+              textTransform: 'uppercase',
+            }}
+          >
+            ЗАГРУЗКИ
+          </Typography>
+          {jobs.map((job) => (
+            <JobCard key={job.id} job={job} onDismiss={dismissJob} />
+          ))}
+        </Box>
+      )}
     </Box>
   );
 };

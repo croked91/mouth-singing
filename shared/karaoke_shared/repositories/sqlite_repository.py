@@ -1013,6 +1013,21 @@ class SQLiteRepository:
         await self.db.commit()
         return cursor.rowcount
 
+    async def get_active_upload_jobs(self) -> list[Job]:
+        """Return pending/running jobs for user-uploaded tracks."""
+        cursor = await self.db.execute(
+            """
+            SELECT j.* FROM job_queue j
+            JOIN tracks t ON t.id = j.track_id
+            WHERE t.source = 'user_upload'
+              AND j.status IN (?, ?)
+            ORDER BY j.created_at DESC
+            """,
+            (JobStatus.PENDING, JobStatus.RUNNING),
+        )
+        rows = await cursor.fetchall()
+        return [self._job_from_row(row) for row in rows]
+
     async def mark_step(self, job_id: str, step: str, progress: int) -> None:
         """Update the current processing step and progress percentage."""
         await self.db.execute(
