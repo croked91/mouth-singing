@@ -46,8 +46,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--workers-per-gpu",
         type=int,
-        default=5,
-        help="Concurrent async tasks per GPU (optimal for RTX 4090)",
+        default=4,
+        help="Concurrent async tasks per GPU (4 optimal for multi-GPU)",
     )
     p.add_argument("--normalization-stats", default="", help="Feature norm JSON path")
     p.add_argument(

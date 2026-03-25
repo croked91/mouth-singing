@@ -171,7 +171,9 @@ class BootstrapPipeline(BasePipeline):
             vocals_path, instrumental_path = await asyncio.to_thread(
                 self.uvr.separate, track.mp3_path
             )
-            await asyncio.to_thread(self.uvr.cleanup)
+            # No cleanup() here — model stays resident in VRAM.
+            # Each container has its own GPU, so no VRAM contention.
+            # 4 workers × 1.7 GB = 6.8 GB out of 24 GB.
             await self.repo.update_track(
                 job.track_id,
                 TrackUpdate(
