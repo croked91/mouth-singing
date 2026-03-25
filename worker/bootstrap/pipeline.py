@@ -8,6 +8,7 @@ CTC receives raw vocals (same as GpuPipeline).
 from __future__ import annotations
 
 import asyncio
+import re
 from pathlib import Path
 
 import structlog
@@ -23,6 +24,87 @@ from worker.common.ctc_aligner import CTCAligner
 from worker.gpu.uvr_separator import UVRSeparator
 
 logger = structlog.get_logger(__name__)
+
+
+def _clean_lyrics_for_ctc(text: str) -> str:
+    """Clean lyrics text for CTC forced alignment.
+
+    CTC forced aligner tokenizes text into characters after romanization.
+    It fails on: non-breaking spaces, dashes between words, numbers,
+    special unicode chars, metadata/credits lines.
+
+    Does NOT use NFKD normalization (breaks Russian ё → е + combining).
+    """
+    # Non-breaking spaces → regular spaces
+    text = text.replace("\xa0", " ")
+    # Fancy quotes/apostrophes → simple
+    text = text.replace("\u2018", "'").replace("\u2019", "'")
+    text = text.replace("\u201c", "").replace("\u201d", "")
+    # HTML entities (leftover from scraping)
+    text = text.replace("&#x27;", "'").replace("&#39;", "'")
+    text = text.replace("&amp;", "and")
+
+    lines = text.splitlines()
+    cleaned_lines = []
+    for line in lines:
+        stripped = line.strip()
+
+        # Keep empty lines as paragraph breaks
+        if not stripped:
+            cleaned_lines.append("")
+            continue
+
+        # Skip metadata/credits lines
+        if re.search(
+            r"\b(BMI|ASCAP|SESAC|Publishing|Copyright|©|℗|"
+            r"Written by|Lyrics by|Composed by|Produced by|"
+            r"Music by|Words by|Муз\.|Сл\.|Музыка|Слова|Текст|"
+            r"Автор|Подбор|Перевод)\b",
+            stripped,
+            re.IGNORECASE,
+        ):
+            continue
+
+        # Skip inline metadata: "(оригинал ...)", "SPOKEN:", etc.
+        stripped = re.sub(
+            r"\(оригинал[^)]*\)|\(original[^)]*\)", "", stripped, flags=re.IGNORECASE
+        ).strip()
+        stripped = re.sub(r"^SPOKEN\s*:\s*", "", stripped, flags=re.IGNORECASE).strip()
+
+        if not stripped:
+            continue
+
+        # Skip lines that look like credits (mostly non-letters)
+        letters = sum(1 for c in stripped if c.isalpha())
+        if len(stripped) > 15 and letters / len(stripped) < 0.4:
+            continue
+
+        # Skip lines with CJK characters (CTC doesn't support them)
+        if re.search(r"[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff]", stripped):
+            continue
+
+        cleaned_lines.append(stripped)
+
+    text = "\n".join(cleaned_lines)
+
+    # Replace dashes (em, en, regular) with spaces
+    text = re.sub(r"[—–\-]", " ", text)
+
+    # Remove numbers (CTC can't align digits)
+    text = re.sub(r"\d+", " ", text)
+
+    # Keep only Cyrillic, Latin, spaces, newlines, apostrophes
+    # This removes â, ñ, ў and other accented chars that CTC can't tokenize
+    text = re.sub(r"[^A-Za-zА-Яа-яЁё \n']", " ", text)
+
+    # Collapse multiple spaces
+    text = re.sub(r"[ \t]+", " ", text)
+    # Collapse 3+ newlines to 2
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    # Strip each line
+    text = "\n".join(line.strip() for line in text.splitlines())
+
+    return text.strip()
 
 
 class BootstrapPipeline(BasePipeline):
@@ -75,8 +157,14 @@ class BootstrapPipeline(BasePipeline):
                 )
                 return
 
-            lyrics_text = track.lyrics_text
+            lyrics_text = _clean_lyrics_for_ctc(track.lyrics_text)
             language = track.language or "ru"
+
+            if not lyrics_text:
+                await self.job_service.mark_failed(
+                    job.id, "Lyrics empty after cleaning"
+                )
+                return
 
             # === STEP 1: UVR Separation (GPU, ~60s) ===
             await self.job_service.mark_step(job.id, "separating", 0)
