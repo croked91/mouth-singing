@@ -64,8 +64,12 @@ def main() -> None:
         # --- load model ---
         aligner = AlignmentSingleton()
         tokenizer = Tokenizer()
+        sess_opts = onnxruntime.SessionOptions()
+        sess_opts.intra_op_num_threads = 2
+        sess_opts.inter_op_num_threads = 1
         model = onnxruntime.InferenceSession(
             aligner.model_path,
+            sess_options=sess_opts,
             providers=["CPUExecutionProvider"],
         )
 
