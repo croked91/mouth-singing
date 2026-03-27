@@ -46,17 +46,11 @@ class JobService:
         Returns:
             The locked Job if one was available, otherwise ``None``.
         """
-        jobs = await self.repo.poll_pending(limit=1)
-        if not jobs:
-            return None
-
-        job = jobs[0]
-        locked = await self.repo.lock_job(job.id, worker_id)
-        if not locked:
-            # Another worker claimed it between our poll and lock calls.
-            return None
-
-        return await self.repo.get_job(job.id)
+        jobs = await self.repo.poll_pending(limit=5)
+        for job in jobs:
+            if await self.repo.lock_job(job.id, worker_id):
+                return await self.repo.get_job(job.id)
+        return None
 
     async def mark_step(self, job_id: str, step: str, progress: int) -> None:
         """Record the current pipeline step and progress percentage.

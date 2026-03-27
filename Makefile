@@ -72,7 +72,7 @@ logs: ## Tail logs from all services
 	docker compose -f $(BASE) -f $(GPU) -f $(API) logs -f --tail=50 2>/dev/null || docker compose -f $(BASE) logs -f --tail=50
 
 logs-worker: ## Tail worker logs only
-	docker logs -f --tail=100 karaoke_worker
+	docker compose -f $(BASE) -f $(GPU) logs -f --tail=100 worker 2>/dev/null || docker compose -f $(BASE) -f $(API) logs -f --tail=100 worker
 
 logs-backend: ## Tail backend logs only
 	docker logs -f --tail=100 karaoke_backend

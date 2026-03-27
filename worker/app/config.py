@@ -7,6 +7,8 @@ both GPU and API deployments.
 
 from __future__ import annotations
 
+import socket
+
 from pydantic_settings import BaseSettings
 
 
@@ -32,7 +34,7 @@ class WorkerSettings(BaseSettings):
     database_url: str = "/data/sqlite/karaoke.db"
     media_root: str = "/data/media"
     model_cache_dir: str = "/data/models"
-    worker_id: str = "worker-1"
+    worker_id: str = socket.gethostname()
     poll_interval_sec: float = 2.0
     log_level: str = "INFO"
 

@@ -6,7 +6,6 @@ services:
     build:
       context: .
       dockerfile: docker/worker-gpu.Dockerfile
-    container_name: karaoke_worker
     restart: unless-stopped
     depends_on:
       backend:
@@ -16,7 +15,6 @@ services:
       DATABASE_URL: /data/sqlite/karaoke.db
       MEDIA_ROOT: /data/media
       MODEL_CACHE_DIR: /data/models
-      WORKER_ID: worker-1
       POLL_INTERVAL_SEC: ${WORKER_POLL_INTERVAL:-2}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       QDRANT_HOST: qdrant
@@ -43,6 +41,7 @@ services:
     networks:
       - karaoke_net
     deploy:
+      replicas: ${WORKER_REPLICAS:-1}
       resources:
         reservations:
           devices:
