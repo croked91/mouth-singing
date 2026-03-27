@@ -45,7 +45,8 @@ RUN pip install --no-cache-dir audio-separator>=0.24 onnxruntime-gpu>=1.18
 # Layer 6: runtime deps
 RUN pip install --no-cache-dir \
     aiosqlite>=0.20 structlog>=24.0 httpx>=0.27 "qdrant-client>=1.8" \
-    pyphen>=0.16 beautifulsoup4>=4.12 lxml>=5.0 pydantic-settings>=2.0
+    pyphen>=0.16 beautifulsoup4>=4.12 lxml>=5.0 pydantic-settings>=2.0 \
+    "openai>=1.0"
 
 # Layer 7: project code
 COPY worker/ /project/worker/

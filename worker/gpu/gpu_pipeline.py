@@ -27,7 +27,8 @@ from karaoke_shared.services.job_service import JobService
 
 from worker.common.base_pipeline import BasePipeline
 from worker.common.ctc_aligner import CTCAligner
-from worker.common.lyrics_searcher import LyricsNotFoundError, LyricsSearcher
+from worker.common.lyrics_agent import LyricsAgent
+from worker.common.lyrics_searcher import LyricsSearchError
 from worker.common.vad_processor import VADProcessor
 from worker.gpu.uvr_separator import UVRSeparator
 from worker.gpu.whisper_transcriber import WhisperTranscriber
@@ -44,7 +45,7 @@ class GpuPipeline(BasePipeline):
         repo: SQLite repository.
         whisper: faster-whisper ASR transcriber.
         vad_processor: Voice activity detector.
-        lyrics_searcher: LLM-based lyrics finder (optional).
+        lyrics_searcher: Agent-based lyrics finder (optional).
         ctc_aligner: CTC forced alignment.
         feature_extractor: Audio feature extractor (optional).
         lyric_embedder: Lyrics embedder (optional).
@@ -59,7 +60,7 @@ class GpuPipeline(BasePipeline):
         repo: SQLiteRepository,
         whisper: WhisperTranscriber,
         vad_processor: VADProcessor,
-        lyrics_searcher: LyricsSearcher | None,
+        lyrics_searcher: LyricsAgent | None,
         ctc_aligner: CTCAligner,
         feature_extractor: object | None = None,
         lyric_embedder: object | None = None,
@@ -129,8 +130,8 @@ class GpuPipeline(BasePipeline):
             await self.job_service.mark_step(job.id, "searching_lyrics", 0)
 
             if self.lyrics_searcher is None:
-                await self.job_service.mark_failed(
-                    job.id, "Lyrics searcher not configured"
+                await self.job_service.mark_permanently_failed(
+                    job.id, "Lyrics agent not configured (check DEEPSEEK/YANDEX env vars)"
                 )
                 return
 
@@ -143,20 +144,21 @@ class GpuPipeline(BasePipeline):
                     artist_hint=artist_hint or track.artist,
                     title_hint=title_hint or track.title,
                 )
-            except LyricsNotFoundError as exc:
+            except LyricsSearchError as exc:
+                logger.error("lyrics_search_failed", job_id=job.id, error=str(exc))
                 await self.repo.update_track(
                     job.track_id,
                     TrackUpdate(
                         status="error",
-                        error_message=f"Lyrics not found: {exc}",
+                        error_message=f"Lyrics search failed: {exc}",
                     ),
                 )
                 if feature_vector is not None:
                     await self._sync_qdrant_audio_only(
                         job.track_id, track, feature_vector
                     )
-                await self.job_service.mark_failed(
-                    job.id, f"Lyrics not found: {exc}"
+                await self.job_service.mark_permanently_failed(
+                    job.id, f"Lyrics search failed: {exc}"
                 )
                 return
 

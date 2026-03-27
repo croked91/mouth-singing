@@ -23,7 +23,8 @@ dependencies = [
     "soundfile>=0.12",
     "numpy>=1.24",
 
-    # Lyrics scraping (common to both modes)
+    # Lyrics agent (DeepSeek via OpenAI SDK + scraping)
+    "openai>=1.0",
     "beautifulsoup4>=4.12",
     "lxml>=5.0",
 ]

@@ -25,7 +25,8 @@ RUN pip install --no-cache-dir \
     "sentence-transformers>=2.2,<3" \
     beautifulsoup4>=4.12 lxml>=5.0 \
     aiosqlite>=0.20 structlog>=24.0 httpx>=0.27 "qdrant-client>=1.8" \
-    pyphen>=0.16 pydantic-settings>=2.0 librosa>=0.10 numpy>=1.24
+    pyphen>=0.16 pydantic-settings>=2.0 librosa>=0.10 numpy>=1.24 \
+    "openai>=1.0"
 
 # Project code
 COPY worker/ /project/worker/

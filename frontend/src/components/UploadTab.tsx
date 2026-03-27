@@ -240,7 +240,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({
       () => {
         setJobs((prev) => prev.map((j) => {
           if (j.id !== localJobId) return j;
-          if (j.phase.kind === 'done') return j;
+          if (j.phase.kind === 'done' || j.phase.kind === 'error') return j;
           return { ...j, phase: { kind: 'error' as const, message: 'Соединение прервано' }, unsubscribe: undefined };
         }));
       }

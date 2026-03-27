@@ -27,12 +27,14 @@ services:
       MVSEP_SEP_TYPE: "49"
       MVSEP_POLL_INTERVAL_SEC: "10"
       MVSEP_TIMEOUT_SEC: "600"
-      # OpenAI (Whisper API + LyricsSearcher + optional Embedder)
+      # OpenAI (Whisper API + optional Embedder)
       OPENAI_API_KEY: ${OPENAI_API_KEY:?err}
-      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
       WHISPER_MODEL: "whisper-1"
-      # Genius API
-      GENIUS_TOKEN: ${GENIUS_TOKEN:?err}
+      # Lyrics agent (DeepSeek + Yandex Search)
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:?err}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
+      YANDEX_SEARCH_API_KEY: ${YANDEX_SEARCH_API_KEY:?err}
+      YANDEX_SEARCH_FOLDER_ID: ${YANDEX_SEARCH_FOLDER_ID:?err}
       # Embedder
       LYRIC_EMBEDDER_BACKEND: ${LYRIC_EMBEDDER_BACKEND:-local}
       # CTC model cache

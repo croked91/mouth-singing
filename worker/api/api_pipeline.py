@@ -29,7 +29,8 @@ from worker.api.mvsep_client import MVSEPClient
 from worker.api.whisper_client import WhisperAPIClient
 from worker.common.base_pipeline import BasePipeline
 from worker.common.ctc_aligner import CTCAligner
-from worker.common.lyrics_searcher import LyricsNotFoundError, LyricsSearcher
+from worker.common.lyrics_agent import LyricsAgent
+from worker.common.lyrics_searcher import LyricsSearchError
 from worker.common.vad_processor import VADProcessor
 
 logger = structlog.get_logger(__name__)
@@ -37,7 +38,7 @@ logger = structlog.get_logger(__name__)
 # Cost constants.
 _MVSEP_COST_PER_TRACK = 0.15
 _WHISPER_COST_PER_MINUTE = 0.006
-_CHAT_COST_ESTIMATE = 0.001
+_CHAT_COST_ESTIMATE = 0.0003  # DeepSeek agent calls
 
 
 class ApiPipeline(BasePipeline):
@@ -49,7 +50,7 @@ class ApiPipeline(BasePipeline):
         mvsep: MVSEP API client for stem separation.
         whisper: OpenAI Whisper API client for ASR.
         vad: Voice activity detector.
-        lyrics_searcher: LLM-based lyrics finder (optional).
+        lyrics_searcher: Agent-based lyrics finder (optional).
         ctc_aligner: CTC forced alignment.
         feature_extractor: Audio feature extractor (optional).
         lyric_embedder: Lyrics embedder (optional).
@@ -64,7 +65,7 @@ class ApiPipeline(BasePipeline):
         mvsep: MVSEPClient,
         whisper: WhisperAPIClient,
         vad: VADProcessor,
-        lyrics_searcher: LyricsSearcher | None,
+        lyrics_searcher: LyricsAgent | None,
         ctc_aligner: CTCAligner,
         feature_extractor: object | None = None,
         lyric_embedder: object | None = None,
@@ -151,8 +152,8 @@ class ApiPipeline(BasePipeline):
             await self.job_service.mark_step(job.id, "searching_lyrics", 0)
 
             if self.lyrics_searcher is None:
-                await self.job_service.mark_failed(
-                    job.id, "Lyrics searcher not configured"
+                await self.job_service.mark_permanently_failed(
+                    job.id, "Lyrics agent not configured (check DEEPSEEK/YANDEX env vars)"
                 )
                 return
 
@@ -165,27 +166,28 @@ class ApiPipeline(BasePipeline):
                     artist_hint=artist_hint or track.artist,
                     title_hint=title_hint or track.title,
                 )
-            except LyricsNotFoundError as exc:
+            except LyricsSearchError as exc:
+                logger.error("lyrics_search_failed", job_id=job.id, error=str(exc))
                 await self.repo.update_track(
                     job.track_id,
                     TrackUpdate(
                         status="error",
-                        error_message=f"Lyrics not found: {exc}",
+                        error_message=f"Lyrics search failed: {exc}",
                     ),
                 )
                 if feature_vector is not None:
                     await self._sync_qdrant_audio_only(
                         job.track_id, track, feature_vector,
                     )
-                await self.job_service.mark_failed(
-                    job.id, f"Lyrics not found: {exc}"
+                await self.job_service.mark_permanently_failed(
+                    job.id, f"Lyrics search failed: {exc}"
                 )
                 return
 
             await self.job_service.mark_step(job.id, "searching_lyrics", 100)
 
-            # Record LyricsSearcher cost.
-            await self._record_cost(job.track_id, "openai_chat", _CHAT_COST_ESTIMATE)
+            # Record lyrics agent cost.
+            await self._record_cost(job.track_id, "deepseek_chat", _CHAT_COST_ESTIMATE)
 
             # Update artist/title from LLM.
             await self.repo.update_track(

@@ -919,10 +919,38 @@ class SQLiteRepository:
             return None
         return self._job_from_row(row)
 
+    async def poll_and_lock(self, worker_id: str) -> Job | None:
+        """Atomically find the highest-priority pending job and lock it.
+
+        Uses a single UPDATE ... WHERE id = (SELECT ...) RETURNING query so
+        no other worker can grab the same job between the read and the write.
+        """
+        now = _now_iso()
+        cursor = await self.db.execute(
+            """
+            UPDATE job_queue
+            SET status = ?, locked_by = ?, locked_at = ?, updated_at = ?
+            WHERE id = (
+                SELECT id FROM job_queue
+                WHERE status = ?
+                ORDER BY priority DESC, created_at ASC
+                LIMIT 1
+            )
+            RETURNING *
+            """,
+            (JobStatus.RUNNING, worker_id, now, now, JobStatus.PENDING),
+        )
+        row = await cursor.fetchone()
+        await self.db.commit()
+        if row is None:
+            return None
+        return self._job_from_row(row)
+
     async def poll_pending(self, limit: int = 1) -> list[Job]:
         """Return the highest-priority pending jobs without locking them.
 
-        Use :meth:`lock_job` to claim a job before processing it.
+        Prefer :meth:`poll_and_lock` for the worker loop — it is atomic.
+        This method is kept for scripts and tests.
         """
         cursor = await self.db.execute(
             """
@@ -939,8 +967,8 @@ class SQLiteRepository:
     async def lock_job(self, job_id: str, worker_id: str) -> bool:
         """Attempt a pessimistic lock on a pending job.
 
-        Returns ``True`` if the lock was acquired (the row was in 'pending'
-        state and was updated), or ``False`` if another worker beat us to it.
+        Prefer :meth:`poll_and_lock` for the worker loop — it is atomic.
+        This method is kept for scripts and tests.
         """
         now = _now_iso()
         cursor = await self.db.execute(
@@ -992,6 +1020,19 @@ class SQLiteRepository:
             WHERE id = ?
             """,
             (new_status, attempts, error, _now_iso(), job_id),
+        )
+        await self.db.commit()
+
+    async def fail_job_permanently(self, job_id: str, error: str) -> None:
+        """Mark a job as failed without retry, regardless of max_attempts."""
+        await self.db.execute(
+            """
+            UPDATE job_queue
+            SET status = ?, error_message = ?,
+                locked_by = NULL, locked_at = NULL, updated_at = ?
+            WHERE id = ?
+            """,
+            (JobStatus.FAILED, error, _now_iso(), job_id),
         )
         await self.db.commit()
 

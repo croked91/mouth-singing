@@ -1,500 +1,369 @@
-"""Unit tests for LyricsSearcher (primary Genius + web-search fallback)."""
+"""Unit tests for LyricsAgent (DeepSeek + Yandex Search agent)."""
 
 from __future__ import annotations
 
 import json
+from unittest.mock import MagicMock, patch
 
-import httpx
 import pytest
-import respx
 
+from worker.common.lyrics_agent import LyricsAgent
 from worker.common.lyrics_searcher import (
     LyricsAPIError,
     LyricsNotFoundError,
     LyricsResult,
-    LyricsSearcher,
+    clean_lyrics,
 )
 
 
-def _make_openai_response(content: str) -> dict:
-    """Build a minimal OpenAI chat completion response."""
-    return {
-        "choices": [
-            {"message": {"content": content}}
-        ]
-    }
-
-
-def _identify_json(found=True, **overrides) -> str:
-    """Build a valid identification JSON string."""
-    data = {
-        "found": found,
-        "artist": "Test Artist",
-        "title": "Test Song",
-        "confidence": "high",
-    }
-    if not found:
-        data["not_found_reason"] = "could not identify"
-    data.update(overrides)
-    return json.dumps(data)
-
-
-def _genius_search_response(url: str = "https://genius.com/test-lyrics") -> dict:
-    """Build a minimal Genius API search response."""
-    return {
-        "response": {
-            "hits": [
-                {
-                    "result": {
-                        "url": url,
-                        "full_title": "Test Song by Test Artist",
-                        "id": 12345,
-                    }
-                }
-            ]
-        }
-    }
-
-
-def _genius_lyrics_html(lyrics_text: str = "line one\nline two\n\nline three") -> str:
-    """Build a minimal Genius page HTML with lyrics containers."""
-    escaped = lyrics_text.replace("\n", "<br/>")
-    return f"""<html><body>
-    <div data-lyrics-container="true">{escaped}</div>
-    </body></html>"""
-
-
-def _web_search_response(
-    found: bool = True,
-    artist: str = "WS Artist",
-    title: str = "WS Song",
-    urls: list[str] | None = None,
-) -> dict:
-    """Build a minimal OpenAI Responses API output with web search."""
-    if urls is None:
-        urls = ["https://example.com/lyrics"]
-
-    content_text = json.dumps({
-        "found": found,
-        "artist": artist,
-        "title": title,
-        "lyrics_urls": urls,
-        **({"reason": "not found"} if not found else {}),
-    })
-
-    return {
-        "output": [
-            {"type": "web_search_call", "id": "ws_test"},
-            {
-                "type": "message",
-                "content": [
-                    {"type": "output_text", "text": content_text}
-                ],
-            },
-        ]
-    }
-
-
-def _generic_lyrics_html(text: str = "Fallback lyrics text that is definitely long enough to pass the minimum check") -> str:
-    """Build a minimal page with lyrics in a class containing 'lyric'."""
-    escaped = text.replace("\n", "<br/>")
-    return f'<html><body><div class="lyrics-body">{escaped}</div></body></html>'
-
-
-@pytest.fixture
-def searcher():
-    return LyricsSearcher(
-        openai_api_key="sk-test-key",
-        genius_token="genius-test-token",
-        model="gpt-4o-mini",
+def _make_agent_fixture() -> LyricsAgent:
+    return LyricsAgent(
+        deepseek_api_key="sk-test-deepseek",
+        yandex_search_api_key="test-yandex-key",
+        yandex_search_folder_id="test-folder-id",
+        model="deepseek-chat",
+        max_iterations=3,
         timeout=5.0,
-        max_retries=1,
-        openai_base_url="https://api.openai.com",
     )
 
 
+@pytest.fixture
+def agent():
+    return _make_agent_fixture()
+
+
+def _mock_chat_response(content: str, tool_calls=None):
+    """Build a mock OpenAI chat completion response."""
+    message = MagicMock()
+    message.content = content
+    message.tool_calls = tool_calls
+    choice = MagicMock()
+    choice.message = message
+    response = MagicMock()
+    response.choices = [choice]
+    return response
+
+
+def _mock_tool_call(name: str, arguments: dict, call_id: str = "call_1"):
+    """Build a mock tool call object."""
+    tc = MagicMock()
+    tc.function.name = name
+    tc.function.arguments = json.dumps(arguments)
+    tc.id = call_id
+    return tc
+
+
 # ======================================================================
-# Primary path success
+# Successful search — JSON response
 # ======================================================================
 
 
-class TestPrimaryPathSuccess:
-    """Test successful primary path (LLM identify → Genius)."""
+class TestAgentSearchSuccess:
+    """Test successful agent search returning structured JSON."""
 
-    @respx.mock
-    @pytest.mark.asyncio
-    async def test_full_pipeline_success(self, searcher):
-        respx.post("https://api.openai.com/v1/chat/completions").mock(
-            return_value=httpx.Response(
-                200, json=_make_openai_response(_identify_json()),
+    async def test_json_response_with_metadata(self, agent):
+        """Agent returns valid JSON with artist, title, lyrics."""
+        agent_json = json.dumps({
+            "artist": "Кино",
+            "title": "Группа крови",
+            "lyrics": "Тёплое место, но улицы ждут\nОтпечатков наших ног",
+        })
+
+        with patch.object(agent, "_run_agent", return_value=agent_json):
+            result = await agent.search(
+                asr_text="тёплое место но улицы ждут",
+                detected_language="ru",
+                artist_hint="Кино",
+                title_hint="Группа крови",
             )
-        )
-        respx.get("https://api.genius.com/search").mock(
-            return_value=httpx.Response(200, json=_genius_search_response())
-        )
-        respx.get("https://genius.com/test-lyrics").mock(
-            return_value=httpx.Response(200, text=_genius_lyrics_html())
-        )
-
-        result = await searcher.search(
-            asr_text="some transcribed text",
-            detected_language="en",
-            artist_hint="Test",
-            title_hint="Song",
-        )
 
         assert isinstance(result, LyricsResult)
-        assert result.artist == "Test Artist"
-        assert result.title == "Test Song"
-        assert "line one" in result.lyrics
-        assert result.source_note == "genius.com"
+        assert result.artist == "Кино"
+        assert result.title == "Группа крови"
+        assert "Тёплое место" in result.lyrics
+        assert result.language == "ru"
+        assert result.source_note == "deepseek+yandex"
 
-    @respx.mock
-    @pytest.mark.asyncio
-    async def test_search_with_no_hints(self, searcher):
-        respx.post("https://api.openai.com/v1/chat/completions").mock(
-            return_value=httpx.Response(
-                200, json=_make_openai_response(_identify_json()),
+    async def test_json_embedded_in_text(self, agent):
+        """Agent returns JSON wrapped in text — still parses correctly."""
+        raw = 'Вот результат:\n{"artist": "Ласковый май", "title": "Белые розы", "lyrics": "Белые розы, белые розы"}'
+
+        with patch.object(agent, "_run_agent", return_value=raw):
+            result = await agent.search(
+                asr_text="белые розы",
+                detected_language="ru",
             )
-        )
-        respx.get("https://api.genius.com/search").mock(
-            return_value=httpx.Response(200, json=_genius_search_response())
-        )
-        respx.get("https://genius.com/test-lyrics").mock(
-            return_value=httpx.Response(200, text=_genius_lyrics_html())
-        )
 
-        result = await searcher.search(asr_text="some text", detected_language="ru")
-        assert result.artist == "Test Artist"
+        assert result.artist == "Ласковый май"
+        assert result.title == "Белые розы"
+
+    async def test_no_hints_provided(self, agent):
+        """Search works without artist/title hints."""
+        agent_json = json.dumps({
+            "artist": "Artist",
+            "title": "Song",
+            "lyrics": "Some lyrics text that is long enough to pass checks",
+        })
+
+        with patch.object(agent, "_run_agent", return_value=agent_json):
+            result = await agent.search(
+                asr_text="some lyrics text",
+                detected_language="en",
+            )
+
+        assert result.artist == "Artist"
 
 
 # ======================================================================
-# Fallback path
+# Plain text fallback — metadata extraction
 # ======================================================================
 
 
-class TestFallbackPath:
-    """Test web-search fallback when primary path fails."""
+class TestPlainTextFallback:
+    """Test when agent returns plain lyrics without JSON metadata."""
 
-    @respx.mock
-    @pytest.mark.asyncio
-    async def test_fallback_on_genius_no_results(self, searcher):
-        """Genius has no hits → fallback to web search → scrape URL."""
-        # Primary: LLM identifies, Genius empty
-        respx.post("https://api.openai.com/v1/chat/completions").mock(
-            return_value=httpx.Response(
-                200, json=_make_openai_response(_identify_json()),
-            )
-        )
-        genius_route = respx.get("https://api.genius.com/search").mock(
-            return_value=httpx.Response(200, json={"response": {"hits": []}})
-        )
-        # Fallback: web search returns URLs
-        respx.post("https://api.openai.com/v1/responses").mock(
-            return_value=httpx.Response(
-                200,
-                json=_web_search_response(
-                    urls=["https://example.com/lyrics-page"]
-                ),
-            )
-        )
-        # Genius retry after web search (different artist/title) also fails
-        # (genius_route is already mocked to return empty)
-        # Scrape fallback URL
-        respx.get("https://example.com/lyrics-page").mock(
-            return_value=httpx.Response(
-                200, text=_generic_lyrics_html("These are the real lyrics from the fallback site and they are complete"),
-            )
-        )
+    async def test_plain_text_triggers_metadata_extraction(self, agent):
+        """Plain text response → _extract_metadata called."""
+        plain_lyrics = "Белые розы, белые розы\nБеззащитны шипы\nЧто с ними сделаешь"
 
-        result = await searcher.search(asr_text="text", detected_language="en")
-        assert result.artist == "WS Artist"
-        assert result.source_note == "web_search+example.com"
-        assert "real lyrics" in result.lyrics
+        with (
+            patch.object(agent, "_run_agent", return_value=plain_lyrics),
+            patch.object(
+                agent,
+                "_extract_metadata",
+                return_value=("Ласковый май", "Белые розы"),
+            ),
+        ):
+            result = await agent.search(
+                asr_text="белые розы",
+                detected_language="ru",
+            )
 
-    @respx.mock
-    @pytest.mark.asyncio
-    async def test_fallback_on_llm_not_found(self, searcher):
-        """LLM says found=false → fallback to web search."""
-        # Primary: LLM not found
-        respx.post("https://api.openai.com/v1/chat/completions").mock(
-            return_value=httpx.Response(
-                200, json=_make_openai_response(_identify_json(found=False)),
-            )
-        )
-        # Fallback: web search finds it
-        respx.post("https://api.openai.com/v1/responses").mock(
-            return_value=httpx.Response(
-                200,
-                json=_web_search_response(
-                    artist="Found Artist", title="Found Song",
-                    urls=["https://genius.com/found-song-lyrics"],
-                ),
-            )
-        )
-        # Genius retry with new artist/title works
-        respx.get("https://api.genius.com/search").mock(
-            return_value=httpx.Response(
-                200,
-                json=_genius_search_response("https://genius.com/found-song-lyrics"),
-            )
-        )
-        respx.get("https://genius.com/found-song-lyrics").mock(
-            return_value=httpx.Response(
-                200,
-                text=_genius_lyrics_html("Found via web search fallback and genius scrape"),
-            )
-        )
+        assert result.artist == "Ласковый май"
+        assert result.title == "Белые розы"
+        assert "Белые розы, белые розы" in result.lyrics
 
-        result = await searcher.search(asr_text="noise", detected_language="ru")
-        assert result.artist == "Found Artist"
-        assert result.source_note == "web_search+genius"
+    async def test_metadata_extraction_fails_uses_hints(self, agent):
+        """Metadata extraction fails → falls back to hints."""
+        plain_lyrics = "Some lyrics that are definitely long enough for checks"
 
-    @respx.mock
-    @pytest.mark.asyncio
-    async def test_fallback_also_fails(self, searcher):
-        """Both primary and fallback fail → LyricsNotFoundError."""
-        # Primary: LLM not found
-        respx.post("https://api.openai.com/v1/chat/completions").mock(
-            return_value=httpx.Response(
-                200, json=_make_openai_response(_identify_json(found=False)),
+        with (
+            patch.object(agent, "_run_agent", return_value=plain_lyrics),
+            patch.object(
+                agent,
+                "_extract_metadata",
+                side_effect=Exception("LLM failed"),
+            ),
+        ):
+            result = await agent.search(
+                asr_text="some text",
+                detected_language="en",
+                artist_hint="Hint Artist",
+                title_hint="Hint Song",
             )
-        )
-        # Fallback: web search also not found
-        respx.post("https://api.openai.com/v1/responses").mock(
-            return_value=httpx.Response(
-                200,
-                json=_web_search_response(found=False),
-            )
-        )
 
-        with pytest.raises(LyricsNotFoundError, match="Primary.*Fallback"):
-            await searcher.search(asr_text="noise", detected_language="en")
+        assert result.artist == "Hint Artist"
+        assert result.title == "Hint Song"
+
+    async def test_no_metadata_no_hints_uses_unknown(self, agent):
+        """No metadata and no hints → 'Unknown'."""
+        plain_lyrics = "Some lyrics that are definitely long enough for checks"
+
+        with (
+            patch.object(agent, "_run_agent", return_value=plain_lyrics),
+            patch.object(
+                agent,
+                "_extract_metadata",
+                side_effect=Exception("LLM failed"),
+            ),
+        ):
+            result = await agent.search(
+                asr_text="some text",
+                detected_language="en",
+            )
+
+        assert result.artist == "Unknown"
+        assert result.title == "Unknown"
 
 
 # ======================================================================
-# API errors (should NOT trigger fallback)
+# Not found scenarios
+# ======================================================================
+
+
+class TestNotFound:
+    """Test scenarios where lyrics cannot be found."""
+
+    async def test_agent_returns_not_found_marker(self, agent):
+        """Agent explicitly says 'текст не найден'."""
+        with patch.object(agent, "_run_agent", return_value="текст не найден"):
+            with pytest.raises(LyricsNotFoundError, match="could not find"):
+                await agent.search(asr_text="noise", detected_language="ru")
+
+    async def test_agent_returns_empty(self, agent):
+        """Agent returns empty string."""
+        with patch.object(agent, "_run_agent", return_value=""):
+            with pytest.raises(LyricsNotFoundError, match="could not find"):
+                await agent.search(asr_text="noise", detected_language="ru")
+
+    async def test_agent_returns_short_text(self, agent):
+        """Agent returns text shorter than 20 chars."""
+        with patch.object(agent, "_run_agent", return_value='{"artist":"A","title":"B","lyrics":"short"}'):
+            with pytest.raises(LyricsNotFoundError, match="very short"):
+                await agent.search(asr_text="noise", detected_language="en")
+
+
+# ======================================================================
+# API errors
 # ======================================================================
 
 
 class TestAPIErrors:
-    """Test error handling with retries and fallback attempts."""
+    """Test API error handling."""
 
-    @respx.mock
-    @pytest.mark.asyncio
-    async def test_openai_server_error_retries_then_fallback(self, searcher):
-        """500 on identify → retries → fallback web search also fails."""
-        route = respx.post("https://api.openai.com/v1/chat/completions").mock(
-            return_value=httpx.Response(500, text="Internal Server Error")
-        )
-        # Fallback also hits OpenAI (responses API) — also 500
-        respx.post("https://api.openai.com/v1/responses").mock(
-            return_value=httpx.Response(500, text="Internal Server Error")
-        )
+    async def test_deepseek_api_error_raises_lyrics_api_error(self, agent):
+        """DeepSeek API error → LyricsAPIError."""
+        from openai import APIError
 
-        with pytest.raises(LyricsNotFoundError, match="Primary.*Server error"):
-            await searcher.search(asr_text="text", detected_language="en")
+        with patch.object(
+            agent,
+            "_run_agent",
+            side_effect=APIError(
+                message="Unauthorized",
+                request=MagicMock(),
+                body=None,
+            ),
+        ):
+            with pytest.raises(LyricsAPIError, match="Lyrics agent error"):
+                await agent.search(asr_text="text", detected_language="en")
 
-        assert route.call_count == 2  # 1 initial + 1 retry
-
-    @respx.mock
-    @pytest.mark.asyncio
-    async def test_openai_rate_limit_retries_then_fallback(self, searcher):
-        route = respx.post("https://api.openai.com/v1/chat/completions").mock(
-            return_value=httpx.Response(429, text="Rate limited")
-        )
-        respx.post("https://api.openai.com/v1/responses").mock(
-            return_value=httpx.Response(429, text="Rate limited")
-        )
-
-        with pytest.raises(LyricsNotFoundError, match="Primary.*Rate limited"):
-            await searcher.search(asr_text="text", detected_language="en")
-
-        assert route.call_count == 2
-
-    @respx.mock
-    @pytest.mark.asyncio
-    async def test_openai_auth_error_fallback_also_fails(self, searcher):
-        """401 on identify → fallback web search also fails (same key)."""
-        respx.post("https://api.openai.com/v1/chat/completions").mock(
-            return_value=httpx.Response(401, text="Unauthorized")
-        )
-        respx.post("https://api.openai.com/v1/responses").mock(
-            return_value=httpx.Response(401, text="Unauthorized")
-        )
-
-        with pytest.raises(LyricsNotFoundError, match="Primary.*API error 401"):
-            await searcher.search(asr_text="text", detected_language="en")
-
-    @respx.mock
-    @pytest.mark.asyncio
-    async def test_invalid_json_triggers_fallback(self, searcher):
-        """Invalid JSON from identify → fallback web search also fails."""
-        respx.post("https://api.openai.com/v1/chat/completions").mock(
-            return_value=httpx.Response(
-                200, json=_make_openai_response("I can't help with that"),
-            )
-        )
-        respx.post("https://api.openai.com/v1/responses").mock(
-            return_value=httpx.Response(
-                200, json=_web_search_response(found=False),
-            )
-        )
-
-        with pytest.raises(LyricsNotFoundError, match="Primary.*Invalid JSON"):
-            await searcher.search(asr_text="text", detected_language="en")
+    async def test_max_iterations_raises_not_found(self, agent):
+        """Agent exhausts iterations → LyricsNotFoundError."""
+        with patch.object(
+            agent,
+            "_run_agent",
+            side_effect=LyricsNotFoundError("Agent exhausted max iterations"),
+        ):
+            with pytest.raises(LyricsNotFoundError, match="max iterations"):
+                await agent.search(asr_text="text", detected_language="en")
 
 
 # ======================================================================
-# Genius-specific edge cases (primary path)
+# Agent tool-calling loop
 # ======================================================================
 
 
-class TestGeniusEdgeCases:
-    """Test Genius scraping edge cases."""
+class TestAgentLoop:
+    """Test the internal agent tool-calling loop."""
 
-    @respx.mock
-    @pytest.mark.asyncio
-    async def test_genius_search_500_triggers_fallback(self, searcher):
-        """Genius API 500 triggers web search fallback."""
-        respx.post("https://api.openai.com/v1/chat/completions").mock(
-            return_value=httpx.Response(
-                200, json=_make_openai_response(_identify_json()),
-            )
-        )
-        respx.get("https://api.genius.com/search").mock(
-            return_value=httpx.Response(500, text="error")
-        )
-        # Fallback: web search finds lyrics URL
-        respx.post("https://api.openai.com/v1/responses").mock(
-            return_value=httpx.Response(
-                200,
-                json=_web_search_response(urls=["https://example.com/lyrics"]),
-            )
-        )
-        respx.get("https://example.com/lyrics").mock(
-            return_value=httpx.Response(
-                200, text=_generic_lyrics_html("Lyrics recovered via web search fallback after genius failure"),
-            )
+    def test_agent_loop_single_iteration(self, agent):
+        """Agent returns immediately without tool calls."""
+        response_json = json.dumps({
+            "artist": "Test", "title": "Song", "lyrics": "Full lyrics here",
+        })
+
+        mock_response = _mock_chat_response(response_json)
+
+        with patch("worker.common.lyrics_agent.OpenAI") as mock_openai_cls:
+            mock_client = MagicMock()
+            mock_openai_cls.return_value = mock_client
+            mock_client.chat.completions.create.return_value = mock_response
+
+            result = agent._run_agent("some whisper text")
+
+        assert "Full lyrics here" in result
+
+    def test_agent_loop_with_tool_calls(self, agent):
+        """Agent makes tool calls then returns final response."""
+        search_tool_call = _mock_tool_call(
+            "web_search", {"query": "test lyrics"}, "call_1",
         )
 
-        result = await searcher.search(asr_text="text", detected_language="en")
-        assert "web_search" in result.source_note
+        # First response: tool call
+        tool_response = _mock_chat_response(None, tool_calls=[search_tool_call])
+        # Second response: final answer
+        final_json = json.dumps({
+            "artist": "Test", "title": "Song", "lyrics": "Found lyrics",
+        })
+        final_response = _mock_chat_response(final_json)
 
-    @respx.mock
-    @pytest.mark.asyncio
-    async def test_section_markers_removed(self, searcher):
-        html = _genius_lyrics_html(
-            "[Verse 1]\nHello world\n\n[Chorus]\nLa la la"
-        )
-        respx.post("https://api.openai.com/v1/chat/completions").mock(
-            return_value=httpx.Response(
-                200, json=_make_openai_response(_identify_json()),
-            )
-        )
-        respx.get("https://api.genius.com/search").mock(
-            return_value=httpx.Response(200, json=_genius_search_response())
-        )
-        respx.get("https://genius.com/test-lyrics").mock(
-            return_value=httpx.Response(200, text=html)
-        )
-
-        result = await searcher.search(asr_text="text", detected_language="en")
-        assert "[Verse 1]" not in result.lyrics
-        assert "Hello world" in result.lyrics
-
-    @respx.mock
-    @pytest.mark.asyncio
-    async def test_genius_header_noise_removed(self, searcher):
-        raw_lyrics = (
-            "24 ContributorsTranslationsSong Title Lyrics\n"
-            "[Verse 1]\nActual lyrics here, this is the real song text"
-        )
-        html = _genius_lyrics_html(raw_lyrics)
-        respx.post("https://api.openai.com/v1/chat/completions").mock(
-            return_value=httpx.Response(
-                200, json=_make_openai_response(_identify_json()),
-            )
-        )
-        respx.get("https://api.genius.com/search").mock(
-            return_value=httpx.Response(200, json=_genius_search_response())
-        )
-        respx.get("https://genius.com/test-lyrics").mock(
-            return_value=httpx.Response(200, text=html)
-        )
-
-        result = await searcher.search(asr_text="text", detected_language="en")
-        assert "Contributors" not in result.lyrics
-        assert "Actual lyrics here, this is the real song text" in result.lyrics
-
-    @respx.mock
-    @pytest.mark.asyncio
-    async def test_invalid_json_with_extractable_object(self, searcher):
-        content = f"Here is the identification:\n{_identify_json()}"
-        respx.post("https://api.openai.com/v1/chat/completions").mock(
-            return_value=httpx.Response(
-                200, json=_make_openai_response(content),
-            )
-        )
-        respx.get("https://api.genius.com/search").mock(
-            return_value=httpx.Response(200, json=_genius_search_response())
-        )
-        respx.get("https://genius.com/test-lyrics").mock(
-            return_value=httpx.Response(200, text=_genius_lyrics_html())
-        )
-
-        result = await searcher.search(asr_text="text", detected_language="en")
-        assert result.artist == "Test Artist"
-
-
-class TestLLMExtraction:
-    """Test LLM-based lyrics extraction from generic pages."""
-
-    @respx.mock
-    @pytest.mark.asyncio
-    async def test_llm_extraction_when_no_css_match(self, searcher):
-        """Page has no lyric CSS markers → falls through to LLM extraction."""
-        # Primary fails
-        respx.post("https://api.openai.com/v1/chat/completions").mock(
-            side_effect=[
-                # 1st call: identification (primary)
-                httpx.Response(
-                    200, json=_make_openai_response(_identify_json(found=False)),
-                ),
-                # 3rd call: LLM extraction from page
-                httpx.Response(
-                    200,
-                    json=_make_openai_response(
-                        "First line of lyrics\nSecond line of lyrics\n\nThird line of lyrics"
-                    ),
-                ),
+        with (
+            patch("worker.common.lyrics_agent.OpenAI") as mock_openai_cls,
+            patch("worker.common.lyrics_agent._web_search", return_value='[{"title":"t","href":"u","body":"b"}]'),
+        ):
+            mock_client = MagicMock()
+            mock_openai_cls.return_value = mock_client
+            mock_client.chat.completions.create.side_effect = [
+                tool_response,
+                final_response,
             ]
-        )
-        # Fallback: web search
-        respx.post("https://api.openai.com/v1/responses").mock(
-            return_value=httpx.Response(
-                200,
-                json=_web_search_response(urls=["https://obscure-site.com/song"]),
-            )
-        )
-        # Genius fails for web search artist/title
-        respx.get("https://api.genius.com/search").mock(
-            return_value=httpx.Response(200, json={"response": {"hits": []}})
-        )
-        # Page has no lyrics CSS markers — plain divs with enough text
-        page_body = (
-            "<div>Navigation Home About</div>"
-            "<div>First line of lyrics\nSecond line of lyrics\n\n"
-            "Third line of lyrics\nFourth line of lyrics</div>"
-            "<div>Share this page</div>"
-        )
-        respx.get("https://obscure-site.com/song").mock(
-            return_value=httpx.Response(
-                200,
-                text=f"<html><body>{page_body}</body></html>",
-            )
-        )
 
-        result = await searcher.search(asr_text="text", detected_language="en")
-        assert "First line" in result.lyrics
-        assert result.source_note == "web_search+obscure-site.com"
+            result = agent._run_agent("some whisper text")
+
+        assert "Found lyrics" in result
+
+
+# ======================================================================
+# Response parsing
+# ======================================================================
+
+
+class TestResponseParsing:
+    """Test _parse_agent_response static method."""
+
+    def test_valid_json(self):
+        raw = json.dumps({"artist": "A", "title": "T", "lyrics": "L"})
+        artist, title, lyrics = LyricsAgent._parse_agent_response(raw, None, None)
+        assert artist == "A"
+        assert title == "T"
+        assert lyrics == "L"
+
+    def test_json_in_text(self):
+        raw = 'Here is the result: {"artist": "A", "title": "T", "lyrics": "L"}'
+        artist, title, lyrics = LyricsAgent._parse_agent_response(raw, None, None)
+        assert artist == "A"
+        assert lyrics == "L"
+
+    def test_plain_text(self):
+        raw = "Just some lyrics\nwithout any JSON"
+        artist, title, lyrics = LyricsAgent._parse_agent_response(raw, "hint_a", "hint_t")
+        assert artist == ""
+        assert title == ""
+        assert lyrics == "Just some lyrics\nwithout any JSON"
+
+    def test_json_missing_lyrics_key(self):
+        raw = json.dumps({"artist": "A", "title": "T"})
+        artist, title, lyrics = LyricsAgent._parse_agent_response(raw, None, None)
+        assert artist == ""
+        assert lyrics == raw.strip()
+
+
+# ======================================================================
+# clean_lyrics helper
+# ======================================================================
+
+
+class TestCleanLyrics:
+    """Test the clean_lyrics helper function."""
+
+    def test_removes_section_markers(self):
+        raw = "[Verse 1]\nHello world\n\n[Chorus]\nLa la la"
+        result = clean_lyrics(raw)
+        assert "[Verse 1]" not in result
+        assert "Hello world" in result
+
+    def test_removes_genius_header_noise(self):
+        raw = "24 ContributorsTranslationsSong Lyrics\n[Verse 1]\nActual lyrics"
+        result = clean_lyrics(raw)
+        assert "Contributors" not in result
+        assert "Actual lyrics" in result
+
+    def test_collapses_blank_lines(self):
+        raw = "line 1\n\n\n\n\nline 2"
+        result = clean_lyrics(raw)
+        assert result == "line 1\n\nline 2"
+
+    def test_plain_text_no_markers(self):
+        raw = "Simple lyrics\nwithout markers"
+        result = clean_lyrics(raw)
+        assert result == "Simple lyrics\nwithout markers"

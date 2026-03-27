@@ -95,7 +95,7 @@ def _build_gpu_pipeline(
     from worker.gpu.whisper_transcriber import WhisperTranscriber
     from worker.common.vad_processor import VADProcessor
     from worker.common.ctc_aligner import CTCAligner
-    from worker.common.lyrics_searcher import LyricsSearcher
+    from worker.common.lyrics_agent import LyricsAgent
     from karaoke_shared.utils.syllabifier import Syllabifier
 
     uvr = UVRSeparator(
@@ -113,22 +113,27 @@ def _build_gpu_pipeline(
 
     vad = VADProcessor(top_db=settings.vad_top_db)
 
-    lyrics_searcher: LyricsSearcher | None = None
-    if settings.openai_api_key and settings.genius_token:
-        lyrics_searcher = LyricsSearcher(
-            openai_api_key=settings.openai_api_key,
-            genius_token=settings.genius_token,
-            model=settings.openai_model,
-            timeout=settings.openai_timeout,
-            max_retries=settings.openai_max_retries,
-            openai_base_url=settings.openai_base_url,
+    lyrics_searcher: LyricsAgent | None = None
+    if (
+        settings.deepseek_api_key
+        and settings.yandex_search_api_key
+        and settings.yandex_search_folder_id
+    ):
+        lyrics_searcher = LyricsAgent(
+            deepseek_api_key=settings.deepseek_api_key,
+            yandex_search_api_key=settings.yandex_search_api_key,
+            yandex_search_folder_id=settings.yandex_search_folder_id,
+            model=settings.deepseek_model,
+            max_iterations=settings.lyrics_agent_max_iterations,
+            timeout=settings.lyrics_agent_timeout,
         )
-        logger.info("lyrics_searcher_enabled", model=settings.openai_model)
+        logger.info("lyrics_agent_enabled", model=settings.deepseek_model)
     else:
         logger.error(
-            "lyrics_searcher_keys_missing",
-            openai=bool(settings.openai_api_key),
-            genius=bool(settings.genius_token),
+            "lyrics_agent_keys_missing",
+            deepseek=bool(settings.deepseek_api_key),
+            yandex_key=bool(settings.yandex_search_api_key),
+            yandex_folder=bool(settings.yandex_search_folder_id),
         )
 
     ctc_aligner = CTCAligner(
@@ -167,7 +172,7 @@ def _build_api_pipeline(
     from worker.api.whisper_client import WhisperAPIClient
     from worker.common.vad_processor import VADProcessor
     from worker.common.ctc_aligner import CTCAligner
-    from worker.common.lyrics_searcher import LyricsSearcher
+    from worker.common.lyrics_agent import LyricsAgent
     from karaoke_shared.utils.syllabifier import Syllabifier
 
     mvsep = MVSEPClient(
@@ -188,22 +193,27 @@ def _build_api_pipeline(
 
     vad = VADProcessor(top_db=settings.vad_top_db)
 
-    lyrics_searcher: LyricsSearcher | None = None
-    if settings.openai_api_key and settings.genius_token:
-        lyrics_searcher = LyricsSearcher(
-            openai_api_key=settings.openai_api_key,
-            genius_token=settings.genius_token,
-            model=settings.openai_model,
-            timeout=settings.openai_timeout,
-            max_retries=settings.openai_max_retries,
-            openai_base_url=settings.openai_base_url,
+    lyrics_searcher: LyricsAgent | None = None
+    if (
+        settings.deepseek_api_key
+        and settings.yandex_search_api_key
+        and settings.yandex_search_folder_id
+    ):
+        lyrics_searcher = LyricsAgent(
+            deepseek_api_key=settings.deepseek_api_key,
+            yandex_search_api_key=settings.yandex_search_api_key,
+            yandex_search_folder_id=settings.yandex_search_folder_id,
+            model=settings.deepseek_model,
+            max_iterations=settings.lyrics_agent_max_iterations,
+            timeout=settings.lyrics_agent_timeout,
         )
-        logger.info("lyrics_searcher_enabled", model=settings.openai_model)
+        logger.info("lyrics_agent_enabled", model=settings.deepseek_model)
     else:
         logger.error(
-            "lyrics_searcher_keys_missing",
-            openai=bool(settings.openai_api_key),
-            genius=bool(settings.genius_token),
+            "lyrics_agent_keys_missing",
+            deepseek=bool(settings.deepseek_api_key),
+            yandex_key=bool(settings.yandex_search_api_key),
+            yandex_folder=bool(settings.yandex_search_folder_id),
         )
 
     ctc_aligner = CTCAligner(

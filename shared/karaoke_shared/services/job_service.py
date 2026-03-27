@@ -34,11 +34,10 @@ class JobService:
         return await self.repo.create_job(JobCreate(track_id=track_id, priority=priority))
 
     async def poll_and_lock(self, worker_id: str) -> Job | None:
-        """Poll for the highest-priority pending job and lock it atomically.
+        """Atomically find the highest-priority pending job and lock it.
 
-        The two-step poll-then-lock pattern means a second worker that races
-        to lock the same job will see ``lock_job`` return ``False`` and get
-        ``None`` back here — no double-processing.
+        Uses a single UPDATE … RETURNING query in the repository, so no
+        other worker can grab the same job between the read and write.
 
         Args:
             worker_id: A unique identifier for the calling worker instance.
@@ -46,11 +45,7 @@ class JobService:
         Returns:
             The locked Job if one was available, otherwise ``None``.
         """
-        jobs = await self.repo.poll_pending(limit=5)
-        for job in jobs:
-            if await self.repo.lock_job(job.id, worker_id):
-                return await self.repo.get_job(job.id)
-        return None
+        return await self.repo.poll_and_lock(worker_id)
 
     async def mark_step(self, job_id: str, step: str, progress: int) -> None:
         """Record the current pipeline step and progress percentage.
@@ -83,6 +78,14 @@ class JobService:
             error: Error message to persist.
         """
         await self.repo.fail_job(job_id, error)
+
+    async def mark_permanently_failed(self, job_id: str, error: str) -> None:
+        """Mark a job as failed without retry, regardless of max_attempts.
+
+        Use this for errors where retrying would repeat expensive work
+        (e.g. lyrics search failure after UVR separation).
+        """
+        await self.repo.fail_job_permanently(job_id, error)
 
     async def get_job(self, job_id: str) -> Job | None:
         """Return a job by primary key, or ``None`` if not found.

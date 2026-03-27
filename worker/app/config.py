@@ -7,6 +7,7 @@ both GPU and API deployments.
 
 from __future__ import annotations
 
+import os
 import socket
 
 from pydantic_settings import BaseSettings
@@ -34,7 +35,7 @@ class WorkerSettings(BaseSettings):
     database_url: str = "/data/sqlite/karaoke.db"
     media_root: str = "/data/media"
     model_cache_dir: str = "/data/models"
-    worker_id: str = socket.gethostname()
+    worker_id: str = f"{socket.gethostname()}-{os.getpid()}"
     poll_interval_sec: float = 2.0
     log_level: str = "INFO"
 
@@ -53,15 +54,21 @@ class WorkerSettings(BaseSettings):
     """Path to feature_normalization_stats.json.  Empty = skip z-score."""
 
     # ------------------------------------------------------------------
-    # Common: lyrics search (shared by both modes)
+    # Common: OpenAI key (used by Whisper API + optional embedder)
     # ------------------------------------------------------------------
 
     openai_api_key: str = ""
-    openai_model: str = "gpt-4o-mini"
-    openai_timeout: float = 30.0
-    openai_max_retries: int = 2
-    openai_base_url: str = "https://api.openai.com"
-    genius_token: str = ""
+
+    # ------------------------------------------------------------------
+    # Common: lyrics agent (DeepSeek + Yandex Search)
+    # ------------------------------------------------------------------
+
+    deepseek_api_key: str = ""
+    deepseek_model: str = "deepseek-chat"
+    yandex_search_api_key: str = ""
+    yandex_search_folder_id: str = ""
+    lyrics_agent_max_iterations: int = 15
+    lyrics_agent_timeout: float = 15.0
 
     # ------------------------------------------------------------------
     # Common: CTC aligner
