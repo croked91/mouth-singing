@@ -18,11 +18,22 @@ interface LyricHighlightProps {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
+// ─── Helper: measure text width via offscreen canvas ─────────────────────────
+
+let _measureCanvas: HTMLCanvasElement | null = null;
+function measureTextWidth(text: string, fontSizePx: number): number {
+  if (!_measureCanvas) _measureCanvas = document.createElement('canvas');
+  const ctx = _measureCanvas.getContext('2d')!;
+  ctx.font = `500 ${fontSizePx}px "Inter", sans-serif`;
+  return ctx.measureText(text).width;
+}
+
 const LINE_GAP_THRESHOLD_SEC = 1.0;
 const MIN_LINE_CHARS_FOR_PUNCT_BREAK = 20;
 const MAX_LINE_CHARS = 55;
 
-const ACTIVE_LINE_FONT_SIZE = '72px';
+const BASE_FONT_SIZE = 72;
+const MIN_FONT_SIZE = 28;
 const STYLE_TRANSITION = 'opacity 0.5s ease, filter 0.5s ease';
 const LINE_TRANSITION_MS = 600;
 
@@ -141,9 +152,10 @@ interface ActiveLineProps {
   line: LyricLine;
   getCurrentTime: () => number;
   isPlaying: boolean;
+  fontSize: number;
 }
 
-const ActiveLine: React.FC<ActiveLineProps> = ({ line, getCurrentTime, isPlaying }) => {
+const ActiveLine: React.FC<ActiveLineProps> = ({ line, getCurrentTime, isPlaying, fontSize }) => {
   // We use a ref-driven rAF loop that directly mutates DOM spans to avoid
   // per-syllable React re-renders at 60fps.
   const containerRef = useRef<HTMLSpanElement>(null);
@@ -161,22 +173,37 @@ const ActiveLine: React.FC<ActiveLineProps> = ({ line, getCurrentTime, isPlaying
     const spans = container.querySelectorAll<HTMLSpanElement>('[data-syllable-idx]');
     let fillRatio = 0;
 
+    const SUNG_COLOR = 'rgba(255,255,255,0.85)';
+    const ACTIVE_COLOR = '#C4B5FD';
+    const DIM_COLOR = 'rgba(255,255,255,0.35)';
+
     spans.forEach((span) => {
       const idx = parseInt(span.dataset.syllableIdx ?? '0', 10);
       const syl = line.syllables[idx];
       if (!syl) return;
 
       if (syl.end <= currentTime) {
-        // Sung — bright
-        span.style.color = 'rgba(255,255,255,0.85)';
+        // Sung — fully bright
+        span.style.background = 'none';
+        span.style.backgroundClip = '';
+        span.style.webkitTextFillColor = '';
+        span.style.color = SUNG_COLOR;
         span.style.textShadow = 'none';
       } else if (syl.start <= currentTime) {
-        // Active — highlighted
-        span.style.color = '#C4B5FD';
-        span.style.textShadow = '0 0 16px rgba(196,181,253,0.5)';
+        // Active — gradient sweep across the syllable
+        const sylDuration = syl.end - syl.start;
+        const elapsed = currentTime - syl.start;
+        const pct = sylDuration > 0 ? Math.min(1, elapsed / sylDuration) * 100 : 100;
+        span.style.background = `linear-gradient(90deg, ${ACTIVE_COLOR} ${pct}%, ${DIM_COLOR} ${pct}%)`;
+        span.style.backgroundClip = 'text';
+        span.style.webkitTextFillColor = 'transparent';
+        span.style.textShadow = 'none';
       } else {
         // Upcoming — dim
-        span.style.color = 'rgba(255,255,255,0.35)';
+        span.style.background = 'none';
+        span.style.backgroundClip = '';
+        span.style.webkitTextFillColor = '';
+        span.style.color = DIM_COLOR;
         span.style.textShadow = 'none';
       }
     });
@@ -187,7 +214,6 @@ const ActiveLine: React.FC<ActiveLineProps> = ({ line, getCurrentTime, isPlaying
       const containerWidth = containerRect.width;
 
       if (containerWidth > 0) {
-        // Find the rightmost edge of sung/active syllables
         let maxRight = 0;
         let hasProgress = false;
 
@@ -197,20 +223,19 @@ const ActiveLine: React.FC<ActiveLineProps> = ({ line, getCurrentTime, isPlaying
           if (!syl) return;
 
           if (syl.end <= currentTime) {
-            // Fully sung — count full span width
+            // Fully sung — full span width
             const spanRect = span.getBoundingClientRect();
             const right = spanRect.right - containerRect.left;
             if (right > maxRight) maxRight = right;
             hasProgress = true;
           } else if (syl.start <= currentTime) {
-            // Partially active — interpolate within this syllable
+            // Active — interpolate within syllable
             const sylDuration = syl.end - syl.start;
             const elapsed = currentTime - syl.start;
             const sylProgress = sylDuration > 0 ? Math.min(1, elapsed / sylDuration) : 1;
             const spanRect = span.getBoundingClientRect();
             const spanLeft = spanRect.left - containerRect.left;
-            const spanWidth = spanRect.width;
-            const right = spanLeft + spanWidth * sylProgress;
+            const right = spanLeft + spanRect.width * sylProgress;
             if (right > maxRight) maxRight = right;
             hasProgress = true;
           }
@@ -259,12 +284,12 @@ const ActiveLine: React.FC<ActiveLineProps> = ({ line, getCurrentTime, isPlaying
         component="span"
         ref={containerRef}
         sx={{
-          fontSize: ACTIVE_LINE_FONT_SIZE,
+          fontSize: `${fontSize}px`,
           lineHeight: 1.15,
           fontFamily: '"Inter", sans-serif',
           display: 'block',
           textAlign: 'center',
-          whiteSpace: 'pre-wrap',
+          whiteSpace: 'nowrap',
           userSelect: 'none',
         }}
       >
@@ -313,6 +338,20 @@ const ActiveLine: React.FC<ActiveLineProps> = ({ line, getCurrentTime, isPlaying
     </Box>
   );
 };
+
+// ─── StaticLine — non-active line ────────────────────────────────────────────
+
+interface StaticLineProps {
+  text: string;
+  color: string;
+  lineStyle: React.CSSProperties;
+}
+
+const StaticLine: React.FC<StaticLineProps> = ({ text, color, lineStyle }) => (
+  <Box component="span" sx={{ ...lineStyle, color }}>
+    {text}
+  </Box>
+);
 
 // ─── Main LyricHighlight component ───────────────────────────────────────────
 
@@ -377,6 +416,45 @@ export const LyricHighlight: React.FC<LyricHighlightProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
   const [translateY, setTranslateY] = useState(0);
+  const [fittedFontSize, setFittedFontSize] = useState(BASE_FONT_SIZE);
+
+  // Compute a single font size that fits the longest line within the container.
+  // Uses canvas measureText — no DOM measurement needed.
+  const computeFittedFontSize = useCallback(() => {
+    const container = containerRef.current;
+    if (!container || lines.length === 0) return;
+
+    // available width = container width minus horizontal padding (120px each side)
+    const available = container.clientWidth;
+    if (available <= 0) return;
+
+    // Find the widest line at base font size
+    let maxWidth = 0;
+    for (const line of lines) {
+      const text = line.syllables.map((s) => s.syllable).join('');
+      const w = measureTextWidth(text, BASE_FONT_SIZE);
+      if (w > maxWidth) maxWidth = w;
+    }
+
+    if (maxWidth <= available) {
+      setFittedFontSize(BASE_FONT_SIZE);
+    } else {
+      const scaled = Math.floor(BASE_FONT_SIZE * (available / maxWidth));
+      setFittedFontSize(Math.max(MIN_FONT_SIZE, scaled));
+    }
+  }, [lines]);
+
+  // Recompute on mount + container resize
+  useLayoutEffect(() => {
+    computeFittedFontSize();
+
+    const container = containerRef.current;
+    if (!container) return;
+
+    const ro = new ResizeObserver(() => computeFittedFontSize());
+    ro.observe(container);
+    return () => ro.disconnect();
+  }, [computeFittedFontSize]);
 
   // Compute the translateY offset to center the active line.
   // useLayoutEffect runs synchronously before paint — no flash of wrong position.
@@ -392,7 +470,7 @@ export const LyricHighlight: React.FC<LyricHighlightProps> = ({
     // Center the active line vertically in the container
     const offset = lineTop - containerHeight / 2 + lineHeight / 2;
     setTranslateY(-offset);
-  }, [activeLineIndex]);
+  }, [activeLineIndex, fittedFontSize]);
 
   if (lines.length === 0) {
     return (
@@ -420,12 +498,12 @@ export const LyricHighlight: React.FC<LyricHighlightProps> = ({
   }
 
   const lineStyle = {
-    fontSize: ACTIVE_LINE_FONT_SIZE,
+    fontSize: `${fittedFontSize}px`,
     lineHeight: 1.15,
     fontFamily: '"Inter", sans-serif',
     display: 'block',
     textAlign: 'center' as const,
-    whiteSpace: 'pre-wrap' as const,
+    whiteSpace: 'nowrap' as const,
     userSelect: 'none' as const,
     fontWeight: 500,
   };
@@ -475,17 +553,14 @@ export const LyricHighlight: React.FC<LyricHighlightProps> = ({
                   line={line}
                   getCurrentTime={getCurrentTime}
                   isPlaying={isPlaying}
+                  fontSize={fittedFontSize}
                 />
               ) : (
-                <Box
-                  component="span"
-                  sx={{
-                    ...lineStyle,
-                    color: isPrev ? 'rgba(6,182,212,0.5)' : 'rgba(255,255,255,0.45)',
-                  }}
-                >
-                  {line.syllables.map((s) => s.syllable).join('')}
-                </Box>
+                <StaticLine
+                  text={line.syllables.map((s) => s.syllable).join('')}
+                  color={isPrev ? 'rgba(6,182,212,0.5)' : 'rgba(255,255,255,0.45)'}
+                  lineStyle={lineStyle}
+                />
               )}
             </Box>
           );
