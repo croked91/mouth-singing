@@ -123,6 +123,15 @@ function findActiveLineIndex(lines: LyricLine[], currentTime: number): number {
   if (active === -1 && lines.length > 0) {
     active = 0;
   }
+  // Advance to next line once current line's syllables are all sung,
+  // so the scroll animation happens during the silence gap between lines.
+  if (
+    active >= 0 &&
+    active < lines.length - 1 &&
+    currentTime > lines[active].endTime
+  ) {
+    active += 1;
+  }
   return active;
 }
 
