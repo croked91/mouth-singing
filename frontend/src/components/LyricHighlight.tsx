@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
 import { Box, Typography } from '@mui/material';
 import type { SyllableTiming } from '../types';
 
@@ -24,6 +24,7 @@ const MAX_LINE_CHARS = 55;
 
 const ACTIVE_LINE_FONT_SIZE = '72px';
 const STYLE_TRANSITION = 'opacity 0.5s ease, filter 0.5s ease';
+const LINE_TRANSITION_MS = 600;
 
 
 // ─── Helper: group syllables into lines ───────────────────────────────────────
@@ -125,15 +126,6 @@ function findActiveLineIndex(lines: LyricLine[], currentTime: number): number {
   return active;
 }
 
-// ─── Helper: compute line progress (0-1) ─────────────────────────────────────
-
-function computeLineProgress(line: LyricLine, currentTime: number): number {
-  const duration = line.endTime - line.startTime;
-  if (duration <= 0) return 1;
-  const elapsed = Math.max(0, currentTime - line.startTime);
-  return Math.min(1, elapsed / duration);
-}
-
 // ─── ActiveLineSyllables — rendered without React state churn ─────────────────
 
 interface ActiveLineProps {
@@ -147,39 +139,80 @@ const ActiveLine: React.FC<ActiveLineProps> = ({ line, getCurrentTime, isPlaying
   // per-syllable React re-renders at 60fps.
   const containerRef = useRef<HTMLSpanElement>(null);
   const progressBarRef = useRef<HTMLDivElement>(null);
+  const progressTrackRef = useRef<HTMLDivElement>(null);
   const rafRef = useRef<number | null>(null);
 
   const update = useCallback(() => {
     const currentTime = getCurrentTime();
     const container = containerRef.current;
     const progressBar = progressBarRef.current;
+    const progressTrack = progressTrackRef.current;
     if (!container) return;
 
     const spans = container.querySelectorAll<HTMLSpanElement>('[data-syllable-idx]');
+    let fillRatio = 0;
+
     spans.forEach((span) => {
       const idx = parseInt(span.dataset.syllableIdx ?? '0', 10);
       const syl = line.syllables[idx];
       if (!syl) return;
 
       if (syl.end <= currentTime) {
-        // Sung
-        span.style.color = 'rgba(255,255,255,0.35)';
+        // Sung — bright
+        span.style.color = 'rgba(255,255,255,0.85)';
         span.style.textShadow = 'none';
       } else if (syl.start <= currentTime) {
-        // Active
+        // Active — highlighted
         span.style.color = '#C4B5FD';
         span.style.textShadow = '0 0 16px rgba(196,181,253,0.5)';
       } else {
-        // Upcoming
-        span.style.color = 'rgba(255,255,255,0.85)';
+        // Upcoming — dim
+        span.style.color = 'rgba(255,255,255,0.35)';
         span.style.textShadow = 'none';
       }
     });
 
-    // Update progress bar
-    if (progressBar) {
-      const progress = computeLineProgress(line, currentTime);
-      progressBar.style.width = `${progress * 100}%`;
+    // Compute progress bar fill from syllable span positions
+    if (progressBar && progressTrack && spans.length > 0) {
+      const containerRect = container.getBoundingClientRect();
+      const containerWidth = containerRect.width;
+
+      if (containerWidth > 0) {
+        // Find the rightmost edge of sung/active syllables
+        let maxRight = 0;
+        let hasProgress = false;
+
+        spans.forEach((span) => {
+          const idx = parseInt(span.dataset.syllableIdx ?? '0', 10);
+          const syl = line.syllables[idx];
+          if (!syl) return;
+
+          if (syl.end <= currentTime) {
+            // Fully sung — count full span width
+            const spanRect = span.getBoundingClientRect();
+            const right = spanRect.right - containerRect.left;
+            if (right > maxRight) maxRight = right;
+            hasProgress = true;
+          } else if (syl.start <= currentTime) {
+            // Partially active — interpolate within this syllable
+            const sylDuration = syl.end - syl.start;
+            const elapsed = currentTime - syl.start;
+            const sylProgress = sylDuration > 0 ? Math.min(1, elapsed / sylDuration) : 1;
+            const spanRect = span.getBoundingClientRect();
+            const spanLeft = spanRect.left - containerRect.left;
+            const spanWidth = spanRect.width;
+            const right = spanLeft + spanWidth * sylProgress;
+            if (right > maxRight) maxRight = right;
+            hasProgress = true;
+          }
+        });
+
+        fillRatio = hasProgress ? maxRight / containerWidth : 0;
+      }
+
+      // Size the track to match text width, fill the bar
+      progressTrack.style.width = `${containerWidth}px`;
+      progressBar.style.width = `${fillRatio * 100}%`;
     }
 
     if (isPlaying) {
@@ -211,7 +244,7 @@ const ActiveLine: React.FC<ActiveLineProps> = ({ line, getCurrentTime, isPlaying
   }, [isPlaying, update]);
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
+    <Box sx={{ position: 'relative' }}>
       {/* Syllable spans */}
       <Box
         component="span"
@@ -232,7 +265,7 @@ const ActiveLine: React.FC<ActiveLineProps> = ({ line, getCurrentTime, isPlaying
             component="span"
             data-syllable-idx={idx}
             sx={{
-              color: 'rgba(255,255,255,0.85)',
+              color: 'rgba(255,255,255,0.35)',
               transition: 'none',
               display: 'inline',
             }}
@@ -242,16 +275,18 @@ const ActiveLine: React.FC<ActiveLineProps> = ({ line, getCurrentTime, isPlaying
         ))}
       </Box>
 
-      {/* Progress bar */}
+      {/* Progress bar — absolutely positioned, no layout impact */}
       <Box
+        ref={progressTrackRef}
         sx={{
-          width: '100%',
-          maxWidth: '960px',
+          position: 'absolute',
+          bottom: '-10px',
+          left: '50%',
+          transform: 'translateX(-50%)',
           height: '3px',
           borderRadius: '2px',
           backgroundColor: 'rgba(255,255,255,0.08)',
           overflow: 'hidden',
-          position: 'relative',
         }}
       >
         <Box
@@ -328,14 +363,26 @@ export const LyricHighlight: React.FC<LyricHighlightProps> = ({
     }
   });
 
-  // Ref for scrolling to the active line
+  // Refs for measuring line positions and computing transform offset
   const lineRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const innerRef = useRef<HTMLDivElement>(null);
+  const [translateY, setTranslateY] = useState(0);
 
-  useEffect(() => {
-    const el = lineRefs.current[activeLineIndex];
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
+  // Compute the translateY offset to center the active line.
+  // useLayoutEffect runs synchronously before paint — no flash of wrong position.
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    const activeLine = lineRefs.current[activeLineIndex];
+    if (!container || !activeLine) return;
+
+    const containerHeight = container.clientHeight;
+    const lineTop = activeLine.offsetTop;
+    const lineHeight = activeLine.offsetHeight;
+
+    // Center the active line vertically in the container
+    const offset = lineTop - containerHeight / 2 + lineHeight / 2;
+    setTranslateY(-offset);
   }, [activeLineIndex]);
 
   if (lines.length === 0) {
@@ -363,69 +410,78 @@ export const LyricHighlight: React.FC<LyricHighlightProps> = ({
     );
   }
 
+  const lineStyle = {
+    fontSize: ACTIVE_LINE_FONT_SIZE,
+    lineHeight: 1.15,
+    fontFamily: '"Inter", sans-serif',
+    display: 'block',
+    textAlign: 'center' as const,
+    whiteSpace: 'pre-wrap' as const,
+    userSelect: 'none' as const,
+    fontWeight: 500,
+  };
+
   return (
     <Box
+      ref={containerRef}
       sx={{
         flex: 1,
         height: '100%',
         overflow: 'hidden',
         px: '120px',
+        position: 'relative',
       }}
     >
-      {/* Top spacer so the first line can be centered */}
-      <Box sx={{ height: '45%' }} />
+      <Box
+        ref={innerRef}
+        sx={{
+          transform: `translateY(${translateY}px)`,
+          transition: `transform ${LINE_TRANSITION_MS}ms cubic-bezier(0.25, 0.1, 0.25, 1)`,
+          willChange: 'transform',
+        }}
+      >
+        {lines.map((line, i) => {
+          const dist = i - activeLineIndex;
+          const isActive = dist === 0;
+          const isPrev = dist === -1;
+          const isNext = dist === 1;
 
-      {lines.map((line, i) => {
-        const dist = i - activeLineIndex;
-        const isActive = dist === 0;
-        const isPrev = dist === -1;
-        const isNext = dist === 1;
-
-        return (
-          <Box
-            key={i}
-            ref={(el: HTMLDivElement | null) => { lineRefs.current[i] = el; }}
-            sx={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              py: isActive ? '16px' : '12px',
-              transition: STYLE_TRANSITION,
-              opacity: isActive ? 1 : (isPrev || isNext) ? 1 : 0,
-              filter: isPrev ? 'blur(1px)' : 'none',
-            }}
-          >
-            {isActive ? (
-              <ActiveLine
-                line={line}
-                getCurrentTime={getCurrentTime}
-                isPlaying={isPlaying}
-              />
-            ) : (isPrev || isNext) ? (
-              <Box
-                component="span"
-                sx={{
-                  fontWeight: 500,
-                  fontSize: '36px',
-                  color: isPrev ? 'rgba(6,182,212,0.5)' : 'rgba(255,255,255,0.45)',
-                  lineHeight: 1.3,
-                  userSelect: 'none',
-                  whiteSpace: 'pre-wrap',
-                  textAlign: 'center',
-                }}
-              >
-                {line.syllables.map((s) => s.syllable).join('')}
-              </Box>
-            ) : (
-              <Box sx={{ height: '48px' }} />
-            )}
-          </Box>
-        );
-      })}
-
-      {/* Bottom spacer so the last line can be centered */}
-      <Box sx={{ height: '45%' }} />
+          return (
+            <Box
+              key={i}
+              ref={(el: HTMLDivElement | null) => { lineRefs.current[i] = el; }}
+              sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                py: '14px',
+                transition: STYLE_TRANSITION,
+                opacity: isActive ? 1 : (isPrev || isNext) ? 1 : 0,
+                filter: isPrev ? 'blur(1px)' : 'none',
+              }}
+            >
+              {isActive ? (
+                <ActiveLine
+                  line={line}
+                  getCurrentTime={getCurrentTime}
+                  isPlaying={isPlaying}
+                />
+              ) : (
+                <Box
+                  component="span"
+                  sx={{
+                    ...lineStyle,
+                    color: isPrev ? 'rgba(6,182,212,0.5)' : 'rgba(255,255,255,0.45)',
+                  }}
+                >
+                  {line.syllables.map((s) => s.syllable).join('')}
+                </Box>
+              )}
+            </Box>
+          );
+        })}
+      </Box>
     </Box>
   );
 };
