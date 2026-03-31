@@ -385,3 +385,79 @@ class TestLyricEmbedderEncodeFallback:
 
         assert len(result) == _EMBEDDING_DIM
         assert all(v == 0.0 for v in result)
+
+
+# ---------------------------------------------------------------------------
+# Tests: lazy loading and cleanup
+# ---------------------------------------------------------------------------
+
+
+class TestLyricEmbedderLazy:
+    """lazy=True defers model loading; cleanup releases the model."""
+
+    def test_lazy_does_not_load_model_on_init(self) -> None:
+        """With lazy=True, model is None after construction."""
+        import sentence_transformers
+
+        sentence_transformers.SentenceTransformer.reset_mock()
+        embedder = LyricEmbedder(cache_dir=None, lazy=True)
+
+        assert embedder._model is None
+        sentence_transformers.SentenceTransformer.assert_not_called()
+
+    def test_lazy_loads_model_on_first_embed(self) -> None:
+        """Lazy embedder loads model when embed() is called."""
+        model_mock = _make_model_mock()
+        import sentence_transformers
+
+        sentence_transformers.SentenceTransformer.return_value = model_mock
+        embedder = LyricEmbedder(cache_dir=None, lazy=True)
+
+        result = embedder.embed("Some lyrics.")
+
+        assert embedder._model is not None
+        assert len(result) == _EMBEDDING_DIM
+
+    def test_eager_loads_model_on_init(self) -> None:
+        """With lazy=False (default), model is loaded immediately."""
+        model_mock = _make_model_mock()
+        import sentence_transformers
+
+        sentence_transformers.SentenceTransformer.return_value = model_mock
+        embedder = LyricEmbedder(cache_dir=None, lazy=False)
+
+        assert embedder._model is not None
+
+    def test_cleanup_releases_model(self) -> None:
+        """cleanup() sets model to None."""
+        embedder = _make_embedder()
+        assert embedder._model is not None
+
+        embedder.cleanup()
+
+        assert embedder._model is None
+
+    def test_cleanup_noop_when_no_model(self) -> None:
+        """cleanup() on a lazy (unloaded) embedder does not raise."""
+        embedder = LyricEmbedder(cache_dir=None, lazy=True)
+        assert embedder._model is None
+
+        embedder.cleanup()  # Should not raise
+
+        assert embedder._model is None
+
+    def test_embed_after_cleanup_reloads_model(self) -> None:
+        """embed() after cleanup() re-loads the model and works."""
+        model_mock = _make_model_mock()
+        import sentence_transformers
+
+        sentence_transformers.SentenceTransformer.return_value = model_mock
+        embedder = LyricEmbedder(cache_dir=None)
+
+        embedder.cleanup()
+        assert embedder._model is None
+
+        result = embedder.embed("Re-loaded lyrics.")
+
+        assert embedder._model is not None
+        assert len(result) == _EMBEDDING_DIM

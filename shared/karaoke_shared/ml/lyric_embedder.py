@@ -33,14 +33,39 @@ class LyricEmbedder:
                    Passed directly to ``SentenceTransformer``.
     """
 
-    def __init__(self, cache_dir: str | None = None) -> None:
+    def __init__(self, cache_dir: str | None = None, lazy: bool = False) -> None:
+        self._cache_dir = cache_dir
+        self._model = None
+
+        if not lazy:
+            self._ensure_model()
+
+    def _ensure_model(self) -> None:
+        """Load model on first use."""
+        if self._model is not None:
+            return
         from sentence_transformers import SentenceTransformer  # lazy import
 
-        self._model: SentenceTransformer = SentenceTransformer(
+        self._model = SentenceTransformer(
             _MODEL_NAME,
-            cache_folder=cache_dir,
+            cache_folder=self._cache_dir,
         )
         logger.info("lyric_embedder.model_loaded", model=_MODEL_NAME)
+
+    def cleanup(self) -> None:
+        """Release model from memory."""
+        if self._model is not None:
+            del self._model
+            self._model = None
+            import gc
+            gc.collect()
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except ImportError:
+                pass
+            logger.info("lyric_embedder.cleanup_done")
 
     def embed(self, text: str) -> list[float]:
         """Embed lyrics text into a 384-d vector.
@@ -60,6 +85,8 @@ class LyricEmbedder:
 
         logger.info("lyric_embedding_starting")
         t0 = time.monotonic()
+
+        self._ensure_model()
 
         stripped = text.strip()
         if not stripped:

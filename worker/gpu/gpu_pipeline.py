@@ -232,6 +232,8 @@ class GpuPipeline(BasePipeline):
                 lyric_vector = await asyncio.to_thread(
                     self.lyric_embedder.embed, lyrics_result.lyrics
                 )
+                if hasattr(self.lyric_embedder, "cleanup"):
+                    await asyncio.to_thread(self.lyric_embedder.cleanup)
                 await self.job_service.mark_step(job.id, "embedding_lyrics", 100)
 
             # ==============================================================

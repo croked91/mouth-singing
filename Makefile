@@ -63,10 +63,12 @@ build-api: ## Build all images for API mode
 # ---------------------------------------------------------------------------
 
 down: ## Stop and remove all containers
-	docker compose -f $(BASE) -f $(GPU) -f $(API) down 2>/dev/null; true
+	docker compose -f $(BASE) -f $(GPU) down 2>/dev/null; \
+	docker compose -f $(BASE) -f $(API) down 2>/dev/null; true
 
 down-v: ## Stop, remove containers AND volumes (full reset)
-	docker compose -f $(BASE) -f $(GPU) -f $(API) down -v 2>/dev/null; true
+	docker compose -f $(BASE) -f $(GPU) down -v 2>/dev/null; \
+	docker compose -f $(BASE) -f $(API) down -v 2>/dev/null; true
 
 logs: ## Tail logs from all services
 	docker compose -f $(BASE) -f $(GPU) -f $(API) logs -f --tail=50 2>/dev/null || docker compose -f $(BASE) logs -f --tail=50

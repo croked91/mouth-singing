@@ -277,8 +277,11 @@ def _load_ml_components(
         try:
             from karaoke_shared.ml.lyric_embedder import LyricEmbedder
 
-            lyric_embedder = LyricEmbedder(cache_dir=settings.model_cache_dir)
-            logger.info("lyric_embedder_loaded", backend="local")
+            lazy = settings.worker_mode == "gpu"
+            lyric_embedder = LyricEmbedder(
+                cache_dir=settings.model_cache_dir, lazy=lazy,
+            )
+            logger.info("lyric_embedder_loaded", backend="local", lazy=lazy)
         except Exception:
             logger.warning("lyric_embedder_unavailable", backend="local")
 
