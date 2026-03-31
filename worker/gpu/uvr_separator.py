@@ -8,6 +8,7 @@ BS-Roformer model for higher quality separation (SDR 12.9).
 from __future__ import annotations
 
 import pathlib
+import time
 
 import structlog
 
@@ -80,6 +81,7 @@ class UVRSeparator:
         separator = self._get_separator()
 
         logger.info("uvr_starting", mp3_path=mp3_path)
+        t0 = time.monotonic()
 
         output_files: list[str] = separator.separate(mp3_path)
 
@@ -105,6 +107,7 @@ class UVRSeparator:
             "uvr_completed",
             vocals_path=vocals_path,
             instrumental_path=instrumental_path,
+            duration_sec=round(time.monotonic() - t0, 2),
         )
         return vocals_path, instrumental_path
 

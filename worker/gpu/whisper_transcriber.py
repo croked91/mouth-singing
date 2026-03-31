@@ -8,6 +8,7 @@ Errors in 20-30% of words are acceptable.
 from __future__ import annotations
 
 import math
+import time
 from dataclasses import dataclass
 
 import structlog
@@ -73,6 +74,9 @@ class WhisperTranscriber:
         if self._model is None:
             self._model = self._load_model()
 
+        logger.info("whisper_starting", audio_path=audio_path)
+        t0 = time.monotonic()
+
         segments_gen, info = self._model.transcribe(
             audio_path,
             beam_size=1,
@@ -99,6 +103,7 @@ class WhisperTranscriber:
             confidence=round(confidence, 3),
             segments=len(segments),
             text_length=len(text),
+            duration_sec=round(time.monotonic() - t0, 2),
         )
 
         return WhisperResult(

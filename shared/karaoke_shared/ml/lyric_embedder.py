@@ -9,6 +9,8 @@ This module is synchronous. Call from async code via ``asyncio.to_thread``.
 
 from __future__ import annotations
 
+import time
+
 import structlog
 
 logger = structlog.get_logger(__name__)
@@ -56,6 +58,9 @@ class LyricEmbedder:
         """
         import numpy as np
 
+        logger.info("lyric_embedding_starting")
+        t0 = time.monotonic()
+
         stripped = text.strip()
         if not stripped:
             return [0.0] * _EMBEDDING_DIM
@@ -76,6 +81,13 @@ class LyricEmbedder:
             return [0.0] * _EMBEDDING_DIM
 
         mean_vec: np.ndarray = embeddings.mean(axis=0)
+
+        logger.info(
+            "lyric_embedding_completed",
+            chunks=len(chunks),
+            duration_sec=round(time.monotonic() - t0, 2),
+        )
+
         return mean_vec.tolist()
 
     # ------------------------------------------------------------------

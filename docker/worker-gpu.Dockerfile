@@ -17,14 +17,11 @@ ENV PYTHONPATH=/project
 
 WORKDIR /project
 
-# Layer 1: PyTorch with CUDA 12.1 (heaviest, cached first)
-# torchaudio hash on the cu121 index is broken on the r2 CDN mirror,
-# so we install torch from the index and torchaudio via direct URL.
+# Layer 1: PyTorch + torchaudio with CUDA (heaviest, cached first)
+# torchaudio provides forced_align() with native CUDA kernels for CTC alignment.
 RUN pip install --no-cache-dir \
-    torch==2.3.1 \
-    --index-url https://download.pytorch.org/whl/cu121 && \
-    pip install --no-cache-dir \
-    https://download.pytorch.org/whl/cu121/torchaudio-2.3.1%2Bcu121-cp311-cp311-linux_x86_64.whl
+    torch torchaudio \
+    --index-url https://download.pytorch.org/whl/cu130
 
 # Layer 2: shared package with ML extras
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel

@@ -16,9 +16,14 @@ the gap distribution and injects ``\\n`` prefixes in-place.
 
 from __future__ import annotations
 
+import time
+
 import numpy as np
+import structlog
 
 from karaoke_shared.models.track import SyllableTiming
+
+logger = structlog.get_logger(__name__)
 
 
 def detect_line_breaks(
@@ -51,6 +56,9 @@ def detect_line_breaks(
     if any(s.syllable.startswith("\n") for s in timings):
         return list(timings)
 
+    logger.info("line_break_detection_starting", syllables=len(timings))
+    t0 = time.monotonic()
+
     # Analyse inter-syllable gaps.
     gaps = [timings[i].start - timings[i - 1].end for i in range(1, len(timings))]
     large_gap_count = sum(1 for g in gaps if g > 0.4)
@@ -63,7 +71,15 @@ def detect_line_breaks(
         # Fallback: relaxed gap mode.
         break_indices = _gap_mode(timings, gaps, threshold_floor=0.2)
 
-    return _inject_breaks(timings, break_indices)
+    result = _inject_breaks(timings, break_indices)
+
+    logger.info(
+        "line_break_detection_completed",
+        breaks=len(break_indices),
+        duration_sec=round(time.monotonic() - t0, 2),
+    )
+
+    return result
 
 
 def _gap_mode(

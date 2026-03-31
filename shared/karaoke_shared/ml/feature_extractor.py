@@ -20,6 +20,7 @@ This module is synchronous. Call from async code via ``asyncio.to_thread``.
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import numpy as np
@@ -79,6 +80,9 @@ class FeatureExtractor:
         """
         import librosa  # lazy import — not required at module-import time
 
+        logger.info("feature_extraction_starting", path=audio_path)
+        t0 = time.monotonic()
+
         try:
             y, sr = librosa.load(audio_path, sr=None, mono=True)
         except Exception:
@@ -94,6 +98,12 @@ class FeatureExtractor:
         except Exception:
             logger.exception("feature_extractor.compute_failed", path=audio_path)
             return [0.0] * _EXPECTED_DIM
+
+        logger.info(
+            "feature_extraction_completed",
+            path=audio_path,
+            duration_sec=round(time.monotonic() - t0, 2),
+        )
 
         # Post-hoc z-score normalisation using catalog statistics.
         if self._norm_mean is not None and self._norm_std is not None:

@@ -11,6 +11,7 @@ import asyncio
 import base64
 import json
 import re
+import time
 import xml.etree.ElementTree as ET
 
 import httpx
@@ -269,6 +270,9 @@ class LyricsAgent:
 
         user_message = "\n".join(user_parts)
 
+        logger.info("lyrics_search_starting")
+        t0 = time.monotonic()
+
         try:
             raw_response = await asyncio.to_thread(
                 self._run_agent, user_message,
@@ -305,6 +309,14 @@ class LyricsAgent:
                 title = title or title_hint or "Unknown"
 
         lyrics = clean_lyrics(lyrics)
+
+        logger.info(
+            "lyrics_search_completed",
+            artist=artist,
+            title=title,
+            lyrics_length=len(lyrics),
+            duration_sec=round(time.monotonic() - t0, 2),
+        )
 
         return LyricsResult(
             artist=artist,

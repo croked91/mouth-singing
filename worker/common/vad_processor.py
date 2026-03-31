@@ -7,6 +7,7 @@ into a single cleaned WAV file at 16kHz mono (required by faster-whisper).
 from __future__ import annotations
 
 import pathlib
+import time
 
 import structlog
 
@@ -43,6 +44,9 @@ class VADProcessor:
             logger.warning("vad_import_failed", error=str(exc))
             return vocals_path
 
+        logger.info("vad_starting", vocals_path=vocals_path)
+        t0 = time.monotonic()
+
         try:
             y, sr = librosa.load(vocals_path, sr=16000, mono=True)
         except Exception as exc:
@@ -72,5 +76,6 @@ class VADProcessor:
             original_sec=len(y) / 16000,
             cleaned_sec=len(cleaned) / 16000,
             reduction_pct=round((1 - len(cleaned) / len(y)) * 100, 1),
+            duration_sec=round(time.monotonic() - t0, 2),
         )
         return out_path

@@ -6,7 +6,7 @@ Orchestrates the 10-step pipeline using local GPU hardware:
   3. VAD on vocals (CPU, parallel with 2)
   4. Whisper ASR (GPU, after VAD)
   5. LLM lyrics search (API)
-  6+7. CTC alignment (CPU)
+  6+7. CTC alignment (GPU, torchaudio MMS_FA)
   8. Line break detection (CPU)
   9. Lyric embedding (GPU/CPU)
   10. QDrant sync
@@ -15,6 +15,7 @@ Orchestrates the 10-step pipeline using local GPU hardware:
 from __future__ import annotations
 
 import asyncio
+import time
 from pathlib import Path
 
 import structlog
@@ -95,6 +96,8 @@ class GpuPipeline(BasePipeline):
             return
 
         try:
+            pipeline_t0 = time.monotonic()
+
             # ==============================================================
             # STEP 1: UVR separation (GPU, ~60-90s)
             # ==============================================================
@@ -176,7 +179,7 @@ class GpuPipeline(BasePipeline):
             )
 
             # ==============================================================
-            # STEPS 6+7: CTC alignment (~20-25s CPU)
+            # STEPS 6+7: CTC alignment (GPU via torchaudio)
             # ==============================================================
             await self.job_service.mark_step(job.id, "aligning", 0)
 
@@ -186,6 +189,10 @@ class GpuPipeline(BasePipeline):
                 lyrics_result.lyrics,
                 lyrics_result.language,
             )
+
+            # Free CTC model VRAM.
+            if hasattr(self.ctc_aligner, "cleanup"):
+                await asyncio.to_thread(self.ctc_aligner.cleanup)
 
             await self.job_service.mark_step(job.id, "aligning", 100)
             logger.info(
@@ -248,6 +255,13 @@ class GpuPipeline(BasePipeline):
                 },
             })
 
+            logger.info(
+                "pipeline_completed",
+                job_id=job.id,
+                track_id=job.track_id,
+                total_duration_sec=round(time.monotonic() - pipeline_t0, 2),
+            )
+
             # Remove the original upload — instrumental is sufficient.
             if track.mp3_path:
                 original = Path(track.mp3_path)
@@ -257,12 +271,14 @@ class GpuPipeline(BasePipeline):
 
         except Exception as exc:
             logger.error("pipeline_failed", job_id=job.id, error=str(exc), exc_info=True)
-            await self.job_service.mark_failed(job.id, str(exc))
+            await self.job_service.mark_permanently_failed(job.id, str(exc))
 
     def cleanup(self) -> None:
-        """Release GPU resources (UVR + Whisper models)."""
+        """Release GPU resources (UVR + Whisper + CTC models)."""
         self.uvr.cleanup()
         self.whisper.cleanup()
+        if hasattr(self.ctc_aligner, "cleanup"):
+            self.ctc_aligner.cleanup()
 
     # ------------------------------------------------------------------
     # Helper methods
@@ -328,6 +344,8 @@ class GpuPipeline(BasePipeline):
             return
 
         await self.job_service.mark_step(job_id, "syncing_qdrant", 0)
+        logger.info("qdrant_sync_starting", track_id=track_id)
+        t0 = time.monotonic()
 
         payload = {
             "track_id": track_id,
@@ -354,6 +372,11 @@ class GpuPipeline(BasePipeline):
                 payload,
             )
 
+        logger.info(
+            "qdrant_sync_completed",
+            track_id=track_id,
+            duration_sec=round(time.monotonic() - t0, 2),
+        )
         await self.job_service.mark_step(job_id, "syncing_qdrant", 100)
 
     async def _sync_qdrant_audio_only(

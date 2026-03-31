@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import subprocess
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -83,6 +84,9 @@ class CTCAligner:
         if not lyrics_text or not lyrics_text.strip():
             raise ValueError("lyrics_text is empty")
 
+        logger.info("ctc_alignment_starting", language=language)
+        t0 = time.monotonic()
+
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = Path(tmpdir) / "result.json"
             lyrics_path = Path(tmpdir) / "lyrics.txt"
@@ -155,5 +159,6 @@ class CTCAligner:
                 fallback=stats.proportional_fallback,
                 syllables=len(timings),
                 subprocess=True,
+                duration_sec=round(time.monotonic() - t0, 2),
             )
             return timings, stats

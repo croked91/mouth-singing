@@ -94,9 +94,8 @@ def _build_gpu_pipeline(
     from worker.gpu.uvr_separator import UVRSeparator
     from worker.gpu.whisper_transcriber import WhisperTranscriber
     from worker.common.vad_processor import VADProcessor
-    from worker.common.ctc_aligner import CTCAligner
+    from worker.gpu.torch_ctc_aligner import TorchCTCAligner
     from worker.common.lyrics_agent import LyricsAgent
-    from karaoke_shared.utils.syllabifier import Syllabifier
 
     uvr = UVRSeparator(
         model_cache_dir=settings.model_cache_dir,
@@ -136,12 +135,9 @@ def _build_gpu_pipeline(
             yandex_folder=bool(settings.yandex_search_folder_id),
         )
 
-    ctc_aligner = CTCAligner(
-        syllabifier=Syllabifier(),
+    ctc_aligner = TorchCTCAligner(
+        device="cuda",
         model_cache_dir=settings.model_cache_dir,
-        min_frames_for_char=settings.ctc_min_frames_for_char,
-        device=settings.ctc_device,
-        batch_size=settings.ctc_batch_size,
     )
 
     return GpuPipeline(
@@ -360,6 +356,8 @@ async def main() -> None:
         await poller.run()
 
     finally:
+        if hasattr(pipeline, "cleanup"):
+            pipeline.cleanup()
         await db.close()
         logger.info("worker_stopped")
 

@@ -77,8 +77,9 @@ class WorkerSettings(BaseSettings):
     ctc_min_frames_for_char: int = 10
     ctc_device: str = "cpu"
     """ONNX execution provider for CTC alignment: 'cuda' or 'cpu'.
-    CPU is recommended — subprocess isolation prevents heap corruption
-    from crashing the main worker, and avoids VRAM contention."""
+    CPU is the only viable option — wav2vec2 ONNX graph has 24 ops
+    unsupported by CUDA EP, causing constant CPU↔GPU memcpy that
+    makes GPU slower than pure CPU."""
     ctc_batch_size: int = 16
     """Batch size for generate_emissions (CPU has plenty of RAM)."""
 
