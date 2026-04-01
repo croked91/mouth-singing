@@ -423,7 +423,17 @@ class RecommendationService:
 
         logger.info("slot_distribution", slot_counts=slot_counts)
 
-        # 3. Fetch tracks from each cluster, dedup per-cluster.
+        # 3. Build audio centroid per cluster from played tracks.
+        cluster_audio: dict[int, list[list[float]]] = {}
+        for tid in unique_ids:
+            track = tracks_map.get(tid)
+            if track and track.catalog_cluster_id is not None:
+                cid = track.catalog_cluster_id
+                vec = await self._get_track_vector(tid)
+                if vec:
+                    cluster_audio.setdefault(cid, []).append(vec)
+
+        # 4. Fetch tracks from each cluster, rank by audio similarity.
         all_candidates: list[RecommendedTrack] = []
         exclude_all = played_ids | (self._extra_exclude or set())
         global_seen_artists: set[str] = set(played_artists)
@@ -431,14 +441,34 @@ class RecommendationService:
         for i, (cid, n_slots) in enumerate(zip(cluster_ids, slot_counts)):
             tracks = await self.sqlite_repo.get_tracks_by_cluster(
                 cluster_id=cid,
-                limit=n_slots * 5,  # oversample for artist dedup
+                limit=n_slots * 8,  # oversample for ranking + dedup
                 exclude_ids=exclude_all,
                 exclude_artists=global_seen_artists,
                 language=language,
             )
-            # Take up to n_slots unique artists from this cluster.
+
+            # Rank by audio cosine similarity to cluster centroid.
+            centroid_vecs = cluster_audio.get(cid)
+            if centroid_vecs:
+                centroid = np.mean(centroid_vecs, axis=0)
+                centroid_norm = float(np.linalg.norm(centroid)) + 1e-9
+
+                scored: list[tuple[Track, float]] = []
+                for t in tracks:
+                    tvec = await self._get_track_vector(t.id)
+                    if tvec:
+                        sim = float(np.dot(centroid, tvec)) / (centroid_norm * (float(np.linalg.norm(tvec)) + 1e-9))
+                        scored.append((t, sim))
+                    else:
+                        scored.append((t, 0.0))
+                scored.sort(key=lambda x: x[1], reverse=True)
+                ranked_tracks = [t for t, _ in scored]
+            else:
+                ranked_tracks = tracks
+
+            # Take up to n_slots unique artists from ranked list.
             cluster_picks: list[RecommendedTrack] = []
-            for t in tracks:
+            for t in ranked_tracks:
                 if t.artist not in global_seen_artists:
                     global_seen_artists.add(t.artist)
                     cluster_picks.append(RecommendedTrack(track=t, similarity_score=1.0))
