@@ -21,6 +21,7 @@ from karaoke_shared.constants import (
     COLLECTION_AUDIO_FEATURES,
     COLLECTION_LYRICS_EMBEDDINGS,
     PopularityCategory,
+    WELL_KNOWN_CATEGORIES,
 )
 from karaoke_shared.models.recommendation import RecommendationStrategy
 from karaoke_shared.models.track import Track
@@ -167,38 +168,26 @@ def auto_cluster_session(
 
 
 def distribute_slots(clusters: list[dict], total: int) -> list[int]:
-    """Distribute N slots proportionally to weighted cluster sizes.
+    """Distribute N slots equally across clusters.
 
-    When total >= len(clusters), each cluster gets at least 1 slot.
-    When total < len(clusters), only the top clusters by weight receive slots.
-    Returns list of slot counts aligned with clusters list.
+    Each cluster gets the same number of slots. Remainder distributed
+    round-robin. This ensures every vibe gets equal representation.
     """
     if not clusters:
         return []
 
-    weighted = [len(c["track_ids"]) * c["weight"] for c in clusters]
-    total_weight = sum(weighted)
-    if total_weight == 0:
-        return [total // len(clusters)] * len(clusters)
-
-    if total < len(clusters):
-        # Not enough slots for all clusters — give 1 slot each to the
-        # top clusters by weight, 0 to the rest.
-        indexed = sorted(enumerate(weighted), key=lambda x: x[1], reverse=True)
-        raw = [0] * len(clusters)
+    n = len(clusters)
+    if total < n:
+        raw = [0] * n
         for i in range(total):
-            raw[indexed[i][0]] = 1
+            raw[i] = 1
         return raw
 
-    # Proportional allocation with minimum 1.
-    raw = [max(1, round(w / total_weight * total)) for w in weighted]
-
-    # Adjust to exactly total.
-    while sum(raw) > total:
-        # Remove from largest.
-        idx = raw.index(max(raw))
-        if raw[idx] > 1:
-            raw[idx] -= 1
+    base = total // n
+    remainder = total % n
+    raw = [base] * n
+    for i in range(remainder):
+        raw[i] += 1
     while sum(raw) < total:
         # Add to smallest.
         idx = raw.index(min(raw))
@@ -360,8 +349,8 @@ class RecommendationService:
         n_random = limit - n_top
 
         extra = len(played_ids) + limit
-        top_tracks = await self.sqlite_repo.list_popular(limit=n_top + extra)
-        random_tracks = await self.sqlite_repo.list_random(limit=n_random + extra)
+        top_tracks = await self.sqlite_repo.list_popular(limit=n_top + extra, categories=WELL_KNOWN_CATEGORIES)
+        random_tracks = await self.sqlite_repo.list_random(limit=n_random + extra, categories=WELL_KNOWN_CATEGORIES)
 
         seen: set[str] = set(played_ids)
         results: list[RecommendedTrack] = []
@@ -391,9 +380,14 @@ class RecommendationService:
         language: str | None = None,
     ) -> tuple[RecommendationStrategy, list[RecommendedTrack]]:
         """Cluster-based recommendations from session play history."""
-        # 1. Fetch vectors for played tracks.
-        track_ids = [entry.track_id for entry in history]
-        vectors = await self._fetch_track_vectors(track_ids)
+        # 1. Fetch vectors for played tracks (deduplicate by track_id).
+        seen_track_ids: set[str] = set()
+        unique_track_ids: list[str] = []
+        for entry in history:
+            if entry.track_id not in seen_track_ids:
+                seen_track_ids.add(entry.track_id)
+                unique_track_ids.append(entry.track_id)
+        vectors = await self._fetch_track_vectors(unique_track_ids)
 
         if not vectors:
             return await self._popular_strategy(played_ids, limit, language)
@@ -428,8 +422,9 @@ class RecommendationService:
                 cluster["centroid_audio"],
                 cluster["centroid_lyrics"],
                 played_ids,
-                n_slots * 4,  # oversample for re-ranking
+                n_slots * 10,  # oversample to compensate for category filtering
                 knn_filters,
+                allowed_categories=set(WELL_KNOWN_CATEGORIES),
             )
             logger.info(
                 "cluster_knn_result",
@@ -490,7 +485,7 @@ class RecommendationService:
     ) -> RecommendedTrack | None:
         """Find a popular track maximally distant from all cluster centroids."""
         extra = len(exclude_ids) + 20
-        top_tracks = await self.sqlite_repo.list_popular(limit=extra)
+        top_tracks = await self.sqlite_repo.list_popular(limit=extra, categories=WELL_KNOWN_CATEGORIES)
 
         # Filter eligible tracks.
         eligible = [
@@ -602,6 +597,7 @@ class RecommendationService:
         exclude_ids: set[str],
         limit: int,
         filters: dict | None = None,
+        allowed_categories: set[str] | None = None,
     ) -> list[RecommendedTrack]:
         """Run weighted fusion KNN across audio and lyrics collections."""
         if filters is None:
@@ -660,6 +656,8 @@ class RecommendationService:
         for pid, score in top:
             track = tracks_map.get(pid)
             if track is not None:
+                if allowed_categories and (track.popularity_category or "regular") not in allowed_categories:
+                    continue
                 results.append(RecommendedTrack(track=track, similarity_score=score))
 
         return results

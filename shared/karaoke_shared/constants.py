@@ -64,6 +64,15 @@ class PopularityCategory(StrEnum):
     REGULAR = "regular"
 
 
+# Categories considered "well-known" for recommendation filtering.
+WELL_KNOWN_CATEGORIES: list[str] = [
+    PopularityCategory.ETERNAL_HIT,
+    PopularityCategory.CURRENT_HIT,
+    PopularityCategory.ARTIST_BEST,
+    PopularityCategory.FORMER_HIT,
+]
+
+
 # ------------------------------------------------------------------
 # QDrant collection names
 # ------------------------------------------------------------------

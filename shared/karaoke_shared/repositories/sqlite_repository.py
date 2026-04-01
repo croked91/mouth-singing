@@ -178,21 +178,41 @@ class SQLiteRepository:
 
         return await self.get_track(track_id)
 
-    async def list_popular(self, limit: int = 10) -> list[Track]:
+    async def list_popular(
+        self, limit: int = 10, categories: list[str] | None = None,
+    ) -> list[Track]:
         """Return the most-played ready tracks, ordered by play count descending."""
-        cursor = await self.db.execute(
-            "SELECT * FROM tracks WHERE status = ? ORDER BY play_count DESC, RANDOM() LIMIT ?",
-            (TrackStatus.READY, limit),
-        )
+        if categories:
+            placeholders = ",".join("?" * len(categories))
+            cursor = await self.db.execute(
+                f"SELECT * FROM tracks WHERE status = ? AND popularity_category IN ({placeholders})"
+                " ORDER BY play_count DESC, RANDOM() LIMIT ?",
+                [TrackStatus.READY, *categories, limit],
+            )
+        else:
+            cursor = await self.db.execute(
+                "SELECT * FROM tracks WHERE status = ? ORDER BY play_count DESC, RANDOM() LIMIT ?",
+                (TrackStatus.READY, limit),
+            )
         rows = await cursor.fetchall()
         return [self._track_from_row(row) for row in rows]
 
-    async def list_random(self, limit: int = 10) -> list[Track]:
+    async def list_random(
+        self, limit: int = 10, categories: list[str] | None = None,
+    ) -> list[Track]:
         """Return random ready tracks from the catalog."""
-        cursor = await self.db.execute(
-            "SELECT * FROM tracks WHERE status = ? ORDER BY RANDOM() LIMIT ?",
-            (TrackStatus.READY, limit),
-        )
+        if categories:
+            placeholders = ",".join("?" * len(categories))
+            cursor = await self.db.execute(
+                f"SELECT * FROM tracks WHERE status = ? AND popularity_category IN ({placeholders})"
+                " ORDER BY RANDOM() LIMIT ?",
+                [TrackStatus.READY, *categories, limit],
+            )
+        else:
+            cursor = await self.db.execute(
+                "SELECT * FROM tracks WHERE status = ? ORDER BY RANDOM() LIMIT ?",
+                (TrackStatus.READY, limit),
+            )
         rows = await cursor.fetchall()
         return [self._track_from_row(row) for row in rows]
 
