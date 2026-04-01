@@ -291,6 +291,7 @@ class RecommendationService:
         session_id: str,
         limit: int = 5,
         language: str | None = None,
+        extra_exclude_ids: set[str] | None = None,
     ) -> tuple[RecommendationStrategy, list[RecommendedTrack]]:
         """Return recommendations for a session.
 
@@ -300,6 +301,9 @@ class RecommendationService:
         history = await self.sqlite_repo.get_history_by_session(session_id)
         played_ids = {entry.track_id for entry in history}
 
+        # Merge with extra excludes (previously shown tracks).
+        exclude_ids = played_ids | (extra_exclude_ids or set())
+
         # Collect played artists to avoid recommending the same artist again.
         played_artists: set[str] = set()
         if played_ids:
@@ -307,10 +311,10 @@ class RecommendationService:
             played_artists = {t.artist for t in tracks_map.values()}
 
         if not history:
-            return await self._popular_strategy(played_ids, limit, language)
+            return await self._popular_strategy(exclude_ids, limit, language)
 
         return await self._cluster_strategy(
-            history, played_ids, played_artists, limit, language,
+            history, exclude_ids, played_artists, limit, language,
         )
 
     async def get_tag_recommendations(
@@ -652,13 +656,22 @@ class RecommendationService:
         candidate_ids = [pid for pid, _ in top]
         tracks_map = await self.sqlite_repo.get_tracks_by_ids(candidate_ids)
 
-        results: list[RecommendedTrack] = []
+        # Split into well-known and regular, prefer well-known.
+        well_known: list[RecommendedTrack] = []
+        regular: list[RecommendedTrack] = []
         for pid, score in top:
             track = tracks_map.get(pid)
             if track is not None:
+                rt = RecommendedTrack(track=track, similarity_score=score)
                 if allowed_categories and (track.popularity_category or "regular") not in allowed_categories:
-                    continue
-                results.append(RecommendedTrack(track=track, similarity_score=score))
+                    regular.append(rt)
+                else:
+                    well_known.append(rt)
+
+        # Fill with well-known first, then regular if not enough.
+        results = well_known[:limit]
+        if len(results) < limit:
+            results.extend(regular[:limit - len(results)])
 
         return results
 

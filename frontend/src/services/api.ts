@@ -123,7 +123,8 @@ export const api = {
     sessionId: string,
     limit?: number,
     tagId?: number,
-    language?: string
+    language?: string,
+    excludeIds?: string[],
   ): Promise<RecommendationResponse> => {
     const params: Record<string, string | number> = {
       session_id: sessionId,
@@ -131,6 +132,7 @@ export const api = {
     };
     if (tagId !== undefined) params.tag_id = tagId;
     if (language) params.language = language;
+    if (excludeIds?.length) params.exclude_ids = excludeIds.join(',');
     const response = await apiClient.get<RecommendationResponse>(
       '/recommendations',
       { params }

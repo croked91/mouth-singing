@@ -89,6 +89,7 @@ export const QueuePage: React.FC = () => {
   const [recsRefreshCounter, setRecsRefreshCounter] = useState(0);
 
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const prevRecIdsRef = useRef<string[]>([]);
 
   // ── Initial load ────────────────────────────────────────────────────────────
 
@@ -124,7 +125,19 @@ export const QueuePage: React.FC = () => {
 
       try {
         const language = russianOnly ? 'ru' : undefined;
-        const data = await api.getRecommendations(sessionId, 10, tagId, language);
+
+        // Exclude 80% of previously shown tracks to ensure fresh recommendations.
+        let excludeIds: string[] | undefined;
+        const prev = prevRecIdsRef.current;
+        if (prev.length > 0 && tagId === undefined) {
+          const shuffled = [...prev].sort(() => Math.random() - 0.5);
+          excludeIds = shuffled.slice(0, Math.floor(prev.length * 0.8));
+        }
+
+        const data = await api.getRecommendations(sessionId, 10, tagId, language, excludeIds);
+        if (tagId === undefined) {
+          prevRecIdsRef.current = data.tracks.map(t => t.id);
+        }
         setRecommendations(data);
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Ошибка загрузки рекомендаций';

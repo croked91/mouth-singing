@@ -57,6 +57,7 @@ async def get_recommendations(
     tag_id: int | None = Query(None, description="Mood tag ID (overrides auto mode)"),
     language: str | None = Query(None, description="Language filter (e.g. 'ru')"),
     limit: int = Query(5, ge=1, le=50, description="Max results"),
+    exclude_ids: str | None = Query(None, description="Comma-separated track IDs to exclude"),
     repo: SQLiteRepository = Depends(get_sqlite_repo),
     qdrant_repo: QDrantRepository = Depends(get_qdrant_repo),
 ) -> RecommendationResponse:
@@ -91,9 +92,11 @@ async def get_recommendations(
         )
 
     # Auto-recommendations
+    extra_exclude = set(exclude_ids.split(",")) if exclude_ids else None
     strategy, recommended = await service.get_recommendations(
         session_id=session_id,
         limit=limit,
         language=language,
+        extra_exclude_ids=extra_exclude,
     )
     return RecommendationResponse(strategy=strategy, tracks=await _to_items(recommended, repo))
