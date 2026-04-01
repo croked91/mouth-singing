@@ -67,6 +67,7 @@ class GpuPipeline(BasePipeline):
         lyric_embedder: object | None = None,
         qdrant_repo: QDrantRepository | None = None,
         settings: object | None = None,
+        rec_cluster_assigner: object | None = None,
     ) -> None:
         self.job_service = job_service
         self.uvr = uvr
@@ -79,6 +80,7 @@ class GpuPipeline(BasePipeline):
         self.lyric_embedder = lyric_embedder
         self.qdrant_repo = qdrant_repo
         self.settings = settings
+        self.rec_cluster_assigner = rec_cluster_assigner
 
     async def process(self, job: Job) -> None:
         """Run the full GPU pipeline for a single job."""
@@ -243,10 +245,19 @@ class GpuPipeline(BasePipeline):
                 job.id, job.track_id, track, feature_vector, lyric_vector
             )
 
+            # Assign rec_cluster_id if centroids available.
+            rec_cluster_id = None
+            if self.rec_cluster_assigner and self.rec_cluster_assigner.available:
+                rec_cluster_id = await asyncio.to_thread(
+                    self.rec_cluster_assigner.assign, feature_vector, lyric_vector,
+                )
+                if rec_cluster_id is not None:
+                    logger.info("rec_cluster_assigned", track_id=job.track_id, cluster_id=rec_cluster_id)
+
             # Finalize.
             await self.repo.update_track(
                 job.track_id,
-                TrackUpdate(status="ready", qdrant_synced=1, mp3_path=None),
+                TrackUpdate(status="ready", qdrant_synced=1, mp3_path=None, rec_cluster_id=rec_cluster_id),
             )
             await self.job_service.mark_completed(job.id, {
                 "instrumental_path": instrumental_path,

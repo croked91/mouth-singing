@@ -53,6 +53,9 @@ class WorkerSettings(BaseSettings):
     normalization_stats_path: str = ""
     """Path to feature_normalization_stats.json.  Empty = skip z-score."""
 
+    rec_cluster_centroids_path: str = ""
+    """Path to rec_cluster_centroids.json.  Empty = skip cluster assignment."""
+
     # ------------------------------------------------------------------
     # Common: OpenAI key (used by Whisper API + optional embedder)
     # ------------------------------------------------------------------

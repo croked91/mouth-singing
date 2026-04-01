@@ -140,6 +140,12 @@ def _build_gpu_pipeline(
         model_cache_dir=settings.model_cache_dir,
     )
 
+    # Rec cluster assigner (optional).
+    rec_cluster_assigner = None
+    if settings.rec_cluster_centroids_path:
+        from karaoke_shared.ml.rec_cluster_assigner import RecClusterAssigner
+        rec_cluster_assigner = RecClusterAssigner(settings.rec_cluster_centroids_path)
+
     return GpuPipeline(
         job_service=job_service,
         uvr=uvr,
@@ -152,6 +158,7 @@ def _build_gpu_pipeline(
         lyric_embedder=lyric_embedder,
         qdrant_repo=qdrant_repo,
         settings=settings,
+        rec_cluster_assigner=rec_cluster_assigner,
     )
 
 

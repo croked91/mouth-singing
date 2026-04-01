@@ -22,6 +22,7 @@ services:
       QDRANT_HOST: qdrant
       QDRANT_PORT: "6333"
       NORMALIZATION_STATS_PATH: ${NORMALIZATION_STATS_PATH:-/data/models/feature_normalization_stats.json}
+      REC_CLUSTER_CENTROIDS_PATH: ${REC_CLUSTER_CENTROIDS_PATH:-/data/models/rec_cluster_centroids.json}
       # MVSEP API
       MVSEP_API_KEY: ${MVSEP_API_KEY:?err}
       MVSEP_SEP_TYPE: "49"

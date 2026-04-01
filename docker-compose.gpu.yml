@@ -20,6 +20,7 @@ services:
       QDRANT_HOST: qdrant
       QDRANT_PORT: "6333"
       NORMALIZATION_STATS_PATH: ${NORMALIZATION_STATS_PATH:-/data/models/feature_normalization_stats.json}
+      REC_CLUSTER_CENTROIDS_PATH: ${REC_CLUSTER_CENTROIDS_PATH:-/data/models/rec_cluster_centroids.json}
       # GPU-specific
       UVR_MODEL_NAME: ${UVR_MODEL_NAME:-model_bs_roformer_ep_317_sdr_12.9755.ckpt}
       UVR_TORCH_DEVICE: cuda
