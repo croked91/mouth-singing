@@ -89,7 +89,18 @@ export const QueuePage: React.FC = () => {
   const [recsRefreshCounter, setRecsRefreshCounter] = useState(0);
 
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const prevRecIdsRef = useRef<string[]>([]);
+  // Track how many times each track was shown without being selected.
+  // Persisted in sessionStorage to survive tab switches and re-renders.
+  const getShownCounts = (): Record<string, number> => {
+    try {
+      const raw = sessionStorage.getItem(`shownCounts_${sessionId}`);
+      return raw ? JSON.parse(raw) : {};
+    } catch { return {}; }
+  };
+  const setShownCounts = (counts: Record<string, number>) => {
+    try { sessionStorage.setItem(`shownCounts_${sessionId}`, JSON.stringify(counts)); } catch {}
+  };
+  const shownCountRef = useRef<Record<string, number>>(getShownCounts());
 
   // ── Initial load ────────────────────────────────────────────────────────────
 
@@ -126,17 +137,23 @@ export const QueuePage: React.FC = () => {
       try {
         const language = russianOnly ? 'ru' : undefined;
 
-        // Exclude 80% of previously shown tracks to ensure fresh recommendations.
+        // Exclude tracks shown 2+ times without being selected.
         let excludeIds: string[] | undefined;
-        const prev = prevRecIdsRef.current;
-        if (prev.length > 0 && tagId === undefined) {
-          const shuffled = [...prev].sort(() => Math.random() - 0.5);
-          excludeIds = shuffled.slice(0, Math.floor(prev.length * 0.8));
+        if (tagId === undefined) {
+          const dismissed = Object.entries(shownCountRef.current)
+            .filter(([, count]) => count >= 2)
+            .map(([id]) => id);
+          if (dismissed.length > 0) {
+            excludeIds = dismissed;
+          }
         }
 
         const data = await api.getRecommendations(sessionId, 10, tagId, language, excludeIds);
         if (tagId === undefined) {
-          prevRecIdsRef.current = data.tracks.map(t => t.id);
+          for (const t of data.tracks) {
+            shownCountRef.current[t.id] = (shownCountRef.current[t.id] || 0) + 1;
+          }
+          setShownCounts(shownCountRef.current);
         }
         setRecommendations(data);
       } catch (err) {
@@ -190,6 +207,9 @@ export const QueuePage: React.FC = () => {
       try {
         const participantId = await ensureParticipant();
         await addToQueue(sessionId, participantId, trackId);
+        // Reset shown count — track was selected, not dismissed.
+        delete shownCountRef.current[trackId];
+        setShownCounts(shownCountRef.current);
         setSnackMessage('Трек добавлен в очередь!');
         // Refresh recommendations and tags after adding a track.
         // Use fresh sessionId/selectedTagId via closures that are always current.
@@ -532,28 +552,32 @@ export const QueuePage: React.FC = () => {
           }}
         />
 
-        {/* Mood tags strip */}
-        {moodTags.length > 0 && (
-          <Box
-            sx={{
-              display: 'flex',
-              gap: 1,
-              overflowX: 'auto',
-              pb: 0.5,
-              scrollbarWidth: 'none',
-              '&::-webkit-scrollbar': { display: 'none' },
-            }}
-          >
-            {moodTags.map((tag) => (
+        {/* Strategy label + mood tags inline */}
+        {recommendations && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Typography
+              sx={{
+                fontSize: '11px',
+                fontWeight: 700,
+                letterSpacing: '0.12em',
+                color: 'rgba(255,255,255,0.35)',
+                textTransform: 'uppercase',
+                flexShrink: 0,
+              }}
+            >
+              {STRATEGY_LABELS[recommendations.strategy] ?? recommendations.strategy}
+            </Typography>
+            {moodTags.slice(0, 3).map((tag) => (
               <Chip
                 key={tag.id}
                 label={tag.name}
                 onClick={() => handleTagClick(tag.id)}
                 variant={selectedTagId === tag.id ? 'filled' : 'outlined'}
+                size="small"
                 sx={{
                   flexShrink: 0,
                   borderRadius: '20px',
-                  fontSize: '13px',
+                  fontSize: '12px',
                   fontWeight: 600,
                   transition: 'all 0.2s ease',
                   ...(selectedTagId === tag.id
@@ -577,21 +601,6 @@ export const QueuePage: React.FC = () => {
               />
             ))}
           </Box>
-        )}
-
-        {/* Strategy label */}
-        {recommendations && (
-          <Typography
-            sx={{
-              fontSize: '11px',
-              fontWeight: 700,
-              letterSpacing: '0.12em',
-              color: 'rgba(255,255,255,0.35)',
-              textTransform: 'uppercase',
-            }}
-          >
-            {STRATEGY_LABELS[recommendations.strategy] ?? recommendations.strategy}
-          </Typography>
         )}
 
         {/* Loading state */}

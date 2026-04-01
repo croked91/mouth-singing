@@ -39,6 +39,7 @@ class TrackSearchItem(BaseModel):
     language: str | None
     source: str
     clip_ready: bool  # True when the track has status == "ready"
+    artist_image_url: str | None = None
 
 
 class SearchResult(BaseModel):
@@ -113,7 +114,19 @@ class SearchService:
 
         total = len(merged)
         paged = merged[offset : offset + limit]
-        items = [self._track_to_search_item(t) for t in paged]
+
+        # Batch-fetch artist images.
+        artist_names = list({t.artist for t in paged})
+        artists_map = await self.sqlite_repo.get_artists_by_names(artist_names)
+        artist_images: dict[str, str | None] = {}
+        for name in artist_names:
+            artist = artists_map.get(name)
+            if artist and artist.get("image_path"):
+                artist_images[name] = f"/api/v1/media/artists/{artist['image_path']}"
+            else:
+                artist_images[name] = None
+
+        items = [self._track_to_search_item(t, artist_images.get(t.artist)) for t in paged]
 
         return SearchResult(total=total, items=items)
 
@@ -187,7 +200,7 @@ class SearchService:
 
         return merged
 
-    def _track_to_search_item(self, track: Track) -> TrackSearchItem:
+    def _track_to_search_item(self, track: Track, artist_image_url: str | None = None) -> TrackSearchItem:
         """Convert a full Track record to the condensed TrackSearchItem."""
         return TrackSearchItem(
             id=track.id,
@@ -197,4 +210,5 @@ class SearchService:
             language=track.language,
             source=track.source,
             clip_ready=(track.status == TrackStatus.READY),
+            artist_image_url=artist_image_url,
         )

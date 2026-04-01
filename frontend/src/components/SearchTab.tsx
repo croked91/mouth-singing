@@ -5,7 +5,6 @@ import {
   InputBase,
   IconButton,
   Skeleton,
-  ButtonBase,
   List,
   ListItem,
   ListItemButton,
@@ -55,6 +54,7 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
   isAdding,
 }) => (
   <Box
+    onClick={() => { if (!isAdding) onSelect(track.id); }}
     sx={{
       display: 'flex',
       alignItems: 'center',
@@ -64,6 +64,7 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
       background: 'rgba(255,255,255,0.05)',
       border: '1px solid rgba(255,255,255,0.09)',
       borderRadius: '14px',
+      cursor: isAdding ? 'not-allowed' : 'pointer',
       transition: 'border-color 0.2s ease, background 0.2s ease',
       '&:hover': {
         borderColor: 'rgba(6,182,212,0.4)',
@@ -85,21 +86,36 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
       {index + 1}
     </Typography>
 
-    {/* Album art placeholder */}
-    <Box
-      sx={{
-        width: 44,
-        height: 44,
-        borderRadius: '10px',
-        background: 'linear-gradient(135deg, rgba(6,182,212,0.45), rgba(124,58,237,0.45))',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        flexShrink: 0,
-      }}
-    >
-      <MusicNoteIcon sx={{ color: 'rgba(255,255,255,0.7)', fontSize: 20 }} />
-    </Box>
+    {/* Artist image or gradient placeholder */}
+    {track.artist_image_url ? (
+      <Box
+        component="img"
+        src={track.artist_image_url}
+        alt={track.artist}
+        sx={{
+          width: 44,
+          height: 44,
+          borderRadius: '10px',
+          objectFit: 'cover',
+          flexShrink: 0,
+        }}
+      />
+    ) : (
+      <Box
+        sx={{
+          width: 44,
+          height: 44,
+          borderRadius: '10px',
+          background: 'linear-gradient(135deg, rgba(6,182,212,0.45), rgba(124,58,237,0.45))',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+        }}
+      >
+        <MusicNoteIcon sx={{ color: 'rgba(255,255,255,0.7)', fontSize: 20 }} />
+      </Box>
+    )}
 
     {/* Track info */}
     <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -143,10 +159,8 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
       {formatDuration(track.duration_sec)}
     </Typography>
 
-    {/* Select button */}
-    <ButtonBase
-      onClick={() => onSelect(track.id)}
-      disabled={isAdding}
+    {/* Add indicator */}
+    <Typography
       sx={{
         px: 1.75,
         py: 0.625,
@@ -159,19 +173,11 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
         letterSpacing: '0.08em',
         textTransform: 'uppercase',
         flexShrink: 0,
-        transition: 'background 0.2s ease, border-color 0.2s ease',
-        '&:hover': {
-          background: 'rgba(6,182,212,0.4)',
-          borderColor: 'rgba(6,182,212,0.7)',
-        },
-        '&:disabled': {
-          opacity: 0.4,
-          cursor: 'not-allowed',
-        },
+        opacity: isAdding ? 0.4 : 1,
       }}
     >
-      ВЫБРАТЬ
-    </ButtonBase>
+      {isAdding ? '...' : '+'}
+    </Typography>
   </Box>
 );
 

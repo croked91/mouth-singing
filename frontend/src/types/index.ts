@@ -93,6 +93,7 @@ export interface TrackSearchItem {
   language: string | null;
   source: string;
   clip_ready: boolean;
+  artist_image_url: string | null;
 }
 
 export interface SearchResult {

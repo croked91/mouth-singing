@@ -83,12 +83,21 @@ async def get_recommendations(
             tag_centroid_audio=cluster.centroid_audio,
             tag_centroid_lyrics=cluster.centroid_lyrics,
             session_id=session_id,
-            limit=limit,
+            limit=limit * 3,  # oversample for artist dedup
             language=language,
         )
+        # Deduplicate by artist.
+        seen_artists: set[str] = set()
+        deduped = []
+        for r in results:
+            if r.track.artist not in seen_artists:
+                seen_artists.add(r.track.artist)
+                deduped.append(r)
+                if len(deduped) >= limit:
+                    break
         return RecommendationResponse(
             strategy=strategy,
-            tracks=await _to_items(results, repo),
+            tracks=await _to_items(deduped, repo),
         )
 
     # Auto-recommendations
