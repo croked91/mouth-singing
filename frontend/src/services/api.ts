@@ -127,7 +127,7 @@ export const api = {
   ): Promise<RecommendationResponse> => {
     const params: Record<string, string | number> = {
       session_id: sessionId,
-      limit: limit ?? 5,
+      limit: limit ?? 10,
     };
     if (tagId !== undefined) params.tag_id = tagId;
     if (language) params.language = language;

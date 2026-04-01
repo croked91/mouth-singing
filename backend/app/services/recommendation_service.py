@@ -33,21 +33,27 @@ _AUDIO_COLLECTION = COLLECTION_AUDIO_FEATURES
 _LYRICS_COLLECTION = COLLECTION_LYRICS_EMBEDDINGS
 
 # Fusion weights for audio and lyrics KNN scores.
+# Audio dominates for KNN — librosa features find same-genre tracks better
+# than lyrics embeddings which match by word semantics (not music style).
+# Note: clustering uses inverted weights (audio 30%, lyrics 70%) because
+# K-Means on 25k tracks benefits from thematic grouping.
 _AUDIO_WEIGHT = 0.7
 _LYRICS_WEIGHT = 0.3
 
 # Auto-clustering parameters.
-_CLUSTER_THRESHOLD = 0.7  # fused cosine similarity threshold
-_MAX_CLUSTERS = 3
-_SINGLETON_WEIGHT = 0.5  # weight for clusters with only 1 track
+_CLUSTER_THRESHOLD = 0.5  # fused cosine similarity threshold (lowered to separate genres)
+_MAX_CLUSTERS = 5
+_SINGLETON_WEIGHT = 1.0  # all clusters weighted equally regardless of size
 
 # Popularity category weights for re-ranking.
+# Formula: final_score = similarity * (1 + weight).
+# Higher weights make hits float above regular tracks.
 _POPULARITY_WEIGHTS: dict[str, float] = {
-    PopularityCategory.ETERNAL_HIT: 1.0,
-    PopularityCategory.CURRENT_HIT: 0.7,
-    PopularityCategory.ARTIST_BEST: 0.7,
-    PopularityCategory.FORMER_HIT: 0.4,
-    PopularityCategory.REGULAR: 0.1,
+    PopularityCategory.ETERNAL_HIT: 2.0,
+    PopularityCategory.CURRENT_HIT: 1.5,
+    PopularityCategory.ARTIST_BEST: 1.2,
+    PopularityCategory.FORMER_HIT: 0.6,
+    PopularityCategory.REGULAR: 0.0,
 }
 
 # MMR lambda: balance between relevance (1.0) and diversity (0.0).
@@ -305,10 +311,18 @@ class RecommendationService:
         history = await self.sqlite_repo.get_history_by_session(session_id)
         played_ids = {entry.track_id for entry in history}
 
+        # Collect played artists to avoid recommending the same artist again.
+        played_artists: set[str] = set()
+        if played_ids:
+            tracks_map = await self.sqlite_repo.get_tracks_by_ids(list(played_ids))
+            played_artists = {t.artist for t in tracks_map.values()}
+
         if not history:
             return await self._popular_strategy(played_ids, limit, language)
 
-        return await self._cluster_strategy(history, played_ids, limit, language)
+        return await self._cluster_strategy(
+            history, played_ids, played_artists, limit, language,
+        )
 
     async def get_tag_recommendations(
         self,
@@ -372,6 +386,7 @@ class RecommendationService:
         self,
         history: list,
         played_ids: set[str],
+        played_artists: set[str],
         limit: int,
         language: str | None = None,
     ) -> tuple[RecommendationStrategy, list[RecommendedTrack]]:
@@ -388,9 +403,18 @@ class RecommendationService:
         if not clusters:
             return await self._popular_strategy(played_ids, limit, language)
 
+        logger.info(
+            "auto_clusters",
+            n_clusters=len(clusters),
+            cluster_sizes=[len(c["track_ids"]) for c in clusters],
+            cluster_weights=[c["weight"] for c in clusters],
+        )
+
         # 3. Distribute slots: (limit - 1) for clusters, 1 for exploration.
         cluster_slots = limit - 1 if limit > 1 else limit
         slot_counts = distribute_slots(clusters, cluster_slots)
+
+        logger.info("slot_distribution", slot_counts=slot_counts)
 
         # 4. KNN per cluster centroid → candidates with popularity re-ranking.
         all_candidates: list[RecommendedTrack] = []
@@ -399,13 +423,20 @@ class RecommendationService:
         if language:
             knn_filters["language"] = language
 
-        for cluster, n_slots in zip(clusters, slot_counts):
+        for i, (cluster, n_slots) in enumerate(zip(clusters, slot_counts)):
             candidates = await self._fused_knn_search(
                 cluster["centroid_audio"],
                 cluster["centroid_lyrics"],
                 played_ids,
                 n_slots * 4,  # oversample for re-ranking
                 knn_filters,
+            )
+            logger.info(
+                "cluster_knn_result",
+                cluster_idx=i,
+                n_slots=n_slots,
+                n_candidates=len(candidates),
+                top3=[(c.track.artist, c.track.title, round(c.similarity_score, 3)) for c in candidates[:3]],
             )
             candidates = popularity_rerank(candidates)
             all_candidates.extend(candidates[:n_slots * 2])
@@ -429,7 +460,24 @@ class RecommendationService:
                 if vec:
                     audio_vecs[exploration.track.id] = vec
 
-        # 6. MMR selection across all candidates.
+        # 6. Filter out already-played artists.
+        if played_artists:
+            all_candidates = [
+                c for c in all_candidates
+                if c.track.artist not in played_artists
+            ]
+
+        # 7. Deduplicate by artist — keep only the best-scoring track per artist.
+        seen_artists: set[str] = set()
+        deduped: list[RecommendedTrack] = []
+        all_candidates.sort(key=lambda c: c.similarity_score, reverse=True)
+        for c in all_candidates:
+            if c.track.artist not in seen_artists:
+                seen_artists.add(c.track.artist)
+                deduped.append(c)
+        all_candidates = deduped
+
+        # 8. MMR selection across all candidates.
         final = mmr_select(all_candidates, limit, audio_vecs)
 
         return RecommendationStrategy.CLUSTER, final
@@ -587,21 +635,17 @@ class RecommendationService:
         if audio_scores and lyrics_scores:
             fused: list[tuple[str, float]] = []
             for pid in all_ids:
-                has_audio = pid in audio_scores
-                has_lyrics = pid in lyrics_scores
                 a = audio_scores.get(pid, 0.0)
                 l = lyrics_scores.get(pid, 0.0)
-                w = (
-                    (_AUDIO_WEIGHT if has_audio else 0.0)
-                    + (_LYRICS_WEIGHT if has_lyrics else 0.0)
-                )
+                # No normalization — missing collection = 0, not "ignored".
+                # This ensures tracks must score well in BOTH collections.
                 fused.append(
-                    (pid, (_AUDIO_WEIGHT * a + _LYRICS_WEIGHT * l) / w if w > 0 else 0.0)
+                    (pid, _AUDIO_WEIGHT * a + _LYRICS_WEIGHT * l)
                 )
         elif audio_scores:
-            fused = [(pid, score) for pid, score in audio_scores.items()]
+            fused = [(pid, score * _AUDIO_WEIGHT) for pid, score in audio_scores.items()]
         else:
-            fused = [(pid, score) for pid, score in lyrics_scores.items()]
+            fused = [(pid, score * _LYRICS_WEIGHT) for pid, score in lyrics_scores.items()]
 
         fused.sort(key=lambda x: x[1], reverse=True)
         top = fused[:limit]

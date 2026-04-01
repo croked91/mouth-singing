@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Typography, ButtonBase } from '@mui/material';
+import { Box, Typography } from '@mui/material';
 import MusicNoteIcon from '@mui/icons-material/MusicNote';
 import type { RecommendedTrackItem } from '../types';
 
@@ -22,6 +22,7 @@ export const TrackCard: React.FC<TrackCardProps> = ({
 
   return (
     <Box
+      onClick={handleSelect}
       sx={{
         height: 72,
         width: '100%',
@@ -32,6 +33,7 @@ export const TrackCard: React.FC<TrackCardProps> = ({
         background: 'rgba(255,255,255,0.06)',
         border: '1px solid rgba(255,255,255,0.10)',
         borderRadius: '14px',
+        cursor: isAdding ? 'not-allowed' : 'pointer',
         transition: 'border-color 0.2s ease, background 0.2s ease',
         '&:hover': {
           borderColor: 'rgba(167,139,250,0.5)',
@@ -39,21 +41,36 @@ export const TrackCard: React.FC<TrackCardProps> = ({
         },
       }}
     >
-      {/* Album art placeholder */}
-      <Box
-        sx={{
-          width: 44,
-          height: 44,
-          borderRadius: '10px',
-          background: 'linear-gradient(135deg, rgba(124,58,237,0.5), rgba(37,99,235,0.5))',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          flexShrink: 0,
-        }}
-      >
-        <MusicNoteIcon sx={{ color: 'rgba(255,255,255,0.7)', fontSize: 20 }} />
-      </Box>
+      {/* Artist image or gradient placeholder */}
+      {track.artist_image_url ? (
+        <Box
+          component="img"
+          src={track.artist_image_url}
+          alt={track.artist}
+          sx={{
+            width: 44,
+            height: 44,
+            borderRadius: '10px',
+            objectFit: 'cover',
+            flexShrink: 0,
+          }}
+        />
+      ) : (
+        <Box
+          sx={{
+            width: 44,
+            height: 44,
+            borderRadius: '10px',
+            background: 'linear-gradient(135deg, rgba(124,58,237,0.5), rgba(37,99,235,0.5))',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexShrink: 0,
+          }}
+        >
+          <MusicNoteIcon sx={{ color: 'rgba(255,255,255,0.7)', fontSize: 20 }} />
+        </Box>
+      )}
 
       {/* Track info */}
       <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -85,10 +102,8 @@ export const TrackCard: React.FC<TrackCardProps> = ({
         </Typography>
       </Box>
 
-      {/* Select button */}
-      <ButtonBase
-        onClick={handleSelect}
-        disabled={isAdding}
+      {/* Add indicator */}
+      <Typography
         sx={{
           px: 1.75,
           py: 0.625,
@@ -101,19 +116,11 @@ export const TrackCard: React.FC<TrackCardProps> = ({
           letterSpacing: '0.08em',
           textTransform: 'uppercase',
           flexShrink: 0,
-          transition: 'background 0.2s ease, border-color 0.2s ease',
-          '&:hover': {
-            background: 'rgba(124,58,237,0.6)',
-            borderColor: 'rgba(167,139,250,0.6)',
-          },
-          '&:disabled': {
-            opacity: 0.45,
-            cursor: 'not-allowed',
-          },
+          opacity: isAdding ? 0.45 : 1,
         }}
       >
-        ВЫБРАТЬ
-      </ButtonBase>
+        {isAdding ? '...' : '+'}
+      </Typography>
     </Box>
   );
 };

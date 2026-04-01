@@ -35,6 +35,30 @@ _DEFAULT_CHUNK_SIZE = 64 * 1024  # 64 KB per read
 
 
 # ---------------------------------------------------------------------------
+# Artist image endpoint
+# ---------------------------------------------------------------------------
+
+
+@router.get("/media/artists/{filename}")
+async def serve_artist_image(filename: str) -> FileResponse:
+    """Serve an artist image from the artists media directory."""
+    artists_dir = pathlib.Path(settings.media_root) / "artists"
+    file_path = (artists_dir / filename).resolve()
+
+    if not file_path.is_relative_to(artists_dir.resolve()):
+        raise HTTPException(status_code=404, detail="Not found")
+
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Not found")
+
+    return FileResponse(
+        path=str(file_path),
+        media_type="image/jpeg",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
+# ---------------------------------------------------------------------------
 # Range parsing helper
 # ---------------------------------------------------------------------------
 

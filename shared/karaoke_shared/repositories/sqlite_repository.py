@@ -222,6 +222,15 @@ class SQLiteRepository:
 
         Returns an empty list if the FTS5 query syntax is invalid.
         """
+        # Sanitise the query for FTS5: wrap each token in double-quotes
+        # so that special characters (dots, dashes, operators) are treated
+        # as literals.  "50 Cent — P.I.M.P" → '"50" "Cent" "P.I.M.P"'
+        import re
+        tokens = re.findall(r'[\w.]+', query, re.UNICODE)
+        if not tokens:
+            return []
+        fts_query = " ".join(f'"{t}"' for t in tokens)
+
         try:
             cursor = await self.db.execute(
                 """
@@ -233,7 +242,7 @@ class SQLiteRepository:
                 ORDER BY rank
                 LIMIT ? OFFSET ?
                 """,
-                (query, TrackStatus.READY, limit, offset),
+                (fts_query, TrackStatus.READY, limit, offset),
             )
         except Exception:
             # FTS5 MATCH has its own query syntax; malformed user input

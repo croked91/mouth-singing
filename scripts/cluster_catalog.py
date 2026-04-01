@@ -25,18 +25,18 @@ from datetime import datetime, timezone
 
 import numpy as np
 from qdrant_client import QdrantClient
-from sklearn.cluster import KMeans
-from sklearn.metrics import silhouette_score
+import math
+
+from sklearn.cluster import MiniBatchKMeans
 
 _AUDIO_COLLECTION = "audio_features"
 _LYRICS_COLLECTION = "lyrics_embeddings"
 _AUDIO_DIM = 45
 _LYRICS_DIM = 384
 
-# Scale factor for lyrics in the fused vector.
-# sqrt(0.3 / 0.7) ≈ 0.655 — ensures cosine distance in the fused space
-# approximates the 70/30 weighted fusion.
-_LYRICS_SCALE = 0.655
+# Scale factor for audio in the fused vector.
+# sqrt(0.3 / 0.7) ≈ 0.655 — audio gets 30%, lyrics 70%.
+_AUDIO_SCALE = math.sqrt(0.3 / 0.7)  # ~0.655
 
 
 def _scroll_all(client: QdrantClient, collection: str) -> dict[str, list[float]]:
@@ -64,7 +64,7 @@ def main() -> None:
     parser.add_argument("--db", required=True, help="Path to SQLite database")
     parser.add_argument("--qdrant-host", default="localhost")
     parser.add_argument("--qdrant-port", type=int, default=6333)
-    parser.add_argument("--n-clusters", type=int, default=15, help="Number of clusters")
+    parser.add_argument("--n-clusters", type=int, default=25, help="Number of clusters")
     parser.add_argument("--dry-run", action="store_true", help="Print stats only")
     args = parser.parse_args()
 
@@ -91,17 +91,17 @@ def main() -> None:
 
     # --- Step 2: Build fused matrix ---
     print("Building fused vectors...")
-    audio_matrix = np.array([audio_vecs[tid] for tid in common_ids], dtype=np.float64)
-    lyrics_matrix = np.array([lyrics_vecs[tid] for tid in common_ids], dtype=np.float64)
+    audio_matrix = np.array([audio_vecs[tid] for tid in common_ids], dtype=np.float32)
+    lyrics_matrix = np.array([lyrics_vecs[tid] for tid in common_ids], dtype=np.float32)
 
     # L2-normalize each before concatenation
     audio_norms = np.linalg.norm(audio_matrix, axis=1, keepdims=True)
     audio_norms = np.where(audio_norms < 1e-8, 1.0, audio_norms)
-    audio_normed = audio_matrix / audio_norms
+    audio_normed = (audio_matrix / audio_norms) * _AUDIO_SCALE
 
     lyrics_norms = np.linalg.norm(lyrics_matrix, axis=1, keepdims=True)
     lyrics_norms = np.where(lyrics_norms < 1e-8, 1.0, lyrics_norms)
-    lyrics_normed = (lyrics_matrix / lyrics_norms) * _LYRICS_SCALE
+    lyrics_normed = lyrics_matrix / lyrics_norms
 
     fused = np.hstack([audio_normed, lyrics_normed])  # (N, 45+384)
     print(f"  Fused matrix shape: {fused.shape}")
@@ -109,16 +109,13 @@ def main() -> None:
     # --- Step 3: K-Means ---
     k = min(args.n_clusters, len(common_ids))
     print(f"\nRunning K-Means with k={k}...")
-    kmeans = KMeans(n_clusters=k, n_init=10, max_iter=300, random_state=42)
+    kmeans = MiniBatchKMeans(n_clusters=k, n_init=3, max_iter=300, batch_size=1000, random_state=42)
     labels = kmeans.fit_predict(fused)
-
-    sil = silhouette_score(fused, labels, sample_size=min(5000, len(common_ids)))
-    print(f"  Silhouette score: {sil:.3f}")
 
     # --- Step 4: Extract centroids ---
     centroids_fused = kmeans.cluster_centers_  # (k, 45+384)
-    centroids_audio = centroids_fused[:, :_AUDIO_DIM]
-    centroids_lyrics = centroids_fused[:, _AUDIO_DIM:] / _LYRICS_SCALE  # undo scale
+    centroids_audio = centroids_fused[:, :_AUDIO_DIM] / _AUDIO_SCALE  # undo scale
+    centroids_lyrics = centroids_fused[:, _AUDIO_DIM:]
 
     # L2-normalize centroids
     for i in range(k):

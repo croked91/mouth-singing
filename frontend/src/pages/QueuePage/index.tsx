@@ -124,7 +124,7 @@ export const QueuePage: React.FC = () => {
 
       try {
         const language = russianOnly ? 'ru' : undefined;
-        const data = await api.getRecommendations(sessionId, 5, tagId, language);
+        const data = await api.getRecommendations(sessionId, 10, tagId, language);
         setRecommendations(data);
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Ошибка загрузки рекомендаций';
