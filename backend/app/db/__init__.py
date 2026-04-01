@@ -71,6 +71,7 @@ async def _migrate(conn: aiosqlite.Connection) -> None:
     migrations = [
         "ALTER TABLE job_queue ADD COLUMN current_step TEXT",
         "ALTER TABLE job_queue ADD COLUMN progress INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE tracks ADD COLUMN rec_cluster_id INTEGER",
     ]
     for sql in migrations:
         try:

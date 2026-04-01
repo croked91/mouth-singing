@@ -81,13 +81,13 @@ class SQLiteRepository:
                 clip_path, lyrics_text, syllable_timings, language, source,
                 status, error_message, play_count, qdrant_synced,
                 popularity_category, chart_count, chart_last_seen,
-                catalog_cluster_id, created_at, updated_at
+                catalog_cluster_id, rec_cluster_id, created_at, updated_at
             ) VALUES (
                 :id, :artist, :title, :duration_sec, :mp3_path, :instrumental_path,
                 :clip_path, :lyrics_text, :syllable_timings, :language, :source,
                 :status, :error_message, :play_count, :qdrant_synced,
                 :popularity_category, :chart_count, :chart_last_seen,
-                :catalog_cluster_id, :created_at, :updated_at
+                :catalog_cluster_id, :rec_cluster_id, :created_at, :updated_at
             )
             """,
             {
@@ -110,6 +110,7 @@ class SQLiteRepository:
                 "chart_count": data.chart_count,
                 "chart_last_seen": data.chart_last_seen,
                 "catalog_cluster_id": data.catalog_cluster_id,
+                "rec_cluster_id": data.rec_cluster_id,
                 "created_at": data.created_at,
                 "updated_at": data.updated_at,
             },
@@ -157,6 +158,7 @@ class SQLiteRepository:
             "chart_count",
             "chart_last_seen",
             "catalog_cluster_id",
+            "rec_cluster_id",
         ):
             value = getattr(data, field)
             if value is not None:
@@ -225,7 +227,7 @@ class SQLiteRepository:
         language: str | None = None,
     ) -> list[Track]:
         """Return tracks from a catalog cluster, well-known first, then random."""
-        conditions = ["status = ?", "catalog_cluster_id = ?"]
+        conditions = ["status = ?", "rec_cluster_id = ?"]
         params: list = [TrackStatus.READY, cluster_id]
 
         if exclude_ids:
@@ -406,6 +408,7 @@ class SQLiteRepository:
             chart_count=data.get("chart_count", 0),
             chart_last_seen=data.get("chart_last_seen"),
             catalog_cluster_id=data.get("catalog_cluster_id"),
+            rec_cluster_id=data.get("rec_cluster_id"),
             created_at=data["created_at"],
             updated_at=data["updated_at"],
         )

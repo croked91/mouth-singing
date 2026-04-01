@@ -388,11 +388,11 @@ class RecommendationService:
     ) -> tuple[RecommendationStrategy, list[RecommendedTrack]]:
         """Catalog-cluster-based recommendations from session play history.
 
-        Uses the pre-computed catalog_cluster_id on each track to find
+        Uses the pre-computed rec_cluster_id on each track to find
         similar songs from the same cluster(s).  Much more reliable than
         KNN on audio/lyrics vectors.
         """
-        # 1. Get catalog_cluster_id for each played track.
+        # 1. Get rec_cluster_id for each played track.
         unique_ids = list({entry.track_id for entry in history})
         tracks_map = await self.sqlite_repo.get_tracks_by_ids(unique_ids)
 
@@ -400,8 +400,8 @@ class RecommendationService:
         cluster_counts: Counter[int] = Counter()
         for tid in unique_ids:
             track = tracks_map.get(tid)
-            if track and track.catalog_cluster_id is not None:
-                cluster_counts[track.catalog_cluster_id] += 1
+            if track and track.rec_cluster_id is not None:
+                cluster_counts[track.rec_cluster_id] += 1
 
         if not cluster_counts:
             return await self._popular_strategy(played_ids, limit, language)
@@ -423,17 +423,7 @@ class RecommendationService:
 
         logger.info("slot_distribution", slot_counts=slot_counts)
 
-        # 3. Build audio centroid per cluster from played tracks.
-        cluster_audio: dict[int, list[list[float]]] = {}
-        for tid in unique_ids:
-            track = tracks_map.get(tid)
-            if track and track.catalog_cluster_id is not None:
-                cid = track.catalog_cluster_id
-                vec = await self._get_track_vector(tid)
-                if vec:
-                    cluster_audio.setdefault(cid, []).append(vec)
-
-        # 4. Fetch tracks from each cluster, rank by audio similarity.
+        # 3. Fetch tracks from each cluster, well-known first.
         all_candidates: list[RecommendedTrack] = []
         exclude_all = played_ids | (self._extra_exclude or set())
         global_seen_artists: set[str] = set(played_artists)
@@ -441,34 +431,15 @@ class RecommendationService:
         for i, (cid, n_slots) in enumerate(zip(cluster_ids, slot_counts)):
             tracks = await self.sqlite_repo.get_tracks_by_cluster(
                 cluster_id=cid,
-                limit=n_slots * 8,  # oversample for ranking + dedup
+                limit=n_slots * 5,  # oversample for artist dedup
                 exclude_ids=exclude_all,
                 exclude_artists=global_seen_artists,
                 language=language,
             )
 
-            # Rank by audio cosine similarity to cluster centroid.
-            centroid_vecs = cluster_audio.get(cid)
-            if centroid_vecs:
-                centroid = np.mean(centroid_vecs, axis=0)
-                centroid_norm = float(np.linalg.norm(centroid)) + 1e-9
-
-                scored: list[tuple[Track, float]] = []
-                for t in tracks:
-                    tvec = await self._get_track_vector(t.id)
-                    if tvec:
-                        sim = float(np.dot(centroid, tvec)) / (centroid_norm * (float(np.linalg.norm(tvec)) + 1e-9))
-                        scored.append((t, sim))
-                    else:
-                        scored.append((t, 0.0))
-                scored.sort(key=lambda x: x[1], reverse=True)
-                ranked_tracks = [t for t, _ in scored]
-            else:
-                ranked_tracks = tracks
-
-            # Take up to n_slots unique artists from ranked list.
+            # Take up to n_slots unique artists.
             cluster_picks: list[RecommendedTrack] = []
-            for t in ranked_tracks:
+            for t in tracks:
                 if t.artist not in global_seen_artists:
                     global_seen_artists.add(t.artist)
                     cluster_picks.append(RecommendedTrack(track=t, similarity_score=1.0))
