@@ -216,6 +216,55 @@ class SQLiteRepository:
         rows = await cursor.fetchall()
         return [self._track_from_row(row) for row in rows]
 
+    async def get_tracks_by_cluster(
+        self,
+        cluster_id: int,
+        limit: int = 20,
+        exclude_ids: set[str] | None = None,
+        exclude_artists: set[str] | None = None,
+        language: str | None = None,
+    ) -> list[Track]:
+        """Return tracks from a catalog cluster, well-known first, then random."""
+        conditions = ["status = ?", "catalog_cluster_id = ?"]
+        params: list = [TrackStatus.READY, cluster_id]
+
+        if exclude_ids:
+            placeholders = ",".join("?" * len(exclude_ids))
+            conditions.append(f"id NOT IN ({placeholders})")
+            params.extend(exclude_ids)
+
+        if exclude_artists:
+            placeholders = ",".join("?" * len(exclude_artists))
+            conditions.append(f"artist NOT IN ({placeholders})")
+            params.extend(exclude_artists)
+
+        if language:
+            conditions.append("language = ?")
+            params.append(language)
+
+        where = " AND ".join(conditions)
+        params.append(limit)
+
+        cursor = await self.db.execute(
+            f"""
+            SELECT * FROM tracks
+            WHERE {where}
+            ORDER BY
+                CASE popularity_category
+                    WHEN 'eternal_hit' THEN 0
+                    WHEN 'current_hit' THEN 1
+                    WHEN 'artist_best' THEN 2
+                    WHEN 'former_hit' THEN 3
+                    ELSE 4
+                END,
+                RANDOM()
+            LIMIT ?
+            """,
+            params,
+        )
+        rows = await cursor.fetchall()
+        return [self._track_from_row(row) for row in rows]
+
     async def get_tracks_by_ids(self, track_ids: list[str]) -> dict[str, Track]:
         """Return a dict of ``{track_id: Track}`` for the given IDs.
 

@@ -301,8 +301,11 @@ class RecommendationService:
         history = await self.sqlite_repo.get_history_by_session(session_id)
         played_ids = {entry.track_id for entry in history}
 
+        # Store extra excludes for _cluster_strategy to use.
+        self._extra_exclude = extra_exclude_ids or set()
+
         # Merge with extra excludes (previously shown tracks).
-        exclude_ids = played_ids | (extra_exclude_ids or set())
+        exclude_ids = played_ids | self._extra_exclude
 
         # Collect played artists to avoid recommending the same artist again.
         played_artists: set[str] = set()
@@ -383,103 +386,75 @@ class RecommendationService:
         limit: int,
         language: str | None = None,
     ) -> tuple[RecommendationStrategy, list[RecommendedTrack]]:
-        """Cluster-based recommendations from session play history."""
-        # 1. Fetch vectors for played tracks (deduplicate by track_id).
-        seen_track_ids: set[str] = set()
-        unique_track_ids: list[str] = []
-        for entry in history:
-            if entry.track_id not in seen_track_ids:
-                seen_track_ids.add(entry.track_id)
-                unique_track_ids.append(entry.track_id)
-        vectors = await self._fetch_track_vectors(unique_track_ids)
+        """Catalog-cluster-based recommendations from session play history.
 
-        if not vectors:
+        Uses the pre-computed catalog_cluster_id on each track to find
+        similar songs from the same cluster(s).  Much more reliable than
+        KNN on audio/lyrics vectors.
+        """
+        # 1. Get catalog_cluster_id for each played track.
+        unique_ids = list({entry.track_id for entry in history})
+        tracks_map = await self.sqlite_repo.get_tracks_by_ids(unique_ids)
+
+        from collections import Counter
+        cluster_counts: Counter[int] = Counter()
+        for tid in unique_ids:
+            track = tracks_map.get(tid)
+            if track and track.catalog_cluster_id is not None:
+                cluster_counts[track.catalog_cluster_id] += 1
+
+        if not cluster_counts:
             return await self._popular_strategy(played_ids, limit, language)
 
-        # 2. Auto-cluster session.
-        clusters = auto_cluster_session(vectors)
-        if not clusters:
-            return await self._popular_strategy(played_ids, limit, language)
+        cluster_ids = list(cluster_counts.keys())
 
         logger.info(
-            "auto_clusters",
-            n_clusters=len(clusters),
-            cluster_sizes=[len(c["track_ids"]) for c in clusters],
-            cluster_weights=[c["weight"] for c in clusters],
+            "catalog_clusters",
+            n_clusters=len(cluster_ids),
+            cluster_ids=cluster_ids,
         )
 
-        # 3. Distribute slots: (limit - 1) for clusters, 1 for exploration.
-        cluster_slots = limit - 1 if limit > 1 else limit
-        slot_counts = distribute_slots(clusters, cluster_slots)
+        # 2. Distribute all slots equally across clusters.
+        cluster_slots = limit
+        slot_counts = distribute_slots(
+            [{"track_ids": ["x"] * cluster_counts[cid]} for cid in cluster_ids],
+            cluster_slots,
+        )
 
         logger.info("slot_distribution", slot_counts=slot_counts)
 
-        # 4. KNN per cluster centroid → candidates with popularity re-ranking.
+        # 3. Fetch tracks from each cluster, dedup per-cluster.
         all_candidates: list[RecommendedTrack] = []
-        audio_vecs: dict[str, list[float]] = {}
-        knn_filters = {"status": "ready"}
-        if language:
-            knn_filters["language"] = language
+        exclude_all = played_ids | (self._extra_exclude or set())
+        global_seen_artists: set[str] = set(played_artists)
 
-        for i, (cluster, n_slots) in enumerate(zip(clusters, slot_counts)):
-            candidates = await self._fused_knn_search(
-                cluster["centroid_audio"],
-                cluster["centroid_lyrics"],
-                played_ids,
-                n_slots * 10,  # oversample to compensate for category filtering
-                knn_filters,
-                allowed_categories=set(WELL_KNOWN_CATEGORIES),
+        for i, (cid, n_slots) in enumerate(zip(cluster_ids, slot_counts)):
+            tracks = await self.sqlite_repo.get_tracks_by_cluster(
+                cluster_id=cid,
+                limit=n_slots * 5,  # oversample for artist dedup
+                exclude_ids=exclude_all,
+                exclude_artists=global_seen_artists,
+                language=language,
             )
+            # Take up to n_slots unique artists from this cluster.
+            cluster_picks: list[RecommendedTrack] = []
+            for t in tracks:
+                if t.artist not in global_seen_artists:
+                    global_seen_artists.add(t.artist)
+                    cluster_picks.append(RecommendedTrack(track=t, similarity_score=1.0))
+                    if len(cluster_picks) >= n_slots:
+                        break
+
             logger.info(
-                "cluster_knn_result",
-                cluster_idx=i,
+                "cluster_result",
+                cluster_id=cid,
                 n_slots=n_slots,
-                n_candidates=len(candidates),
-                top3=[(c.track.artist, c.track.title, round(c.similarity_score, 3)) for c in candidates[:3]],
+                n_picked=len(cluster_picks),
+                top3=[(t.track.artist, t.track.title) for t in cluster_picks[:3]],
             )
-            candidates = popularity_rerank(candidates)
-            all_candidates.extend(candidates[:n_slots * 2])
+            all_candidates.extend(cluster_picks)
 
-            # Batch-fetch audio vectors for MMR.
-            cand_ids = [c.track.id for c in candidates if c.track.id not in audio_vecs]
-            vecs = await asyncio.gather(*(self._get_track_vector(tid) for tid in cand_ids))
-            for tid, vec in zip(cand_ids, vecs):
-                if vec:
-                    audio_vecs[tid] = vec
-
-        # 5. Exploration: popular track far from all cluster centroids.
-        if limit > 1:
-            exploration = await self._exploration_track(
-                clusters, played_ids | {c.track.id for c in all_candidates},
-                language,
-            )
-            if exploration:
-                all_candidates.append(exploration)
-                vec = await self._get_track_vector(exploration.track.id)
-                if vec:
-                    audio_vecs[exploration.track.id] = vec
-
-        # 6. Filter out already-played artists.
-        if played_artists:
-            all_candidates = [
-                c for c in all_candidates
-                if c.track.artist not in played_artists
-            ]
-
-        # 7. Deduplicate by artist — keep only the best-scoring track per artist.
-        seen_artists: set[str] = set()
-        deduped: list[RecommendedTrack] = []
-        all_candidates.sort(key=lambda c: c.similarity_score, reverse=True)
-        for c in all_candidates:
-            if c.track.artist not in seen_artists:
-                seen_artists.add(c.track.artist)
-                deduped.append(c)
-        all_candidates = deduped
-
-        # 8. MMR selection across all candidates.
-        final = mmr_select(all_candidates, limit, audio_vecs)
-
-        return RecommendationStrategy.CLUSTER, final
+        return RecommendationStrategy.CLUSTER, all_candidates[:limit]
 
     async def _exploration_track(
         self,
