@@ -1,0 +1,18 @@
+# Local data overrides — bind mounts to backup volumes
+# Usage: docker compose -f docker-compose.yml -f docker-compose.gpu.yml -f docker-compose.local.yml up -d
+
+services:
+  qdrant:
+    volumes:
+      - /home/ubuntu/development/projects/mouth-singing-backup/volumes/qdrant_data:/qdrant/storage
+
+  backend:
+    volumes:
+      - /home/ubuntu/development/projects/mouth-singing-backup/volumes/sqlite_data:/data/sqlite
+      - /home/ubuntu/development/projects/mouth-singing-backup/volumes/media_data:/data/media
+
+  worker:
+    volumes:
+      - /home/ubuntu/development/projects/mouth-singing-backup/volumes/sqlite_data:/data/sqlite
+      - /home/ubuntu/development/projects/mouth-singing-backup/volumes/media_data:/data/media
+      - /home/ubuntu/development/projects/mouth-singing-backup/volumes/models_data:/data/models

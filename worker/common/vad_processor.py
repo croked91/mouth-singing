@@ -68,7 +68,8 @@ class VADProcessor:
             logger.warning("vad_result_too_short", duration_sec=len(cleaned) / 16000)
             return vocals_path
 
-        out_path = str(pathlib.Path(vocals_path).parent / "cleaned_vocals.wav")
+        track_id = pathlib.Path(vocals_path).stem.split("_")[0]
+        out_path = str(pathlib.Path(vocals_path).parent / f"cleaned_vocals_{track_id}.wav")
         sf.write(out_path, cleaned, 16000, subtype="PCM_16")
 
         logger.info(

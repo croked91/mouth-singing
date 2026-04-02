@@ -283,7 +283,8 @@ class ApiPipeline(BasePipeline):
             # Clean up vocal files.
             if vocals_path:
                 Path(vocals_path).unlink(missing_ok=True)
-                cleaned = Path(vocals_path).parent / "cleaned_vocals.wav"
+                track_id = Path(vocals_path).stem.split("_")[0]
+                cleaned = Path(vocals_path).parent / f"cleaned_vocals_{track_id}.wav"
                 cleaned.unlink(missing_ok=True)
 
     # ------------------------------------------------------------------

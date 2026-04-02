@@ -5,6 +5,7 @@ BASE   := docker-compose.yml
 GPU    := docker-compose.gpu.yml
 API    := docker-compose.api.yml
 PROD   := docker-compose.prod.yml
+LOCAL  := docker-compose.local.yml
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -49,6 +50,16 @@ up-api-prod: ## Start API mode with production bind mounts
 	docker compose -f $(BASE) -f $(API) -f $(PROD) up -d --build
 
 # ---------------------------------------------------------------------------
+# Local data (bind mounts to backup volumes)
+# ---------------------------------------------------------------------------
+
+up-gpu-local: .env ## Start GPU mode with local backup data
+	docker compose -f $(BASE) -f $(GPU) -f $(LOCAL) up -d --build
+
+up-api-local: .env ## Start API mode with local backup data
+	docker compose -f $(BASE) -f $(API) -f $(LOCAL) up -d --build
+
+# ---------------------------------------------------------------------------
 # Build only (no start)
 # ---------------------------------------------------------------------------
 
@@ -63,6 +74,7 @@ build-api: ## Build all images for API mode
 # ---------------------------------------------------------------------------
 
 down: ## Stop and remove all containers
+	docker compose -f $(BASE) -f $(GPU) -f $(LOCAL) down 2>/dev/null; \
 	docker compose -f $(BASE) -f $(GPU) down 2>/dev/null; \
 	docker compose -f $(BASE) -f $(API) down 2>/dev/null; true
 

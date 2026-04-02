@@ -216,7 +216,8 @@ class GpuPipeline(BasePipeline):
 
             # Clean up vocal files after line break detection.
             Path(vocals_path).unlink(missing_ok=True)
-            cleaned_path = Path(vocals_path).parent / "cleaned_vocals.wav"
+            track_id = Path(vocals_path).stem.split("_")[0]
+            cleaned_path = Path(vocals_path).parent / f"cleaned_vocals_{track_id}.wav"
             cleaned_path.unlink(missing_ok=True)
 
             await self.repo.update_track(
