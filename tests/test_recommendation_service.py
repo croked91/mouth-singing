@@ -109,6 +109,7 @@ from app.services.recommendation_service import (  # noqa: E402
     RecommendedTrack,
     auto_cluster_session,
     distribute_slots,
+    hit_priority_sort,
     mmr_select,
     popularity_rerank,
 )
@@ -335,15 +336,30 @@ class TestGetRecommendations:
         assert strategy is RecommendationStrategy.POPULAR
 
     async def test_with_history_returns_cluster(self):
-        """With play history and available vectors, returns CLUSTER strategy."""
+        """With play history, rec_cluster_id, and vectors → CLUSTER strategy."""
         tid = _uid()
+        cand_id = _uid()
         history = [_make_history_entry(tid)]
+
+        played_track = _make_track(track_id=tid)
+        played_track.rec_cluster_id = 1
+
+        candidate_track = _make_track(track_id=cand_id)
+        candidate_track.artist = "Other Artist"
+
         sqlite_repo = _make_sqlite_repo(session_history=history, popular=[_make_track()])
-        sqlite_repo.get_tracks_by_ids.return_value = {}
+        # First call: played tracks, second call: KNN candidates.
+        sqlite_repo.get_tracks_by_ids.side_effect = [
+            {tid: played_track},
+            {tid: played_track},  # for played_artists
+            {cand_id: candidate_track},
+        ]
 
         qdrant_repo = _make_qdrant_repo(
             audio_retrieve=_audio_vec(),
             lyrics_retrieve=_lyrics_vec(),
+            audio_search=[(cand_id, 0.9, {"status": "ready"})],
+            lyrics_search=[(cand_id, 0.8, {"status": "ready"})],
         )
 
         service = RecommendationService(sqlite_repo, qdrant_repo)
@@ -355,7 +371,12 @@ class TestGetRecommendations:
         tid = _uid()
         history = [_make_history_entry(tid)]
         popular = _make_track()
+
+        played_track = _make_track(track_id=tid)
+        played_track.rec_cluster_id = 1
+
         sqlite_repo = _make_sqlite_repo(session_history=history, popular=[popular])
+        sqlite_repo.get_tracks_by_ids.return_value = {tid: played_track}
 
         qdrant_repo = _make_qdrant_repo(audio_retrieve=None, lyrics_retrieve=None)
 
@@ -458,6 +479,68 @@ class TestRecommendationsEndpoint:
         f = rec_fixtures
         r = await client.get("/api/v1/recommendations", params={"session_id": f["session_id"], "tag_id": 999})
         assert r.status_code == 200  # returns empty for non-existent tag
+
+
+# ===========================================================================
+# TestHitPrioritySort
+# ===========================================================================
+
+
+class TestHitPrioritySort:
+
+    def test_hit_above_threshold_first(self):
+        """Eternal hit with score >= 0.6 beats regular with higher score."""
+        regular = RecommendedTrack(_make_track(popularity_category="regular"), 0.90)
+        eternal = RecommendedTrack(_make_track(popularity_category="eternal_hit"), 0.70)
+
+        result = hit_priority_sort([regular, eternal])
+        assert result[0].track.popularity_category == "eternal_hit"
+
+    def test_hit_below_threshold_not_prioritized(self):
+        """Eternal hit with score < 0.6 does NOT beat regular with higher score."""
+        regular = RecommendedTrack(_make_track(popularity_category="regular"), 0.90)
+        eternal = RecommendedTrack(_make_track(popularity_category="eternal_hit"), 0.50)
+
+        result = hit_priority_sort([regular, eternal])
+        assert result[0].track.popularity_category == "regular"
+        assert result[0].similarity_score == 0.90
+
+    def test_multiple_hits_sorted_by_score(self):
+        """Multiple priority hits are sorted by score descending."""
+        hit_a = RecommendedTrack(_make_track(popularity_category="eternal_hit"), 0.80)
+        hit_b = RecommendedTrack(_make_track(popularity_category="current_hit"), 0.90)
+
+        result = hit_priority_sort([hit_a, hit_b])
+        assert result[0].similarity_score == 0.90
+        assert result[1].similarity_score == 0.80
+
+    def test_no_hits_sorted_by_score(self):
+        """All regular tracks sorted by score."""
+        t1 = RecommendedTrack(_make_track(popularity_category="regular"), 0.80)
+        t2 = RecommendedTrack(_make_track(popularity_category="regular"), 0.90)
+
+        result = hit_priority_sort([t1, t2])
+        assert result[0].similarity_score == 0.90
+
+    def test_empty_input(self):
+        assert hit_priority_sort([]) == []
+
+    def test_artist_best_counts_as_hit(self):
+        """artist_best is a hit category and gets priority at >= 0.6."""
+        regular = RecommendedTrack(_make_track(popularity_category="regular"), 0.85)
+        best = RecommendedTrack(_make_track(popularity_category="artist_best"), 0.65)
+
+        result = hit_priority_sort([regular, best])
+        assert result[0].track.popularity_category == "artist_best"
+
+    def test_former_hit_is_not_priority(self):
+        """former_hit is NOT in _HIT_CATEGORIES — no priority regardless of score."""
+        regular = RecommendedTrack(_make_track(popularity_category="regular"), 0.70)
+        former = RecommendedTrack(_make_track(popularity_category="former_hit"), 0.80)
+
+        result = hit_priority_sort([regular, former])
+        # former_hit not in priority, so both ranked by score — former first
+        assert result[0].similarity_score == 0.80
 
 
 # ===========================================================================

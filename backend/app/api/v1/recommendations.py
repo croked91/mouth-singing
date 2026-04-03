@@ -85,6 +85,7 @@ async def get_recommendations(
             session_id=session_id,
             limit=limit * 3,  # oversample for artist dedup
             language=language,
+            tag_cluster_id=cluster.id,
         )
         # Deduplicate by artist.
         seen_artists: set[str] = set()

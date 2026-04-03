@@ -128,6 +128,7 @@ class BootstrapPipeline(BasePipeline):
         feature_extractor: object | None = None,
         lyric_embedder: object | None = None,
         qdrant_repo: QDrantRepository | None = None,
+        rec_cluster_assigner: object | None = None,
     ) -> None:
         self.job_service = job_service
         self.uvr = uvr
@@ -136,6 +137,7 @@ class BootstrapPipeline(BasePipeline):
         self.feature_extractor = feature_extractor
         self.lyric_embedder = lyric_embedder
         self.qdrant_repo = qdrant_repo
+        self.rec_cluster_assigner = rec_cluster_assigner
 
     def cleanup(self) -> None:
         """Release GPU resources."""
@@ -235,7 +237,13 @@ class BootstrapPipeline(BasePipeline):
                         error=str(exc),
                     )
 
-            # === STEP 5: QDrant Sync ===
+            # === STEP 5: Assign rec_cluster_id + QDrant Sync ===
+            rec_cluster_id = None
+            if self.rec_cluster_assigner and self.rec_cluster_assigner.available:
+                rec_cluster_id = await asyncio.to_thread(
+                    self.rec_cluster_assigner.assign, feature_vector, lyric_vector,
+                )
+
             if self.qdrant_repo is not None:
                 payload = {
                     "track_id": job.track_id,
@@ -243,6 +251,8 @@ class BootstrapPipeline(BasePipeline):
                     "title": track.title,
                     "status": "ready",
                 }
+                if rec_cluster_id is not None:
+                    payload["rec_cluster_id"] = rec_cluster_id
                 if feature_vector and any(v != 0.0 for v in feature_vector):
                     await asyncio.to_thread(
                         self.qdrant_repo.upsert,
@@ -266,7 +276,7 @@ class BootstrapPipeline(BasePipeline):
 
             await self.repo.update_track(
                 job.track_id,
-                TrackUpdate(status="ready", qdrant_synced=1, mp3_path=None),
+                TrackUpdate(status="ready", qdrant_synced=1, mp3_path=None, rec_cluster_id=rec_cluster_id),
             )
             await self.job_service.mark_completed(
                 job.id,

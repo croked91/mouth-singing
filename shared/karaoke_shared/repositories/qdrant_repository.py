@@ -179,6 +179,49 @@ class QDrantRepository:
             points_selector=PointIdsList(points=[point_id]),
         )
 
+    def set_payload(
+        self,
+        collection: str,
+        point_ids: list[str],
+        payload: dict,
+    ) -> None:
+        """Update payload fields on existing points without touching vectors.
+
+        Merges *payload* into the existing payload of each point.
+        Fields not mentioned in *payload* are left unchanged.
+
+        Args:
+            collection: Target collection name.
+            point_ids: UUIDs of points to update.
+            payload: Dict of fields to set/overwrite.
+        """
+        self.client.set_payload(
+            collection_name=collection,
+            payload=payload,
+            points=point_ids,
+        )
+
+    def batch_set_payload(
+        self,
+        collection: str,
+        point_ids: list[str],
+        payload: dict,
+    ) -> None:
+        """Set payload on many points in batches of 100.
+
+        Args:
+            collection: Target collection name.
+            point_ids: UUIDs of points to update.
+            payload: Dict of fields to set/overwrite on every point.
+        """
+        for i in range(0, len(point_ids), _BATCH_SIZE):
+            batch = point_ids[i : i + _BATCH_SIZE]
+            self.client.set_payload(
+                collection_name=collection,
+                payload=payload,
+                points=batch,
+            )
+
     def batch_upsert(
         self,
         collection: str,
