@@ -103,6 +103,30 @@ health: ## Check health of all services
 	@curl -sf -o /dev/null http://localhost:80/ && echo " OK" || echo " FAIL"
 
 # ---------------------------------------------------------------------------
+# Migrations
+# ---------------------------------------------------------------------------
+
+migrate-qdrant-clusters: ## Backfill rec_cluster_id into QDrant payloads (run BEFORE deploying new backend)
+	@echo "=== Migrating QDrant: adding rec_cluster_id to payloads ==="
+	docker exec karaoke_backend python -c "\
+	import sqlite3; \
+	from collections import defaultdict; \
+	from qdrant_client import QdrantClient; \
+	conn = sqlite3.connect('/data/sqlite/karaoke.db'); \
+	conn.row_factory = sqlite3.Row; \
+	rows = conn.execute(\"SELECT id, rec_cluster_id FROM tracks WHERE rec_cluster_id IS NOT NULL AND status = 'ready'\").fetchall(); \
+	conn.close(); \
+	by_cluster = defaultdict(list); \
+	[by_cluster[r['rec_cluster_id']].append(r['id']) for r in rows]; \
+	print(f'{len(rows)} tracks, {len(by_cluster)} clusters'); \
+	client = QdrantClient(host='qdrant', port=6333, timeout=300, check_compatibility=False); \
+	[client.set_payload(collection_name=coll, payload={'rec_cluster_id': cid}, points=tids[i:i+100]) for cid, tids in by_cluster.items() for coll in ['audio_features','lyrics_embeddings'] for i in range(0, len(tids), 100)]; \
+	[client.create_payload_index(collection_name=coll, field_name='rec_cluster_id', field_schema='integer') for coll in ['audio_features','lyrics_embeddings']]; \
+	print('Done.')"
+	@echo ""
+	@echo "Migration complete. Now rebuild backend: make up-gpu or make up-api"
+
+# ---------------------------------------------------------------------------
 # Testing
 # ---------------------------------------------------------------------------
 
