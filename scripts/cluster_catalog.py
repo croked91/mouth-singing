@@ -66,6 +66,7 @@ def main() -> None:
     parser.add_argument("--qdrant-port", type=int, default=6333)
     parser.add_argument("--n-clusters", type=int, default=25, help="Number of clusters")
     parser.add_argument("--dry-run", action="store_true", help="Print stats only")
+    parser.add_argument("--centroids-out", default="", help="Path to export rec_cluster_centroids.json")
     args = parser.parse_args()
 
     client = QdrantClient(
@@ -185,18 +186,41 @@ def main() -> None:
         )
         label_to_db_id[label] = cursor.lastrowid
 
-    # Assign tracks to clusters
+    # Assign tracks to clusters (both catalog_cluster_id and rec_cluster_id)
     for idx, tid in enumerate(common_ids):
         label = int(labels[idx])
         db_id = label_to_db_id[label]
         conn.execute(
-            "UPDATE tracks SET catalog_cluster_id = ? WHERE id = ?",
-            (db_id, tid),
+            "UPDATE tracks SET catalog_cluster_id = ?, rec_cluster_id = ? WHERE id = ?",
+            (db_id, db_id, tid),
         )
 
     conn.commit()
     conn.close()
     print(f"  {k} clusters created, {len(common_ids)} tracks assigned.")
+
+    # --- Step 7: Export centroids JSON for RecClusterAssigner ---
+    if args.centroids_out:
+        from pathlib import Path
+        centroids_data = {"centroids": centroids_fused.tolist()}
+        Path(args.centroids_out).write_text(json.dumps(centroids_data))
+        print(f"  Centroids exported to {args.centroids_out}")
+
+    # --- Step 8: Sync rec_cluster_id to QDrant payloads ---
+    print("Updating QDrant payloads with rec_cluster_id...")
+    updated = 0
+    for label, tids in cluster_track_ids.items():
+        db_id = label_to_db_id[label]
+        for batch_start in range(0, len(tids), 100):
+            batch = tids[batch_start : batch_start + 100]
+            for coll in [_AUDIO_COLLECTION, _LYRICS_COLLECTION]:
+                client.set_payload(
+                    collection_name=coll,
+                    payload={"rec_cluster_id": db_id},
+                    points=batch,
+                )
+        updated += len(tids)
+    print(f"  {updated} QDrant points updated.")
 
 
 if __name__ == "__main__":

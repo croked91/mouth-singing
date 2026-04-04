@@ -60,6 +60,15 @@ _POPULARITY_WEIGHTS: dict[str, float] = {
 # MMR lambda: balance between relevance (1.0) and diversity (0.0).
 _MMR_LAMBDA = 0.7
 
+# Hit priority: only hits with fused score >= threshold get sorted to top.
+# Below this, a hit is ranked by score like any regular track.
+_HIT_SCORE_THRESHOLD = 0.5
+_HIT_CATEGORIES = {
+    PopularityCategory.ETERNAL_HIT,
+    PopularityCategory.CURRENT_HIT,
+    PopularityCategory.ARTIST_BEST,
+}
+
 
 class RecommendedTrack:
     """A track with its similarity score."""
@@ -270,6 +279,28 @@ def mmr_select(
     return selected
 
 
+def hit_priority_sort(
+    candidates: list[RecommendedTrack],
+) -> list[RecommendedTrack]:
+    """Sort candidates: hits with fusion score >= threshold first, rest by score.
+
+    A hit (eternal_hit / current_hit / artist_best) is only prioritised
+    when its similarity score is high enough (>= 0.6).  This prevents
+    a distant hit from being forced above a closely-matching regular track.
+    """
+    priority: list[RecommendedTrack] = []
+    regular: list[RecommendedTrack] = []
+    for c in candidates:
+        cat = getattr(c.track, "popularity_category", "regular") or "regular"
+        if cat in _HIT_CATEGORIES and c.similarity_score >= _HIT_SCORE_THRESHOLD:
+            priority.append(c)
+        else:
+            regular.append(c)
+    priority.sort(key=lambda c: c.similarity_score, reverse=True)
+    regular.sort(key=lambda c: c.similarity_score, reverse=True)
+    return priority + regular
+
+
 # ------------------------------------------------------------------
 # Service
 # ------------------------------------------------------------------
@@ -327,21 +358,39 @@ class RecommendationService:
         session_id: str,
         limit: int = 5,
         language: str | None = None,
+        tag_cluster_id: int | None = None,
     ) -> tuple[RecommendationStrategy, list[RecommendedTrack]]:
-        """Return recommendations for a specific mood-tag cluster centroid.
+        """Return recommendations for a specific mood-tag cluster.
 
-        Uses fused KNN search with optional language filter. Excludes
-        tracks already played in the session.
+        When the session has play history, uses the session centroid
+        (average of played tracks) as query vector and filters by the
+        tag's cluster.  This personalises tag results to the user's taste.
+
+        When there is no history, falls back to the tag cluster centroid
+        without a cluster filter (original behaviour).
         """
         history = await self.sqlite_repo.get_history_by_session(session_id)
         played_ids = {entry.track_id for entry in history}
+
         filters: dict = {"status": "ready"}
         if language:
             filters["language"] = language
 
+        query_audio = tag_centroid_audio
+        query_lyrics = tag_centroid_lyrics
+
+        # Personalise: use session centroid + cluster filter when possible.
+        if history and tag_cluster_id is not None:
+            all_played_ids = list(played_ids)
+            centroids = await self._compute_session_centroids({0: all_played_ids})
+            if centroids:
+                query_audio, query_lyrics = centroids[0]
+                filters["rec_cluster_id"] = tag_cluster_id
+
         results = await self._fused_knn_search(
-            tag_centroid_audio, tag_centroid_lyrics, played_ids, limit, filters,
+            query_audio, query_lyrics, played_ids, limit, filters,
         )
+        results = hit_priority_sort(results)
         return RecommendationStrategy.CLUSTER, results
 
     # ------------------------------------------------------------------
@@ -386,27 +435,33 @@ class RecommendationService:
         limit: int,
         language: str | None = None,
     ) -> tuple[RecommendationStrategy, list[RecommendedTrack]]:
-        """Catalog-cluster-based recommendations from session play history.
+        """KNN-within-cluster recommendations from session play history.
 
-        Uses the pre-computed rec_cluster_id on each track to find
-        similar songs from the same cluster(s).  Much more reliable than
-        KNN on audio/lyrics vectors.
+        Groups played tracks by rec_cluster_id, computes a centroid per
+        group, then runs fused KNN in QDrant filtered to each cluster.
+        Hits with fusion score >= 0.6 are prioritised; the rest are
+        ranked by pure similarity.
         """
         # 1. Get rec_cluster_id for each played track.
         unique_ids = list({entry.track_id for entry in history})
         tracks_map = await self.sqlite_repo.get_tracks_by_ids(unique_ids)
 
-        from collections import Counter
-        cluster_counts: Counter[int] = Counter()
+        # Group played track IDs by rec_cluster_id.
+        cluster_track_ids: dict[int, list[str]] = {}
         for tid in unique_ids:
             track = tracks_map.get(tid)
             if track and track.rec_cluster_id is not None:
-                cluster_counts[track.rec_cluster_id] += 1
+                cluster_track_ids.setdefault(track.rec_cluster_id, []).append(tid)
 
-        if not cluster_counts:
+        if not cluster_track_ids:
             return await self._popular_strategy(played_ids, limit, language)
 
-        cluster_ids = list(cluster_counts.keys())
+        # 2. Compute centroid per cluster from played track vectors.
+        centroids = await self._compute_session_centroids(cluster_track_ids)
+        if not centroids:
+            return await self._popular_strategy(played_ids, limit, language)
+
+        cluster_ids = list(centroids.keys())
 
         logger.info(
             "catalog_clusters",
@@ -414,35 +469,41 @@ class RecommendationService:
             cluster_ids=cluster_ids,
         )
 
-        # 2. Distribute all slots equally across clusters.
-        cluster_slots = limit
+        # 3. Distribute all slots equally across clusters.
         slot_counts = distribute_slots(
-            [{"track_ids": ["x"] * cluster_counts[cid]} for cid in cluster_ids],
-            cluster_slots,
+            [{"track_ids": cluster_track_ids.get(cid, [])} for cid in cluster_ids],
+            limit,
         )
 
         logger.info("slot_distribution", slot_counts=slot_counts)
 
-        # 3. Fetch tracks from each cluster, well-known first.
+        # 4. KNN within each cluster + hit priority + artist dedup.
         all_candidates: list[RecommendedTrack] = []
         exclude_all = played_ids | (self._extra_exclude or set())
         global_seen_artists: set[str] = set(played_artists)
 
-        for i, (cid, n_slots) in enumerate(zip(cluster_ids, slot_counts)):
-            tracks = await self.sqlite_repo.get_tracks_by_cluster(
-                cluster_id=cid,
-                limit=n_slots * 5,  # oversample for artist dedup
-                exclude_ids=exclude_all,
-                exclude_artists=global_seen_artists,
-                language=language,
+        for cid, n_slots in zip(cluster_ids, slot_counts):
+            if n_slots == 0:
+                continue
+
+            audio_centroid, lyrics_centroid = centroids[cid]
+            filters: dict = {"status": "ready", "rec_cluster_id": cid}
+            if language:
+                filters["language"] = language
+
+            knn_results = await self._fused_knn_search(
+                audio_centroid, lyrics_centroid, exclude_all, n_slots * 3, filters,
             )
 
-            # Take up to n_slots unique artists.
+            # Hit priority sort.
+            sorted_results = hit_priority_sort(knn_results)
+
+            # Artist dedup: 1 artist per cluster, global across clusters.
             cluster_picks: list[RecommendedTrack] = []
-            for t in tracks:
-                if t.artist not in global_seen_artists:
-                    global_seen_artists.add(t.artist)
-                    cluster_picks.append(RecommendedTrack(track=t, similarity_score=1.0))
+            for r in sorted_results:
+                if r.track.artist not in global_seen_artists:
+                    global_seen_artists.add(r.track.artist)
+                    cluster_picks.append(r)
                     if len(cluster_picks) >= n_slots:
                         break
 
@@ -518,6 +579,29 @@ class RecommendationService:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    async def _compute_session_centroids(
+        self,
+        track_ids_by_cluster: dict[int, list[str]],
+    ) -> dict[int, tuple[list[float], list[float]]]:
+        """Compute audio+lyrics centroid per cluster from played track vectors.
+
+        Returns a dict mapping cluster_id → (audio_centroid, lyrics_centroid).
+        Clusters whose tracks have no vectors in QDrant are omitted.
+        """
+        all_ids = [tid for ids in track_ids_by_cluster.values() for tid in ids]
+        track_vectors = await self._fetch_track_vectors(all_ids)
+        vec_map = {tid: (audio, lyrics) for tid, audio, lyrics in track_vectors}
+
+        centroids: dict[int, tuple[list[float], list[float]]] = {}
+        for cid, tids in track_ids_by_cluster.items():
+            vecs = [vec_map[tid] for tid in tids if tid in vec_map]
+            if not vecs:
+                continue
+            audio_centroid = np.mean([v[0] for v in vecs], axis=0).tolist()
+            lyrics_centroid = np.mean([v[1] for v in vecs], axis=0).tolist()
+            centroids[cid] = (audio_centroid, lyrics_centroid)
+        return centroids
 
     async def _fetch_track_vectors(
         self, track_ids: list[str]

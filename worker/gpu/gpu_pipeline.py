@@ -240,13 +240,8 @@ class GpuPipeline(BasePipeline):
                 await self.job_service.mark_step(job.id, "embedding_lyrics", 100)
 
             # ==============================================================
-            # STEP 10: QDrant sync
+            # STEP 10: Assign rec_cluster_id + QDrant sync
             # ==============================================================
-            await self._sync_qdrant(
-                job.id, job.track_id, track, feature_vector, lyric_vector
-            )
-
-            # Assign rec_cluster_id if centroids available.
             rec_cluster_id = None
             if self.rec_cluster_assigner and self.rec_cluster_assigner.available:
                 rec_cluster_id = await asyncio.to_thread(
@@ -254,6 +249,11 @@ class GpuPipeline(BasePipeline):
                 )
                 if rec_cluster_id is not None:
                     logger.info("rec_cluster_assigned", track_id=job.track_id, cluster_id=rec_cluster_id)
+
+            await self._sync_qdrant(
+                job.id, job.track_id, track, feature_vector, lyric_vector,
+                rec_cluster_id=rec_cluster_id,
+            )
 
             # Finalize.
             await self.repo.update_track(
@@ -352,6 +352,7 @@ class GpuPipeline(BasePipeline):
         track,
         feature_vector: list[float] | None,
         lyric_vector: list[float] | None,
+        rec_cluster_id: int | None = None,
     ) -> None:
         """Sync audio features and lyrics embeddings to QDrant."""
         if self.qdrant_repo is None:
@@ -367,6 +368,8 @@ class GpuPipeline(BasePipeline):
             "title": track.title,
             "status": "ready",
         }
+        if rec_cluster_id is not None:
+            payload["rec_cluster_id"] = rec_cluster_id
 
         if feature_vector is not None and any(v != 0.0 for v in feature_vector):
             await asyncio.to_thread(
@@ -398,6 +401,7 @@ class GpuPipeline(BasePipeline):
         track_id: str,
         track,
         feature_vector: list[float],
+        rec_cluster_id: int | None = None,
     ) -> None:
         """Sync only audio features when lyrics search fails."""
         if self.qdrant_repo is None or not any(v != 0.0 for v in feature_vector):
@@ -409,6 +413,8 @@ class GpuPipeline(BasePipeline):
             "title": track.title,
             "status": "error",
         }
+        if rec_cluster_id is not None:
+            payload["rec_cluster_id"] = rec_cluster_id
 
         try:
             await asyncio.to_thread(
