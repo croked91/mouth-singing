@@ -17,13 +17,16 @@ Two deployment modes:
 make up-gpu          # Start all services (GPU mode)
 make up-api          # Start all services (API mode)
 make down            # Stop containers
+make down-v          # Stop + delete all volumes (full reset)
 make logs-worker     # Tail worker logs
 make logs-backend    # Tail backend logs
 make health          # Check all service health
+make build-gpu       # Build images without starting
+make build-api
 
 # Tests (requires local venv with deps installed)
 python -m pytest tests/ -v              # All tests
-python -m pytest tests/ -x -q --ignore=tests/worker  # Fast subset
+make test-quick                         # Fast subset (skips tests/worker/)
 python -m pytest tests/test_api_tracks.py -v          # Single file
 python -m pytest tests/test_api_tracks.py::test_name  # Single test
 
@@ -62,13 +65,28 @@ frontend/   → React 19 + TypeScript + MUI + Zustand. Vite build. Pages in src/
 - **QDrant**: `audio_features` (45-d librosa vectors), `lyrics_embeddings` (384-d sentence-transformer vectors)
 - **Filesystem** (`/data/media/`): MP3 files, instrumental tracks
 
+### Worker pipeline steps
+
+Processing order (defined in `PipelineStep` enum):
+SEPARATING → EXTRACTING_FEATURES → VAD → TRANSCRIBING → SEARCHING_LYRICS → ALIGNING → LINE_BREAKING → EMBEDDING_LYRICS → SYNCING_QDRANT → DONE
+
+Both GPU and API pipelines share common components from `worker/common/` (VAD, CTC aligner, lyrics agent).
+
 ### Key patterns
 
 - All Python config via pydantic-settings, loaded from env vars (no prefix). Defaults in `backend/app/config.py` and `worker/app/config.py`
-- Structured logging via structlog (JSON output)
+- Structured logging via structlog (JSON output). Use `structlog.get_logger(__name__)`
 - Root `conftest.py` adds worker/, shared/, backend/ to sys.path for test imports
 - pytest uses `asyncio_mode = auto` (no need for `@pytest.mark.asyncio`)
 - Shared constants (status enums, collection names, pipeline steps) live in `shared/karaoke_shared/constants.py`
+- DB schema is applied at startup in `backend/app/db/__init__.py` (idempotent). No migration tool
+- No foreign keys in SQLite (denormalized by design, see ADR-03)
+- Docker Compose uses overlay pattern: base `docker-compose.yml` + mode-specific overlay (`docker-compose.gpu.yml` or `docker-compose.api.yml`)
+- Repository injection via FastAPI `Depends()` for SQLiteRepository and QDrantRepository
+
+### Utility scripts
+
+`scripts/` contains bulk operations: `seed_catalog.py`, `cluster_catalog.py`, `create_mood_tags.py`, `reindex_audio_features.py`, `fetch_artist_images.py`, `bootstrap_worker.py` (pre-download ML models).
 
 ## Environment
 
