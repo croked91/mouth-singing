@@ -1,8 +1,4 @@
-"""Abstract base class for audio processing pipelines.
-
-Both GpuPipeline and ApiPipeline implement this interface so that
-main.py can hold a reference typed as BasePipeline regardless of mode.
-"""
+"""Abstract base class for audio processing pipelines."""
 
 from __future__ import annotations
 
@@ -12,9 +8,8 @@ from karaoke_shared.models.job import Job
 class BasePipeline:
     """Interface contract for audio processing pipelines.
 
-    Concrete implementations:
-      - worker.gpu.gpu_pipeline.GpuPipeline  (local GPU, WORKER_MODE=gpu)
-      - worker.api.api_pipeline.ApiPipeline  (cloud APIs, WORKER_MODE=api)
+    Concrete implementation:
+      - worker.gpu.gpu_pipeline.GpuPipeline  (local GPU)
     """
 
     async def process(self, job: Job) -> None:

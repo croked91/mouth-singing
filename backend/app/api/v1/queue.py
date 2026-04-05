@@ -13,10 +13,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from karaoke_shared.models.queue import QueueEntry
 from karaoke_shared.models.session import Participant
 from karaoke_shared.models.track import SyllableTiming, Track
-from karaoke_shared.repositories.sqlite_repository import SQLiteRepository
+from karaoke_shared.repositories.pg_repository import PgRepository
 from pydantic import BaseModel
 
-from app.dependencies import get_queue_service, get_sqlite_repo
+from app.dependencies import get_queue_service, get_repo
 from app.services.queue_service import QueueService
 
 router = APIRouter()
@@ -113,7 +113,7 @@ def _enrich_entry(
 )
 async def get_queue(
     session_id: str,
-    repo: SQLiteRepository = Depends(get_sqlite_repo),
+    repo: PgRepository = Depends(get_repo),
 ) -> QueueResponse:
     """Return the full active queue split into 'current' and 'upcoming'.
 
@@ -153,7 +153,7 @@ async def get_queue(
 )
 async def add_to_queue(
     body: AddToQueueRequest,
-    repo: SQLiteRepository = Depends(get_sqlite_repo),
+    repo: PgRepository = Depends(get_repo),
 ) -> QueueEntry:
     """Append a track to the session queue.
 
@@ -184,7 +184,7 @@ async def add_to_queue(
 )
 async def skip_turn(
     entry_id: str,
-    repo: SQLiteRepository = Depends(get_sqlite_repo),
+    repo: PgRepository = Depends(get_repo),
 ) -> QueueEntry:
     """Skip the participant's current turn and re-queue them at the end.
 
@@ -210,7 +210,7 @@ async def skip_turn(
 )
 async def start_playing(
     entry_id: str,
-    repo: SQLiteRepository = Depends(get_sqlite_repo),
+    repo: PgRepository = Depends(get_repo),
 ) -> StartPlayingResponse:
     """Mark a queue entry as playing and return the track data needed by the player."""
     entry = await repo.get_queue_entry(entry_id)
@@ -241,7 +241,7 @@ async def start_playing(
 )
 async def finish_playing(
     entry_id: str,
-    repo: SQLiteRepository = Depends(get_sqlite_repo),
+    repo: PgRepository = Depends(get_repo),
     service: QueueService = Depends(get_queue_service),
 ) -> FinishPlayingResponse:
     """Mark a queue entry as done and advance to the next entry.
@@ -283,7 +283,7 @@ async def finish_playing(
 )
 async def remove_from_queue(
     entry_id: str,
-    repo: SQLiteRepository = Depends(get_sqlite_repo),
+    repo: PgRepository = Depends(get_repo),
 ) -> None:
     """Permanently delete a queue entry.
 

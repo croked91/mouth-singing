@@ -9,11 +9,11 @@ Endpoints:
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 from karaoke_shared.models.session import Participant, Session
-from karaoke_shared.repositories.sqlite_repository import SQLiteRepository
+from karaoke_shared.repositories.pg_repository import PgRepository
 from pydantic import BaseModel
 
 from app.config import settings
-from app.dependencies import get_sqlite_repo
+from app.dependencies import get_repo
 from app.services.session_service import SessionService
 
 router = APIRouter()
@@ -63,7 +63,7 @@ class AddParticipantRequest(BaseModel):
 )
 async def create_session(
     body: CreateSessionRequest,
-    repo: SQLiteRepository = Depends(get_sqlite_repo),
+    repo: PgRepository = Depends(get_repo),
 ) -> Session:
     """Create a new active karaoke session for a room."""
     service = SessionService(repo)
@@ -77,7 +77,7 @@ async def create_session(
 )
 async def get_session(
     session_id: str,
-    repo: SQLiteRepository = Depends(get_sqlite_repo),
+    repo: PgRepository = Depends(get_repo),
 ) -> SessionDetail:
     """Return session data together with the full list of participants."""
     service = SessionService(repo)
@@ -110,7 +110,7 @@ async def get_session(
 async def add_participant(
     session_id: str,
     body: AddParticipantRequest,
-    repo: SQLiteRepository = Depends(get_sqlite_repo),
+    repo: PgRepository = Depends(get_repo),
 ) -> Participant:
     """Join a session as a participant.
 
@@ -143,7 +143,7 @@ async def add_participant(
 async def terminate_session(
     session_id: str,
     x_admin_secret: str | None = Header(default=None),
-    repo: SQLiteRepository = Depends(get_sqlite_repo),
+    repo: PgRepository = Depends(get_repo),
 ) -> None:
     """Terminate an active session.
 

@@ -6,23 +6,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Karaoke web application for club rooms. Kiosk-style (no user registration). ~17,000 tracks in catalog. Supports user MP3 uploads with auto-generated karaoke (vocal separation, transcription, syllable-level alignment).
 
-Two deployment modes:
-- **GPU mode**: Local UVR (BS-Roformer) + faster-whisper + CTC alignment (requires NVIDIA GPU)
-- **API mode**: MVSEP API + OpenAI Whisper API + CTC alignment (CPU-only)
+GPU mode only: Local UVR (BS-Roformer) + faster-whisper + CTC alignment (requires NVIDIA GPU).
 
 ## Commands
 
 ```bash
-# Docker
-make up-gpu          # Start all services (GPU mode)
-make up-api          # Start all services (API mode)
+# Docker — development (named volumes)
+make up-gpu          # Start all services
 make down            # Stop containers
 make down-v          # Stop + delete all volumes (full reset)
+
+# Docker — production / local (bind mounts)
+make up-gpu-prod     # Production mode (bind mounts to /root paths)
+make up-gpu-local    # Local mode (bind mounts to backup directory)
+
+# Docker — diagnostics
 make logs-worker     # Tail worker logs
 make logs-backend    # Tail backend logs
+make logs            # Tail all services
+make ps              # Show running containers
 make health          # Check all service health
+make clean           # Stop containers and prune images
 make build-gpu       # Build images without starting
-make build-api
 
 # Tests (requires local venv with deps installed)
 python -m pytest tests/ -v              # All tests
@@ -30,47 +35,61 @@ make test-quick                         # Fast subset (skips tests/worker/)
 python -m pytest tests/test_api_tracks.py -v          # Single file
 python -m pytest tests/test_api_tracks.py::test_name  # Single test
 
-# Lint (ruff configured in backend/pyproject.toml)
-ruff check backend/ worker/ shared/
-ruff format backend/ worker/ shared/
+# Lint (ruff: line-length=88, rules E/F/I/UP, configured in backend/pyproject.toml)
+ruff check backend/ worker/ shared/ rec-service/
+ruff format backend/ worker/ shared/ rec-service/
 
 # Frontend
 cd frontend && npm run dev      # Dev server (Vite)
 cd frontend && npm run build    # Production build
-cd frontend && npx eslint src/  # Lint
+cd frontend && npm run preview  # Preview production build locally
+cd frontend && npm run lint     # ESLint
 ```
 
 ## Architecture
 
-Four main components, each in its own directory:
+Five main components, each in its own directory:
 
 ```
-backend/    → FastAPI server (port 8000). Routes in app/api/v1/, services in app/services/
-worker/     → Audio processing pipelines. GPU pipeline in worker/gpu/, API pipeline in worker/api/
-shared/     → karaoke_shared package: Pydantic models, SQLite/QDrant repositories, ML utils, constants
-frontend/   → React 19 + TypeScript + MUI + Zustand. Vite build. Pages in src/pages/, state in src/store/
+backend/      → FastAPI server (port 8000). Routes in app/api/v1/, services in app/services/
+worker/       → GPU audio processing pipeline. Pipeline in worker/gpu/. RabbitMQ consumer in worker/app/consumer.py
+rec-service/  → Recommendation indexing microservice. Consumer in rec-service/app/consumer.py, indexing logic in app/indexer.py
+shared/       → karaoke_shared package: Pydantic models, PgRepository, QDrant repo, S3 storage, RabbitMQ messaging, ML utils, constants
+frontend/     → React 19 + TypeScript + MUI + Zustand. Vite build. Pages in src/pages/, state in src/store/
 ```
 
 ### Data flow
 
 1. Frontend creates sessions, manages FIFO queue, searches tracks
-2. Backend serves REST API + SSE for job progress; streams audio via HTTP 206 range requests
-3. On MP3 upload: backend creates a job in `job_queue` table → worker polls and processes:
-   vocal separation → VAD → ASR → lyrics search (OpenAI+Genius) → CTC alignment → feature extraction → QDrant indexing
-4. Player page renders syllable-by-syllable highlighting synced to audio playback
+2. Backend serves REST API + SSE for job progress; redirects audio playback to S3 presigned URLs
+3. On MP3 upload:
+   - Backend uploads to S3 → creates job in PostgreSQL → publishes to RabbitMQ "jobs" exchange
+   - Worker consumes from "jobs.process" queue → runs pipeline → creates track in PostgreSQL → publishes to "rec" exchange
+   - Rec Service consumes from "rec.index" queue → extracts features → embeds lyrics → syncs QDrant → marks qdrant_synced=1
+4. SSE progress delivered via RabbitMQ "job.progress" fanout exchange (fallback: DB polling)
+5. Player page renders syllable-by-syllable highlighting synced to audio playback
 
-### Storage
+### Infrastructure
 
-- **SQLite** (WAL mode): sessions, participants, queue_entries, tracks (with syllable_timings JSON), job_queue, mood_tags, catalog_clusters, artists
+- **PostgreSQL**: sessions, participants, queue_entries, tracks (with syllable_timings JSONB), job_queue (with data JSONB), mood_tags, catalog_clusters, artists. Full-text search via tsvector + GIN index
+- **MinIO (S3-compatible)**: `uploads/{job_id}.mp3` (temporary), `instrumentals/{job_id}.mp3` (permanent)
+- **RabbitMQ**: 3 exchanges — `jobs` (direct), `job.progress` (fanout), `rec` (direct). DLQ: `jobs.dlq`, `rec.dlq`
 - **QDrant**: `audio_features` (45-d librosa vectors), `lyrics_embeddings` (384-d sentence-transformer vectors)
-- **Filesystem** (`/data/media/`): MP3 files, instrumental tracks
+- **Nginx**: Reverse proxy, SSE passthrough, frontend static files
 
 ### Worker pipeline steps
 
 Processing order (defined in `PipelineStep` enum):
-SEPARATING → EXTRACTING_FEATURES → VAD → TRANSCRIBING → SEARCHING_LYRICS → ALIGNING → LINE_BREAKING → EMBEDDING_LYRICS → SYNCING_QDRANT → DONE
+SEPARATING → VAD → TRANSCRIBING → SEARCHING_LYRICS → ALIGNING → LINE_BREAKING
 
-Both GPU and API pipelines share common components from `worker/common/` (VAD, CTC aligner, lyrics agent).
+Worker creates track at finalization (deferred track creation — no track record until pipeline completes). Then publishes to Rec Service.
+
+### Upload flow (deferred track creation)
+
+1. Backend uploads MP3 to S3 → creates `job_queue` record (mp3_key, artist_hint, title_hint) → publishes to RabbitMQ
+2. Worker consumes message → downloads from S3 → runs pipeline → stores intermediate data in job_queue.data JSONB
+3. At finalization: INSERT INTO tracks (status=ready, qdrant_synced=0) + publish {track_id, mp3_key, lyrics} to "rec" exchange
+4. Rec Service: extract features → embed lyrics → assign rec_cluster → QDrant upsert → UPDATE tracks SET qdrant_synced=1
 
 ### Key patterns
 
@@ -79,10 +98,23 @@ Both GPU and API pipelines share common components from `worker/common/` (VAD, C
 - Root `conftest.py` adds worker/, shared/, backend/ to sys.path for test imports
 - pytest uses `asyncio_mode = auto` (no need for `@pytest.mark.asyncio`)
 - Shared constants (status enums, collection names, pipeline steps) live in `shared/karaoke_shared/constants.py`
-- DB schema is applied at startup in `backend/app/db/__init__.py` (idempotent). No migration tool
-- No foreign keys in SQLite (denormalized by design, see ADR-03)
-- Docker Compose uses overlay pattern: base `docker-compose.yml` + mode-specific overlay (`docker-compose.gpu.yml` or `docker-compose.api.yml`)
-- Repository injection via FastAPI `Depends()` for SQLiteRepository and QDrantRepository
+- DB schema in `backend/app/db/init_pg.sql`, applied at startup via `init_pg()`. No migration tool
+- No foreign keys in PostgreSQL (denormalized by design, see ADR-03)
+- Docker Compose: base `docker-compose.yml` + `docker-compose.gpu.yml`, optionally + `docker-compose.prod.yml` or `docker-compose.local.yml`
+- Docker services: `postgres`, `minio`, `rabbitmq`, `qdrant`, `backend`, `rec-service`, `frontend`, `worker`
+- Container names prefixed `karaoke_`. Network: `karaoke_net`
+- Resource limits: backend 512M, rec-service 4G, GPU worker 24G + 1 GPU reservation
+- Repository injection via FastAPI `Depends()` for PgRepository and QDrantRepository
+- S3 storage via `karaoke_shared.storage.S3Storage` (boto3-based, works with MinIO/AWS/Yandex)
+- RabbitMQ messaging via `karaoke_shared.messaging.RabbitMQClient` (aio-pika)
+- Job progress: worker publishes to RabbitMQ → SSE endpoint consumes from fanout exchange
+
+### Recommendations (KNN-within-cluster)
+
+- Rec Service assigns `rec_cluster_id` via `RecClusterAssigner` (fused audio+lyrics vectors, cosine similarity to pre-computed centroids)
+- Backend `recommendation_service.py`: `_cluster_strategy()` groups played tracks by cluster → computes per-cluster centroids → KNN search filtered by `rec_cluster_id`
+- `hit_priority_sort()`: hits (eternal/current/artist_best) with fusion score >= 0.5 get priority over regular tracks
+- QDrant payloads include `rec_cluster_id` for efficient filtered KNN
 
 ### Utility scripts
 
@@ -91,10 +123,18 @@ Both GPU and API pipelines share common components from `worker/common/` (VAD, C
 ## Environment
 
 Required env vars (see `.env.example`):
-- `OPENAI_API_KEY`, `GENIUS_TOKEN` — both modes
-- `MVSEP_API_KEY` — API mode only
+- `DEEPSEEK_API_KEY`, `YANDEX_SEARCH_API_KEY` — lyrics search
+- `PG_PASSWORD` — PostgreSQL password
+- `S3_ACCESS_KEY`, `S3_SECRET_KEY` — MinIO/S3 credentials
+- `RMQ_USER`, `RMQ_PASS` — RabbitMQ credentials
 - `ADMIN_SECRET` — PIN for admin panel
 
 ## Documentation
 
-Detailed architecture docs, ADRs, and project history are in `journals/`.
+`journals/` contains detailed docs:
+- `ARCHITECTURE.md` — full architecture description
+- `ADR.md` — Architecture Decision Records (e.g. ADR-03: no foreign keys)
+- `DEPLOYMENT_GUIDE.md` — deployment procedures
+- `WORKER_FLOW.md` — worker pipeline flow
+- `PROJECT_LOG.md`, `PHASES.md` — project history and development phases
+- `upload-sequence*.md` — upload flow sequence diagrams (target architecture)

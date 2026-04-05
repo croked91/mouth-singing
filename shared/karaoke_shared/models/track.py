@@ -1,8 +1,8 @@
 """Pydantic models for tracks.
 
 Schema reference:
-- tracks: id, artist, title, duration_sec, mp3_path, instrumental_path,
-  clip_path, lyrics_text, syllable_timings (JSON), language, source,
+- tracks: id, artist, title, duration_sec, instrumental_key,
+  lyrics_text, syllable_timings (JSONB), language, source,
   status, error_message, play_count, qdrant_synced, created_at, updated_at
 """
 
@@ -31,9 +31,7 @@ class Track(BaseModel):
     artist: str
     title: str
     duration_sec: int | None = None
-    mp3_path: str | None = None
-    instrumental_path: str | None = None
-    clip_path: str | None = None
+    instrumental_key: str | None = None
     lyrics_text: str | None = None
     syllable_timings: list[SyllableTiming] | None = None
     language: str | None = None
@@ -47,7 +45,6 @@ class Track(BaseModel):
     chart_last_seen: str | None = None
     catalog_cluster_id: int | None = None
     rec_cluster_id: int | None = None
-    rec_cluster_id: int | None = None
     created_at: str
     updated_at: str
 
@@ -59,9 +56,7 @@ class TrackCreate(BaseModel):
     title: str
     source: str
     duration_sec: int | None = None
-    mp3_path: str | None = None
-    instrumental_path: str | None = None
-    clip_path: str | None = None
+    instrumental_key: str | None = None
     lyrics_text: str | None = None
     syllable_timings: list[SyllableTiming] | None = None
     language: str | None = None
@@ -91,9 +86,7 @@ class TrackUpdate(BaseModel):
     artist: str | None = None
     title: str | None = None
     duration_sec: int | None = None
-    mp3_path: str | None = None
-    instrumental_path: str | None = None
-    clip_path: str | None = None
+    instrumental_key: str | None = None
     lyrics_text: str | None = None
     syllable_timings: list[SyllableTiming] | None = None
     language: str | None = None

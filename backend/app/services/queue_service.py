@@ -1,6 +1,6 @@
 """Queue service — business logic for the karaoke play queue.
 
-Wraps the SQLiteRepository so that route handlers stay thin. The
+Wraps the PgRepository so that route handlers stay thin. The
 skip/finish flows that touch multiple tables all live here.
 """
 
@@ -10,7 +10,7 @@ import structlog
 from karaoke_shared.constants import QueueEntryStatus
 from karaoke_shared.models.play_history import PlayHistoryCreate
 from karaoke_shared.models.queue import QueueEntry, QueueEntryCreate
-from karaoke_shared.repositories.sqlite_repository import SQLiteRepository
+from karaoke_shared.repositories.pg_repository import PgRepository
 
 logger = structlog.get_logger(__name__)
 
@@ -19,10 +19,10 @@ class QueueService:
     """Orchestrates queue entry lifecycle.
 
     Args:
-        repo: An open SQLiteRepository for the current request.
+        repo: A PgRepository for the current request.
     """
 
-    def __init__(self, repo: SQLiteRepository) -> None:
+    def __init__(self, repo: PgRepository) -> None:
         self.repo = repo
 
     async def get_queue(self, session_id: str) -> list[QueueEntry]:

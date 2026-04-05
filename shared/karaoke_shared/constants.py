@@ -92,15 +92,15 @@ LYRICS_EMBEDDING_DIM = 384
 # ------------------------------------------------------------------
 
 class PipelineStep(StrEnum):
-    """Named steps reported to the job_queue for SSE progress tracking."""
+    """Named steps reported to the job_queue for SSE progress tracking.
+
+    Feature extraction, lyric embedding, and QDrant sync have moved to the
+    Rec Service and are no longer part of the worker pipeline.
+    """
 
     SEPARATING = "separating"
-    EXTRACTING_FEATURES = "extracting_features"
     VAD = "vad"
     TRANSCRIBING = "transcribing"
     SEARCHING_LYRICS = "searching_lyrics"
     ALIGNING = "aligning"
     LINE_BREAKING = "line_breaking"
-    EMBEDDING_LYRICS = "embedding_lyrics"
-    SYNCING_QDRANT = "syncing_qdrant"
-    DONE = "done"

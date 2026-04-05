@@ -1,6 +1,6 @@
 """Session service — business logic for sessions and participants.
 
-Wraps the SQLiteRepository so that route handlers stay thin. All
+Wraps the PgRepository so that route handlers stay thin. All
 nickname generation and uniqueness checks live here rather than in
 the router.
 """
@@ -11,7 +11,7 @@ from karaoke_shared.models.session import (
     Session,
     SessionCreate,
 )
-from karaoke_shared.repositories.sqlite_repository import SQLiteRepository
+from karaoke_shared.repositories.pg_repository import PgRepository
 
 from app.utils.nicknames import generate_nickname
 
@@ -20,10 +20,10 @@ class SessionService:
     """Orchestrates session and participant operations.
 
     Args:
-        repo: An open SQLiteRepository for the current request.
+        repo: A PgRepository for the current request.
     """
 
-    def __init__(self, repo: SQLiteRepository) -> None:
+    def __init__(self, repo: PgRepository) -> None:
         self.repo = repo
 
     async def create_session(self, room_id: str) -> Session:

@@ -26,7 +26,7 @@ from karaoke_shared.constants import (
 from karaoke_shared.models.recommendation import RecommendationStrategy
 from karaoke_shared.models.track import Track
 from karaoke_shared.repositories.qdrant_repository import QDrantRepository
-from karaoke_shared.repositories.sqlite_repository import SQLiteRepository
+from karaoke_shared.repositories.pg_repository import PgRepository
 
 logger = structlog.get_logger(__name__)
 
@@ -311,7 +311,7 @@ class RecommendationService:
 
     def __init__(
         self,
-        sqlite_repo: SQLiteRepository,
+        sqlite_repo: PgRepository,
         qdrant_repo: QDrantRepository,
     ) -> None:
         self.sqlite_repo = sqlite_repo

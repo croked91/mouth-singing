@@ -14,7 +14,7 @@ import structlog
 from karaoke_shared.constants import COLLECTION_LYRICS_EMBEDDINGS, TrackStatus
 from karaoke_shared.models.track import Track
 from karaoke_shared.repositories.qdrant_repository import QDrantRepository
-from karaoke_shared.repositories.sqlite_repository import SQLiteRepository
+from karaoke_shared.repositories.pg_repository import PgRepository
 from pydantic import BaseModel
 
 logger = structlog.get_logger(__name__)
@@ -66,7 +66,7 @@ class SearchService:
 
     def __init__(
         self,
-        sqlite_repo: SQLiteRepository,
+        sqlite_repo: PgRepository,
         qdrant_repo: QDrantRepository,
         embedder: object | None,
     ) -> None:

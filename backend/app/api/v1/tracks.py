@@ -17,11 +17,11 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
 from fastapi import File as FastAPIFile
 from karaoke_shared.models.track import Track
 from karaoke_shared.repositories.qdrant_repository import QDrantRepository
-from karaoke_shared.repositories.sqlite_repository import SQLiteRepository
+from karaoke_shared.repositories.pg_repository import PgRepository
+from karaoke_shared.storage import S3Storage
 from pydantic import BaseModel
 
-from app.config import settings
-from app.dependencies import get_embedder, get_qdrant_repo, get_sqlite_repo
+from app.dependencies import get_embedder, get_qdrant_repo, get_repo, get_storage
 from app.services.search_service import SearchResult, SearchService
 from app.services.track_service import MAX_UPLOAD_BYTES, TrackService
 
@@ -42,7 +42,6 @@ _ALLOWED_EXTENSIONS = {".mp3"}
 class UploadResponse(BaseModel):
     """Response returned after a successful track upload."""
 
-    track_id: str
     job_id: str
     status: str  # Always "pending" at upload time.
 
@@ -59,13 +58,11 @@ class UploadResponse(BaseModel):
 )
 async def list_popular(
     limit: int = 10,
-    repo: SQLiteRepository = Depends(get_sqlite_repo),
+    repo: PgRepository = Depends(get_repo),
+    storage: S3Storage = Depends(get_storage),
 ) -> list[Track]:
-    """Return the *limit* most-played tracks that have status='ready'.
-
-    Ordered by play_count descending.
-    """
-    service = TrackService(repo, settings.media_root)
+    """Return the *limit* most-played tracks that have status='ready'."""
+    service = TrackService(repo, storage)
     return await service.list_popular(limit)
 
 
@@ -77,13 +74,9 @@ async def list_popular(
 async def suggest(
     q: str = "",
     limit: int = 10,
-    repo: SQLiteRepository = Depends(get_sqlite_repo),
+    repo: PgRepository = Depends(get_repo),
 ) -> list[str]:
-    """Return up to *limit* autocomplete suggestions matching the prefix *q*.
-
-    Each suggestion is formatted as "artist — title".
-    Only ready tracks are considered.
-    """
+    """Return up to *limit* autocomplete suggestions matching the prefix *q*."""
     if not q:
         return []
 
@@ -101,15 +94,10 @@ async def search_tracks(
     q: str = "",
     limit: int = 20,
     offset: int = 0,
-    repo: SQLiteRepository = Depends(get_sqlite_repo),
+    repo: PgRepository = Depends(get_repo),
     qdrant_repo: QDrantRepository = Depends(get_qdrant_repo),
 ) -> SearchResult:
-    """Hybrid search combining FTS5 and optional semantic (vector) search.
-
-    If FTS5 returns fewer than 5 results and a sentence-transformers model
-    is available, a semantic search is also run and the results are merged.
-    FTS results always take priority in the merged list.
-    """
+    """Hybrid search combining tsvector FTS and optional semantic (vector) search."""
     if not q:
         return SearchResult(total=0, items=[])
 
@@ -125,13 +113,11 @@ async def search_tracks(
 )
 async def get_track(
     track_id: str,
-    repo: SQLiteRepository = Depends(get_sqlite_repo),
+    repo: PgRepository = Depends(get_repo),
+    storage: S3Storage = Depends(get_storage),
 ) -> Track:
-    """Return the full track record for the given *track_id*.
-
-    Raises 404 if no track with that ID exists.
-    """
-    service = TrackService(repo, settings.media_root)
+    """Return the full track record for the given *track_id*."""
+    service = TrackService(repo, storage)
     track = await service.get_track(track_id)
 
     if track is None:
@@ -154,22 +140,15 @@ async def upload_track(
     file: UploadFile = FastAPIFile(..., description="MP3 file, max 50 MB"),
     artist: str | None = Form(default=None),
     title: str | None = Form(default=None),
-    repo: SQLiteRepository = Depends(get_sqlite_repo),
+    repo: PgRepository = Depends(get_repo),
+    storage: S3Storage = Depends(get_storage),
 ) -> UploadResponse:
     """Accept a user-uploaded MP3 and enqueue it for processing.
 
-    Validates:
-    - File extension must be ``.mp3``.
-    - Content-Type must be ``audio/mpeg`` or ``audio/mp3``.
-    - File size must not exceed 50 MB (checked via Content-Length header first,
-      then confirmed after reading the body).
-
-    Returns a 202 Accepted response with the track ID and job ID.
+    Validates file extension, content type, and size.
+    Uploads to S3 and creates a job record (no track record yet).
+    Returns a 202 Accepted response with the job ID.
     """
-    # Early rejection based on the Content-Length header.  This avoids
-    # reading the entire body before we can tell the client the file is
-    # too large.  We still re-check after reading because Content-Length
-    # can be missing or spoofed.
     content_length_header = request.headers.get("content-length")
     if content_length_header is not None:
         try:
@@ -186,7 +165,6 @@ async def upload_track(
                 ),
             )
 
-    # Validate file extension.
     filename = file.filename or ""
     extension = pathlib.Path(filename).suffix.lower()
     if extension not in _ALLOWED_EXTENSIONS:
@@ -195,18 +173,13 @@ async def upload_track(
             detail=f"Only .mp3 files are accepted. Got '{extension}'.",
         )
 
-    # Validate content type.
     content_type = (file.content_type or "").split(";")[0].strip().lower()
     if content_type not in _ALLOWED_CONTENT_TYPES:
         raise HTTPException(
             status_code=422,
-            detail=(
-                f"Content-Type must be audio/mpeg. Got '{content_type}'."
-            ),
+            detail=f"Content-Type must be audio/mpeg. Got '{content_type}'.",
         )
 
-    # Validate file size by reading the whole thing first.
-    # We buffer it to check the size without writing a partial file.
     content = await file.read()
     if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(
@@ -217,20 +190,17 @@ async def upload_track(
             ),
         )
 
-    # Pass the already-read bytes to the service (no second read needed).
-    service = TrackService(repo, settings.media_root)
-    track = await service.upload_mp3(content, artist, title)
-    job = await service.enqueue_processing(track.id)
+    rmq = getattr(request.app.state, "rmq", None)
+    service = TrackService(repo, storage, rmq)
+    job = await service.upload_mp3(content, artist, title)
 
     logger.info(
         "track_upload_accepted",
-        track_id=track.id,
         job_id=job.id,
         filename=filename,
     )
 
     return UploadResponse(
-        track_id=track.id,
         job_id=job.id,
         status="pending",
     )

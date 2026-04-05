@@ -1,8 +1,6 @@
-"""Unified worker configuration loaded from environment variables.
+"""Worker configuration loaded from environment variables.
 
-Fields are grouped by concern.  Each pipeline mode reads only the fields
-it needs, but keeping them in one place means a single .env file covers
-both GPU and API deployments.
+Only GPU mode is supported. API mode (MVSEP + OpenAI Whisper) has been removed.
 """
 
 from __future__ import annotations
@@ -14,53 +12,27 @@ from pydantic_settings import BaseSettings
 
 
 class WorkerSettings(BaseSettings):
-    """Runtime configuration for the karaoke audio worker.
-
-    Set WORKER_MODE=gpu (default) or WORKER_MODE=api to select the
-    processing pipeline at startup.
-    """
-
-    # ------------------------------------------------------------------
-    # Pipeline selection
-    # ------------------------------------------------------------------
-
-    worker_mode: str = "gpu"
-    """Which pipeline to use: 'gpu' (local UVR + faster-whisper) or
-    'api' (MVSEP + OpenAI Whisper API)."""
+    """Runtime configuration for the karaoke audio worker (GPU mode only)."""
 
     # ------------------------------------------------------------------
     # Common: infrastructure
     # ------------------------------------------------------------------
 
-    database_url: str = "/data/sqlite/karaoke.db"
+    pg_dsn: str = "postgresql://karaoke:karaoke@postgres:5432/karaoke"
     media_root: str = "/data/media"
+
+    # S3-compatible storage
+    s3_bucket: str = "karaoke"
+    s3_endpoint_url: str = "http://minio:9000"
+    s3_access_key: str = "minioadmin"
+    s3_secret_key: str = "minioadmin"
+
+    # RabbitMQ
+    rabbitmq_url: str = "amqp://karaoke:karaoke@rabbitmq:5672/"
     model_cache_dir: str = "/data/models"
     worker_id: str = f"{socket.gethostname()}-{os.getpid()}"
     poll_interval_sec: float = 2.0
     log_level: str = "INFO"
-
-    # ------------------------------------------------------------------
-    # Common: QDrant
-    # ------------------------------------------------------------------
-
-    qdrant_host: str = "qdrant"
-    qdrant_port: int = 6333
-
-    # ------------------------------------------------------------------
-    # Common: audio feature normalization
-    # ------------------------------------------------------------------
-
-    normalization_stats_path: str = ""
-    """Path to feature_normalization_stats.json.  Empty = skip z-score."""
-
-    rec_cluster_centroids_path: str = ""
-    """Path to rec_cluster_centroids.json.  Empty = skip cluster assignment."""
-
-    # ------------------------------------------------------------------
-    # Common: OpenAI key (used by Whisper API + optional embedder)
-    # ------------------------------------------------------------------
-
-    openai_api_key: str = ""
 
     # ------------------------------------------------------------------
     # Common: lyrics agent (DeepSeek + Yandex Search)
@@ -81,7 +53,7 @@ class WorkerSettings(BaseSettings):
     ctc_device: str = "cpu"
     """ONNX execution provider for CTC alignment: 'cuda' or 'cpu'.
     CPU is the only viable option — wav2vec2 ONNX graph has 24 ops
-    unsupported by CUDA EP, causing constant CPU↔GPU memcpy that
+    unsupported by CUDA EP, causing constant CPU<->GPU memcpy that
     makes GPU slower than pure CPU."""
     ctc_batch_size: int = 16
     """Batch size for generate_emissions (CPU has plenty of RAM)."""
@@ -106,35 +78,6 @@ class WorkerSettings(BaseSettings):
     whisper_model_size: str = "tiny"
     whisper_device: str = "cuda"
     whisper_compute_type: str = "float16"
-
-    # ------------------------------------------------------------------
-    # API mode: MVSEP stem separation
-    # ------------------------------------------------------------------
-
-    mvsep_api_key: str = ""
-    mvsep_api_url: str = "https://mvsep.com/api"
-    mvsep_sep_type: int = 49
-    """MVSEP model type ID.  49 = BS-Roformer."""
-    mvsep_output_format: str = "mp3"
-    mvsep_poll_interval_sec: float = 10.0
-    mvsep_timeout_sec: float = 600.0
-
-    # ------------------------------------------------------------------
-    # API mode: OpenAI Whisper API ASR
-    # ------------------------------------------------------------------
-
-    whisper_api_model: str = "whisper-1"
-    whisper_api_timeout: float = 120.0
-
-    # ------------------------------------------------------------------
-    # API mode: lyric embedder backend
-    # ------------------------------------------------------------------
-
-    lyric_embedder_backend: str = "local"
-    """'local' = sentence-transformers, 'openai' = text-embedding-3-small."""
-
-    openai_embedding_model: str = "text-embedding-3-small"
-    openai_embedding_dimensions: int = 384
 
     model_config = {"env_prefix": ""}
 

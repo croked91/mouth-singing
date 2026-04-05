@@ -16,7 +16,7 @@ import structlog
 from karaoke_shared.models.job import Job
 from karaoke_shared.models.track import TrackUpdate
 from karaoke_shared.repositories.qdrant_repository import QDrantRepository
-from karaoke_shared.repositories.sqlite_repository import SQLiteRepository
+from karaoke_shared.repositories.pg_repository import PgRepository
 from karaoke_shared.services.job_service import JobService
 
 from worker.common.base_pipeline import BasePipeline
@@ -123,7 +123,7 @@ class BootstrapPipeline(BasePipeline):
         self,
         job_service: JobService,
         uvr: UVRSeparator,
-        repo: SQLiteRepository,
+        repo: PgRepository,
         ctc_aligner: CTCAligner,
         feature_extractor: object | None = None,
         lyric_embedder: object | None = None,

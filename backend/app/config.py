@@ -14,15 +14,25 @@ class Settings(BaseSettings):
 
     Reads values from environment variables (case-insensitive).
     No env_prefix is used so that the variable names in docker-compose.yml
-    map directly (e.g. DATABASE_URL -> database_url).
+    map directly (e.g. PG_DSN -> pg_dsn).
     """
 
-    database_url: str = "/data/sqlite/karaoke.db"
+    pg_dsn: str = "postgresql://karaoke:karaoke@localhost:5432/karaoke"
     qdrant_host: str = "localhost"
     qdrant_port: int = 6333
-    media_root: str = "/data/media"
     admin_secret: str = "changeme"
     log_level: str = "INFO"
+
+    # S3-compatible storage (MinIO / AWS S3 / Yandex OS)
+    s3_bucket: str = "karaoke"
+    s3_endpoint_url: str = "http://minio:9000"
+    s3_access_key: str = "minioadmin"
+    s3_secret_key: str = "minioadmin"
+    s3_region: str = "us-east-1"
+    s3_presigned_url_base: str = ""
+
+    # RabbitMQ
+    rabbitmq_url: str = "amqp://karaoke:karaoke@rabbitmq:5672/"
 
     model_config = {"env_prefix": ""}
 

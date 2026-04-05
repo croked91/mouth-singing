@@ -11,16 +11,16 @@ from karaoke_shared.models.recommendation import (
     RecommendationStrategy,
 )
 from karaoke_shared.repositories.qdrant_repository import QDrantRepository
-from karaoke_shared.repositories.sqlite_repository import SQLiteRepository
+from karaoke_shared.repositories.pg_repository import PgRepository
 
-from app.dependencies import get_qdrant_repo, get_sqlite_repo
+from app.dependencies import get_qdrant_repo, get_repo
 from app.services.recommendation_service import RecommendationService
 
 router = APIRouter()
 
 
 async def _to_items(
-    recommended, repo: SQLiteRepository
+    recommended, repo: PgRepository
 ) -> list[RecommendedTrackItem]:
     """Convert RecommendedTrack list to API items with artist images."""
     # Batch-fetch artist images in a single query.
@@ -58,7 +58,7 @@ async def get_recommendations(
     language: str | None = Query(None, description="Language filter (e.g. 'ru')"),
     limit: int = Query(5, ge=1, le=50, description="Max results"),
     exclude_ids: str | None = Query(None, description="Comma-separated track IDs to exclude"),
-    repo: SQLiteRepository = Depends(get_sqlite_repo),
+    repo: PgRepository = Depends(get_repo),
     qdrant_repo: QDrantRepository = Depends(get_qdrant_repo),
 ) -> RecommendationResponse:
     """Return track recommendations for the session.

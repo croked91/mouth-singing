@@ -1,15 +1,14 @@
 """FastAPI dependency functions.
 
 These are used with ``Depends()`` in route handlers. The actual singletons
-(db connection, qdrant client) are stored on ``app.state`` and set up during
+(pg pool, qdrant client) are stored on ``app.state`` and set up during
 the lifespan in ``main.py``.
 
 Usage in a route::
 
     @router.get("/example")
     async def example(
-        db: aiosqlite.Connection = Depends(get_db),
-        repo: SQLiteRepository = Depends(get_sqlite_repo),
+        repo: PgRepository = Depends(get_repo),
         qdrant: QdrantClient = Depends(get_qdrant),
         qdrant_repo: QDrantRepository = Depends(get_qdrant_repo),
         queue_service: QueueService = Depends(get_queue_service),
@@ -17,61 +16,44 @@ Usage in a route::
         ...
 """
 
-import aiosqlite
 from fastapi import Request
-from karaoke_shared import QDrantRepository, SQLiteRepository
+from karaoke_shared import QDrantRepository, PgRepository
+from karaoke_shared.storage import S3Storage
 from qdrant_client import QdrantClient
 
 from app.services.queue_service import QueueService
 
 
-def get_db(request: Request) -> aiosqlite.Connection:
-    """Return the shared SQLite connection from application state.
+def get_repo(request: Request) -> PgRepository:
+    """Return a PgRepository wrapping the shared asyncpg pool.
 
-    The connection is opened once at startup (lifespan) and shared across
-    all requests. aiosqlite handles its own internal locking so this is safe.
+    The pool is created once at startup (lifespan) and shared across
+    all requests via ``app.state.pg_pool``.
     """
-    return request.app.state.db
+    return PgRepository(request.app.state.pg_pool)
 
 
 def get_qdrant(request: Request) -> QdrantClient:
-    """Return the shared QdrantClient instance from application state.
-
-    The sync QdrantClient is used here. For I/O-bound calls inside async
-    route handlers, run them in a thread pool via ``asyncio.to_thread()``.
-    """
+    """Return the shared QdrantClient instance from application state."""
     return request.app.state.qdrant
 
 
-def get_sqlite_repo(request: Request) -> SQLiteRepository:
-    """Return a SQLiteRepository wrapping the shared connection.
-
-    The repository is constructed per-request but the underlying connection
-    is shared (stored on ``app.state.db``).
-    """
-    return SQLiteRepository(request.app.state.db)
-
-
 def get_qdrant_repo(request: Request) -> QDrantRepository:
-    """Return a QDrantRepository wrapping the shared QdrantClient.
-
-    Calls to this repository inside async handlers should be wrapped in
-    ``asyncio.to_thread()`` since the underlying client is synchronous.
-    """
+    """Return a QDrantRepository wrapping the shared QdrantClient."""
     return QDrantRepository(request.app.state.qdrant)
 
 
 def get_queue_service(request: Request) -> QueueService:
     """Return a QueueService for the current request."""
-    sqlite_repo = get_sqlite_repo(request)
-    return QueueService(repo=sqlite_repo)
+    repo = get_repo(request)
+    return QueueService(repo=repo)
+
+
+def get_storage(request: Request) -> S3Storage:
+    """Return the shared S3Storage instance from application state."""
+    return request.app.state.storage
 
 
 def get_embedder(request: Request):
-    """Return the sentence-transformers Embedder, or ``None`` if not loaded.
-
-    The embedder is loaded once at startup and stored on ``app.state``. If it
-    was not loaded (missing dependency or failed download), this returns
-    ``None`` and the search service falls back to FTS-only mode.
-    """
+    """Return the sentence-transformers Embedder, or ``None`` if not loaded."""
     return getattr(request.app.state, "embedder", None)

@@ -8,11 +8,20 @@ services:
       dockerfile: docker/worker-gpu.Dockerfile
     restart: unless-stopped
     depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
       backend:
         condition: service_healthy
     environment:
       WORKER_MODE: gpu
-      DATABASE_URL: /data/sqlite/karaoke.db
+      PG_DSN: postgresql://karaoke:${PG_PASSWORD:-karaoke}@postgres:5432/karaoke
+      S3_BUCKET: karaoke
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
+      RABBITMQ_URL: amqp://${RMQ_USER:-karaoke}:${RMQ_PASS:-karaoke}@rabbitmq:5672/
       MEDIA_ROOT: /data/media
       MODEL_CACHE_DIR: /data/models
       POLL_INTERVAL_SEC: ${WORKER_POLL_INTERVAL:-2}
@@ -38,7 +47,6 @@ services:
       # Model cache
       HF_HOME: /data/models/huggingface
     volumes:
-      - sqlite_data:/data/sqlite
       - media_data:/data/media
       - models_data:/data/models
       - ctc_model:/root/ctc_forced_aligner

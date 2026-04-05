@@ -7,9 +7,9 @@ Endpoints:
 
 from fastapi import APIRouter, Depends, Query
 from karaoke_shared.models.mood_tag import MoodTagResponse
-from karaoke_shared.repositories.sqlite_repository import SQLiteRepository
+from karaoke_shared.repositories.pg_repository import PgRepository
 
-from app.dependencies import get_sqlite_repo
+from app.dependencies import get_repo
 
 router = APIRouter()
 
@@ -22,7 +22,7 @@ router = APIRouter()
 async def get_tags(
     session_id: str = Query(..., description="Session UUID"),
     limit: int = Query(8, ge=1, le=30, description="Max tags to return"),
-    repo: SQLiteRepository = Depends(get_sqlite_repo),
+    repo: PgRepository = Depends(get_repo),
 ) -> list[MoodTagResponse]:
     """Return mood tags from vibes not yet covered by the session.
 

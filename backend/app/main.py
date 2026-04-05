@@ -2,7 +2,7 @@
 
 Startup sequence (managed by the lifespan context manager):
 1. Configure structlog JSON logging.
-2. Open the SQLite database and apply the schema.
+2. Connect to PostgreSQL and apply the schema.
 3. Connect to QDrant and ensure the required collections exist.
 
 The app is designed to run as a kiosk service in a karaoke room, so CORS is
@@ -21,8 +21,10 @@ from qdrant_client.models import Distance, PayloadSchemaType, VectorParams
 
 from app.api.router import v1_router
 from app.config import settings
-from app.db import init_db
+from app.db import init_pg
 from app.logging_config import configure_logging
+from karaoke_shared.messaging import RabbitMQClient
+from karaoke_shared.storage import S3Storage
 from karaoke_shared.constants import (
     AUDIO_FEATURE_DIM,
     COLLECTION_AUDIO_FEATURES,
@@ -46,11 +48,7 @@ _PAYLOAD_INDEXES: list[str] = ["status", "language", "source"]
 
 
 def _ensure_qdrant_collections(client: QdrantClient) -> None:
-    """Create QDrant collections and payload indexes if they do not exist.
-
-    This function is synchronous because QdrantClient is sync. It is called
-    inside ``asyncio.to_thread()`` from the async lifespan.
-    """
+    """Create QDrant collections and payload indexes if they do not exist."""
     existing = {c.name for c in client.get_collections().collections}
 
     for name, dim, distance in _QDRANT_COLLECTIONS:
@@ -89,53 +87,48 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     configure_logging()
     logger.info("karaoke_backend_starting", log_level=settings.log_level)
 
-    # 2. SQLite — open connection and apply schema.
-    db = await init_db(settings.database_url)
-    app.state.db = db
+    # 2. PostgreSQL — create pool and apply schema.
+    pool = await init_pg(settings.pg_dsn)
+    app.state.pg_pool = pool
 
-    # 2b. Safe schema migrations for existing databases.
-    for migration in [
-        "ALTER TABLE participants ADD COLUMN lyrics_portrait_vector TEXT",
-        "ALTER TABLE tracks ADD COLUMN popularity_category TEXT DEFAULT 'regular'",
-        "ALTER TABLE tracks ADD COLUMN chart_count INTEGER DEFAULT 0",
-        "ALTER TABLE tracks ADD COLUMN chart_last_seen TEXT",
-        "ALTER TABLE tracks ADD COLUMN catalog_cluster_id INTEGER",
-    ]:
-        try:
-            await db.execute(migration)
-            await db.commit()
-            logger.info("migration_applied", sql=migration[:60])
-        except Exception:
-            pass  # Column already exists.
+    # 3. S3 storage — create client and ensure bucket exists.
+    storage = S3Storage(
+        bucket=settings.s3_bucket,
+        endpoint_url=settings.s3_endpoint_url or None,
+        access_key=settings.s3_access_key,
+        secret_key=settings.s3_secret_key,
+        region=settings.s3_region,
+        presigned_url_base=settings.s3_presigned_url_base or None,
+    )
+    try:
+        await storage.ensure_bucket()
+    except Exception as exc:
+        logger.warning("s3_bucket_init_failed", error=str(exc))
+    app.state.storage = storage
 
-    # 2c. Safe index creation for new columns.
-    for index_sql in [
-        "CREATE INDEX IF NOT EXISTS idx_tracks_cluster ON tracks(catalog_cluster_id)",
-        "CREATE INDEX IF NOT EXISTS idx_tracks_popularity ON tracks(popularity_category) WHERE status = 'ready'",
-    ]:
-        try:
-            await db.execute(index_sql)
-            await db.commit()
-        except Exception:
-            pass  # Column may not exist on very old DBs.
+    # 4. RabbitMQ — connect and declare topology.
+    rmq = RabbitMQClient(settings.rabbitmq_url)
+    try:
+        await rmq.connect()
+        await rmq.declare_topology()
+        app.state.rmq = rmq
+    except Exception as exc:
+        logger.warning("rabbitmq_init_failed", error=str(exc))
+        app.state.rmq = None
 
-    # 3. QDrant — create client and ensure collections exist.
+    # 5. QDrant — create client and ensure collections exist.
     qdrant = QdrantClient(
         host=settings.qdrant_host, port=settings.qdrant_port, timeout=10
     )
     app.state.qdrant = qdrant
 
     # Collection creation is sync; run it off the event loop thread.
-    # If QDrant is unreachable, log a warning and continue in degraded mode —
-    # the health endpoint will report qdrant=error.
     try:
         await asyncio.to_thread(_ensure_qdrant_collections, qdrant)
     except Exception as exc:
         logger.warning("qdrant_init_failed", error=str(exc))
 
-    # 4. Sentence-transformer embedder for semantic search (optional).
-    #    If sentence-transformers is not installed or the model download fails,
-    #    we log a warning and continue — the search service falls back to FTS.
+    # 5. Sentence-transformer embedder for semantic search (optional).
     embedder = None
     try:
         from app.services.embedder import Embedder  # noqa: PLC0415
@@ -153,9 +146,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     yield
 
-    # Shutdown: close the SQLite connection cleanly.
+    # Shutdown: close connections cleanly.
     logger.info("karaoke_backend_shutting_down")
-    await db.close()
+    if app.state.rmq:
+        await app.state.rmq.close()
+    await pool.close()
 
 
 # ---------------------------------------------------------------------------
