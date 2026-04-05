@@ -1,30 +1,28 @@
-"""Recommendations API router.
+"""Recommendations API router — thin proxy to rec-service.
 
 Endpoints:
-    GET /recommendations  Get track recommendations for a session (auto or by tag)
+    GET /recommendations  Get track recommendations for a session
 """
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from karaoke_shared.models.recommendation import (
     RecommendationResponse,
     RecommendedTrackItem,
     RecommendationStrategy,
 )
-from karaoke_shared.repositories.qdrant_repository import QDrantRepository
 from karaoke_shared.repositories.pg_repository import PgRepository
 
-from app.dependencies import get_qdrant_repo, get_repo
-from app.services.recommendation_service import RecommendationService
+from app.dependencies import get_repo
+from app.services.popular_service import get_popular_tracks
 
 router = APIRouter()
 
 
-async def _to_items(
-    recommended, repo: PgRepository
+async def _enrich_with_images(
+    tracks: list[dict], repo: PgRepository,
 ) -> list[RecommendedTrackItem]:
-    """Convert RecommendedTrack list to API items with artist images."""
-    # Batch-fetch artist images in a single query.
-    artist_names = list({r.track.artist for r in recommended})
+    """Add artist_image_url from PG artists table."""
+    artist_names = list({t["artist"] for t in tracks})
     artists_map = await repo.get_artists_by_names(artist_names)
     artist_images: dict[str, str | None] = {}
     for name in artist_names:
@@ -36,14 +34,14 @@ async def _to_items(
 
     return [
         RecommendedTrackItem(
-            id=r.track.id,
-            artist=r.track.artist,
-            title=r.track.title,
-            duration_sec=r.track.duration_sec,
-            similarity_score=r.similarity_score,
-            artist_image_url=artist_images.get(r.track.artist),
+            id=t["id"],
+            artist=t["artist"],
+            title=t["title"],
+            duration_sec=t.get("duration_sec"),
+            similarity_score=t.get("similarity_score", 0.0),
+            artist_image_url=artist_images.get(t["artist"]),
         )
-        for r in recommended
+        for t in tracks
     ]
 
 
@@ -53,60 +51,62 @@ async def _to_items(
     summary="Get track recommendations for a session",
 )
 async def get_recommendations(
+    request: Request,
     session_id: str = Query(..., description="Session UUID"),
     tag_id: int | None = Query(None, description="Mood tag ID (overrides auto mode)"),
     language: str | None = Query(None, description="Language filter (e.g. 'ru')"),
     limit: int = Query(5, ge=1, le=50, description="Max results"),
     exclude_ids: str | None = Query(None, description="Comma-separated track IDs to exclude"),
     repo: PgRepository = Depends(get_repo),
-    qdrant_repo: QDrantRepository = Depends(get_qdrant_repo),
 ) -> RecommendationResponse:
     """Return track recommendations for the session.
 
-    When ``tag_id`` is provided, returns tracks from that tag's cluster
-    using KNN search.  Otherwise returns auto-recommendations (POPULAR).
+    Proxies to rec-service for cluster/tag KNN recommendations.
+    Falls back to popular strategy if rec-service is unavailable.
     """
-    service = RecommendationService(repo, qdrant_repo)
+    rec_client = getattr(request.app.state, "rec_client", None)
 
-    if tag_id is not None:
-        # Tag-based recommendations: KNN by cluster centroid
-        tag = await repo.get_tag(tag_id)
-        if tag is None:
-            return RecommendationResponse(strategy=RecommendationStrategy.POPULAR, tracks=[])
+    # 1. Get play history from PG.
+    history = await repo.get_history_by_session(session_id)
+    played_ids = [entry.track_id for entry in history]
+    exclude_set = set(exclude_ids.split(",")) if exclude_ids else set()
 
-        clusters = await repo.get_all_clusters()
-        cluster = next((c for c in clusters if c.id == tag["cluster_id"]), None)
-        if cluster is None:
-            return RecommendationResponse(strategy=RecommendationStrategy.POPULAR, tracks=[])
-
-        strategy, results = await service.get_tag_recommendations(
-            tag_centroid_audio=cluster.centroid_audio,
-            tag_centroid_lyrics=cluster.centroid_lyrics,
-            session_id=session_id,
-            limit=limit * 3,  # oversample for artist dedup
-            language=language,
-            tag_cluster_id=cluster.id,
-        )
-        # Deduplicate by artist.
-        seen_artists: set[str] = set()
-        deduped = []
-        for r in results:
-            if r.track.artist not in seen_artists:
-                seen_artists.add(r.track.artist)
-                deduped.append(r)
-                if len(deduped) >= limit:
-                    break
+    # 2. If no history and no tag → popular from PG (no rec-service needed).
+    if not played_ids and tag_id is None:
+        tracks = await get_popular_tracks(repo, limit, language, set(played_ids) | exclude_set)
         return RecommendationResponse(
-            strategy=strategy,
-            tracks=await _to_items(deduped, repo),
+            strategy=RecommendationStrategy.POPULAR,
+            tracks=await _enrich_with_images(tracks, repo),
         )
 
-    # Auto-recommendations
-    extra_exclude = set(exclude_ids.split(",")) if exclude_ids else None
-    strategy, recommended = await service.get_recommendations(
-        session_id=session_id,
-        limit=limit,
-        language=language,
-        extra_exclude_ids=extra_exclude,
+    # 3. Try rec-service.
+    result = None
+    if rec_client is not None:
+        if tag_id is not None:
+            result = await rec_client.get_tag_recommendations(
+                tag_id=tag_id,
+                played_track_ids=played_ids,
+                limit=limit,
+                language=language,
+            )
+        else:
+            result = await rec_client.get_recommendations(
+                played_track_ids=played_ids,
+                limit=limit,
+                language=language,
+                exclude_ids=list(exclude_set) if exclude_set else None,
+            )
+
+    # 4. If rec-service returned results → enrich with artist images.
+    if result is not None and result.get("tracks"):
+        return RecommendationResponse(
+            strategy=RecommendationStrategy(result.get("strategy", "cluster")),
+            tracks=await _enrich_with_images(result["tracks"], repo),
+        )
+
+    # 5. Fallback: popular from PG.
+    tracks = await get_popular_tracks(repo, limit, language, set(played_ids) | exclude_set)
+    return RecommendationResponse(
+        strategy=RecommendationStrategy.POPULAR,
+        tracks=await _enrich_with_images(tracks, repo),
     )
-    return RecommendationResponse(strategy=strategy, tracks=await _to_items(recommended, repo))

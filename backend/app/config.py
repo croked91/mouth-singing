@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     # RabbitMQ
     rabbitmq_url: str = "amqp://karaoke:karaoke@rabbitmq:5672/"
 
+    # Rec-service (recommendation microservice)
+    rec_service_url: str = "http://rec-service:8001"
+    rec_service_timeout: float = 5.0
+
     model_config = {"env_prefix": ""}
 
 

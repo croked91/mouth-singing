@@ -3,77 +3,60 @@
 Startup sequence (managed by the lifespan context manager):
 1. Configure structlog JSON logging.
 2. Connect to PostgreSQL and apply the schema.
-3. Connect to QDrant and ensure the required collections exist.
+3. Connect to RabbitMQ and start rec.indexed consumer.
+4. Create rec-service HTTP client.
 
-The app is designed to run as a kiosk service in a karaoke room, so CORS is
-open to all origins — there is no public internet exposure.
+QDrant is NOT used by the backend — all vector search is handled
+by the rec-service microservice.
 """
 
 import asyncio
+import json
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, PayloadSchemaType, VectorParams
 
 from app.api.router import v1_router
 from app.config import settings
 from app.db import init_pg
 from app.logging_config import configure_logging
+from app.services.rec_client import RecClient
 from karaoke_shared.messaging import RabbitMQClient
+from karaoke_shared.repositories.pg_repository import PgRepository
 from karaoke_shared.storage import S3Storage
-from karaoke_shared.constants import (
-    AUDIO_FEATURE_DIM,
-    COLLECTION_AUDIO_FEATURES,
-    COLLECTION_LYRICS_EMBEDDINGS,
-    LYRICS_EMBEDDING_DIM,
-)
 
 logger = structlog.get_logger(__name__)
 
+
 # ---------------------------------------------------------------------------
-# QDrant collection definitions
+# rec.indexed consumer — updates qdrant_synced in PG
 # ---------------------------------------------------------------------------
 
-_QDRANT_COLLECTIONS: list[tuple[str, int, Distance]] = [
-    (COLLECTION_AUDIO_FEATURES, AUDIO_FEATURE_DIM, Distance.COSINE),
-    (COLLECTION_LYRICS_EMBEDDINGS, LYRICS_EMBEDDING_DIM, Distance.COSINE),
-]
+async def _start_rec_indexed_consumer(rmq: RabbitMQClient, pool) -> None:
+    """Consume rec.indexed messages and update tracks.qdrant_synced in PG."""
 
-# Payload fields to index for efficient filtered searches.
-_PAYLOAD_INDEXES: list[str] = ["status", "language", "source"]
+    async def _on_message(message) -> None:
+        async with message.process(requeue=False):
+            try:
+                data = json.loads(message.body.decode())
+                track_id = data["track_id"]
+                rec_cluster_id = data.get("rec_cluster_id")
 
+                repo = PgRepository(pool)
+                from karaoke_shared.models.track import TrackUpdate
+                await repo.update_track(
+                    track_id,
+                    TrackUpdate(qdrant_synced=1, rec_cluster_id=rec_cluster_id),
+                )
+                logger.info("rec_indexed.updated", track_id=track_id, rec_cluster_id=rec_cluster_id)
+            except Exception:
+                logger.exception("rec_indexed.failed")
 
-def _ensure_qdrant_collections(client: QdrantClient) -> None:
-    """Create QDrant collections and payload indexes if they do not exist."""
-    existing = {c.name for c in client.get_collections().collections}
-
-    for name, dim, distance in _QDRANT_COLLECTIONS:
-        if name in existing:
-            logger.info("qdrant_collection_exists", collection=name)
-            continue
-
-        client.create_collection(
-            collection_name=name,
-            vectors_config=VectorParams(size=dim, distance=distance),
-        )
-        logger.info("qdrant_collection_created", collection=name, dim=dim)
-
-        for field in _PAYLOAD_INDEXES:
-            client.create_payload_index(
-                collection_name=name,
-                field_name=field,
-                field_schema=PayloadSchemaType.KEYWORD,
-            )
-            logger.info(
-                "qdrant_payload_index_created",
-                collection=name,
-                field=field,
-            )
-
+    await rmq.consume("rec.indexed", _on_message, prefetch_count=5)
+    logger.info("rec_indexed_consumer.started", queue="rec.indexed")
 
 
 # ---------------------------------------------------------------------------
@@ -83,15 +66,14 @@ def _ensure_qdrant_collections(client: QdrantClient) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage startup and shutdown of shared resources."""
-    # 1. Logging must be configured first so all subsequent messages are JSON.
     configure_logging()
     logger.info("karaoke_backend_starting", log_level=settings.log_level)
 
-    # 2. PostgreSQL — create pool and apply schema.
+    # 1. PostgreSQL — create pool and apply schema.
     pool = await init_pg(settings.pg_dsn)
     app.state.pg_pool = pool
 
-    # 3. S3 storage — create client and ensure bucket exists.
+    # 2. S3 storage.
     storage = S3Storage(
         bucket=settings.s3_bucket,
         endpoint_url=settings.s3_endpoint_url or None,
@@ -106,38 +88,30 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.warning("s3_bucket_init_failed", error=str(exc))
     app.state.storage = storage
 
-    # 4. RabbitMQ — connect and declare topology.
+    # 3. RabbitMQ — connect, declare topology, start rec.indexed consumer.
     rmq = RabbitMQClient(settings.rabbitmq_url)
     try:
         await rmq.connect()
         await rmq.declare_topology()
         app.state.rmq = rmq
+        await _start_rec_indexed_consumer(rmq, pool)
     except Exception as exc:
         logger.warning("rabbitmq_init_failed", error=str(exc))
         app.state.rmq = None
 
-    # 5. QDrant — create client and ensure collections exist.
-    qdrant = QdrantClient(
-        host=settings.qdrant_host, port=settings.qdrant_port, timeout=10
+    # 4. Rec-service HTTP client.
+    rec_client = RecClient(
+        base_url=settings.rec_service_url,
+        timeout=settings.rec_service_timeout,
     )
-    app.state.qdrant = qdrant
-
-    # Collection creation is sync; run it off the event loop thread.
-    try:
-        await asyncio.to_thread(_ensure_qdrant_collections, qdrant)
-    except Exception as exc:
-        logger.warning("qdrant_init_failed", error=str(exc))
+    app.state.rec_client = rec_client
 
     # 5. Sentence-transformer embedder for semantic search (optional).
     embedder = None
     try:
-        from app.services.embedder import Embedder  # noqa: PLC0415
-
+        from app.services.embedder import Embedder
         embedder = Embedder()
-        logger.info(
-            "embedder_loaded",
-            model="paraphrase-multilingual-MiniLM-L12-v2",
-        )
+        logger.info("embedder_loaded", model="paraphrase-multilingual-MiniLM-L12-v2")
     except Exception as exc:
         logger.warning("embedder_not_available", error=str(exc))
     app.state.embedder = embedder
@@ -146,8 +120,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     yield
 
-    # Shutdown: close connections cleanly.
+    # Shutdown.
     logger.info("karaoke_backend_shutting_down")
+    await rec_client.close()
     if app.state.rmq:
         await app.state.rmq.close()
     await pool.close()
@@ -174,8 +149,5 @@ app.add_middleware(
 
 app.include_router(v1_router, prefix="/api/v1")
 
-# The /health endpoint lives at the root (no /api/v1 prefix) so the Docker
-# health-check can hit it without knowing the API version.
-from app.api.v1 import health as health_module  # noqa: E402 — avoids circular import
-
+from app.api.v1 import health as health_module  # noqa: E402
 app.include_router(health_module.router)

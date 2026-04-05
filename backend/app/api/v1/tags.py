@@ -1,11 +1,10 @@
-"""Mood tags API router.
+"""Mood tags API router — proxies to rec-service.
 
 Endpoints:
-    GET /tags                Get mood tags (excluding covered vibes)
-    GET /recommendations     Enhanced with tag_id parameter (handled in recommendations.py)
+    GET /tags   Get mood tags (excluding covered vibes)
 """
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from karaoke_shared.models.mood_tag import MoodTagResponse
 from karaoke_shared.repositories.pg_repository import PgRepository
 
@@ -20,30 +19,26 @@ router = APIRouter()
     summary="Get mood tags for the session",
 )
 async def get_tags(
+    request: Request,
     session_id: str = Query(..., description="Session UUID"),
     limit: int = Query(8, ge=1, le=30, description="Max tags to return"),
     repo: PgRepository = Depends(get_repo),
 ) -> list[MoodTagResponse]:
     """Return mood tags from vibes not yet covered by the session.
 
-    Looks at which catalog clusters the session has already sung from
-    and excludes tags belonging to those clusters.
+    Proxies to rec-service. Returns empty list if rec-service is unavailable.
     """
-    # Find which clusters are covered by the session's play history
+    rec_client = getattr(request.app.state, "rec_client", None)
+
+    # Get played track IDs from PG.
     history = await repo.get_history_by_session(session_id)
     played_track_ids = [entry.track_id for entry in history]
 
-    covered_cluster_ids: set[int] = set()
-    if played_track_ids:
-        tracks_map = await repo.get_tracks_by_ids(played_track_ids)
-        for track in tracks_map.values():
-            if track.catalog_cluster_id is not None:
-                covered_cluster_ids.add(track.catalog_cluster_id)
+    # Try rec-service.
+    if rec_client is not None:
+        result = await rec_client.get_tags(played_track_ids, limit)
+        if result is not None:
+            return [MoodTagResponse(id=t["id"], name=t["name"]) for t in result]
 
-    # Get tags from uncovered clusters
-    tag_rows = await repo.get_tags_excluding_clusters(covered_cluster_ids, limit)
-
-    return [
-        MoodTagResponse(id=row["id"], name=row["name"])
-        for row in tag_rows
-    ]
+    # Fallback: empty list.
+    return []

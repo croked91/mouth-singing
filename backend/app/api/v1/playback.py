@@ -1,17 +1,17 @@
-"""Playback router — S3 presigned URL redirect for audio streaming.
+"""Playback router — S3 presigned URL redirect for audio streaming + artist images.
 
-Endpoint:
-    GET /tracks/{track_id}/stream
-
-Redirects to a presigned S3 URL. The browser/player handles Range requests
-directly against S3.
+Endpoints:
+    GET /tracks/{track_id}/stream  — redirect to S3 presigned URL
+    GET /media/artists/{filename}  — serve artist image from filesystem
 """
 
 from __future__ import annotations
 
+import pathlib
+
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from karaoke_shared.repositories.pg_repository import PgRepository
 from karaoke_shared.storage import S3Storage
 
@@ -63,3 +63,21 @@ async def stream_track(
         url=presigned_url,
         status_code=status.HTTP_302_FOUND,
     )
+
+
+@router.get(
+    "/media/artists/{filename}",
+    summary="Serve an artist image",
+)
+async def serve_artist_image(filename: str) -> FileResponse:
+    """Serve an artist image from the artists media directory."""
+    artists_dir = pathlib.Path("/data/media/artists")
+    file_path = (artists_dir / filename).resolve()
+
+    if not file_path.is_relative_to(artists_dir.resolve()):
+        raise HTTPException(status_code=400, detail="Invalid path")
+
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    return FileResponse(file_path, media_type="image/jpeg")

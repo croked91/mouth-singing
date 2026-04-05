@@ -2,6 +2,7 @@ FROM python:3.12-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libsndfile1 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 ENV PYTHONUNBUFFERED=1
@@ -23,5 +24,7 @@ RUN pip install --no-cache-dir .
 # Source code (changes here don't rebuild deps)
 COPY shared/karaoke_shared/ /shared/karaoke_shared/
 COPY rec-service/app/ /app/app/
+
+EXPOSE 8001
 
 CMD ["python", "-m", "app.main"]

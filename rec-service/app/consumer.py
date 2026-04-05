@@ -20,7 +20,11 @@ class RecConsumer:
         {
             "track_id": "<uuid>",
             "mp3_key": "uploads/<uuid>.mp3",
-            "lyrics": "full lyrics text..."
+            "lyrics": "full lyrics text...",
+            "artist": "Artist Name",
+            "title": "TRACK TITLE",
+            "duration_sec": 180,
+            "language": "ru"
         }
     """
 
@@ -40,15 +44,23 @@ class RecConsumer:
                 lyrics = data.get("lyrics", "")
             except (json.JSONDecodeError, KeyError) as exc:
                 log.error("rec_consumer.invalid_message", error=str(exc), body=body[:500])
-                # Ack invalid messages so they don't block the queue (DLX handles it)
                 return
 
             log = log.bind(track_id=track_id, mp3_key=mp3_key)
             log.info("rec_consumer.processing")
 
+            # Pass track metadata for enriched QDrant payload.
+            track_meta = {
+                "artist": data.get("artist", ""),
+                "title": data.get("title", ""),
+                "duration_sec": data.get("duration_sec"),
+                "language": data.get("language"),
+                "popularity_category": data.get("popularity_category", "regular"),
+            }
+
             try:
-                await self._indexer.index(track_id, mp3_key, lyrics)
+                await self._indexer.index(track_id, mp3_key, lyrics, track_meta=track_meta)
                 log.info("rec_consumer.done")
             except Exception:
                 log.exception("rec_consumer.index_failed")
-                raise  # Will nack due to exception inside process() context
+                raise

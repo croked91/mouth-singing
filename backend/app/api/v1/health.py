@@ -2,24 +2,21 @@
 
 GET /health
 
-Verifies that both backing services (PostgreSQL and QDrant) are reachable and
-returns a structured JSON response. The Docker health-check and load
-balancers rely on this endpoint.
+Verifies PostgreSQL is reachable (required) and rec-service is
+available (optional — degraded mode is acceptable).
 
 Response when healthy (HTTP 200):
-    {"status": "ok", "postgres": "ok", "qdrant": "ok"}
+    {"status": "ok", "postgres": "ok", "rec_service": "ok"}
 
-Response when degraded (HTTP 503):
-    {"status": "error", "postgres": "ok", "qdrant": "error"}
+Response when degraded (HTTP 200):
+    {"status": "ok", "postgres": "ok", "rec_service": "degraded"}
+
+Response when critical failure (HTTP 503):
+    {"status": "error", "postgres": "error", "rec_service": "..."}
 """
 
-import asyncio
-
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Request
-from qdrant_client import QdrantClient
-
-from app.dependencies import get_qdrant
+from fastapi import APIRouter, HTTPException, Request
 
 logger = structlog.get_logger(__name__)
 
@@ -27,25 +24,21 @@ router = APIRouter(tags=["health"])
 
 
 @router.get("/health")
-async def health_check(
-    request: Request,
-    qdrant: QdrantClient = Depends(get_qdrant),
-) -> dict[str, str]:
-    """Return the liveness status of all backing services.
+async def health_check(request: Request) -> dict[str, str]:
+    """Return liveness status.
 
-    Runs a trivial query against PostgreSQL and a collections-list call against
-    QDrant. If either fails the endpoint returns HTTP 503 so that Docker and
-    orchestration tools know to restart the container.
+    PostgreSQL is required — if it's down, return 503.
+    Rec-service is optional — if it's down, report 'degraded' but still 200.
     """
     pg_status = await _check_postgres(request)
-    qdrant_status = await _check_qdrant(qdrant)
+    rec_status = await _check_rec_service(request)
 
-    overall = "ok" if pg_status == "ok" and qdrant_status == "ok" else "error"
+    overall = "ok" if pg_status == "ok" else "error"
 
     response = {
         "status": overall,
         "postgres": pg_status,
-        "qdrant": qdrant_status,
+        "rec_service": rec_status,
     }
 
     if overall != "ok":
@@ -56,7 +49,6 @@ async def health_check(
 
 
 async def _check_postgres(request: Request) -> str:
-    """Run a trivial SELECT against the PostgreSQL pool."""
     try:
         pool = request.app.state.pg_pool
         result = await pool.fetchval("SELECT 1")
@@ -66,11 +58,9 @@ async def _check_postgres(request: Request) -> str:
         return "error"
 
 
-async def _check_qdrant(qdrant: QdrantClient) -> str:
-    """Call QdrantClient.get_collections() in a thread to avoid blocking."""
-    try:
-        await asyncio.to_thread(qdrant.get_collections)
-        return "ok"
-    except Exception as exc:
-        logger.error("qdrant_health_check_failed", error=str(exc))
-        return "error"
+async def _check_rec_service(request: Request) -> str:
+    rec_client = getattr(request.app.state, "rec_client", None)
+    if rec_client is None:
+        return "degraded"
+    healthy = await rec_client.health()
+    return "ok" if healthy else "degraded"

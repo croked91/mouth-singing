@@ -86,7 +86,7 @@ class RabbitMQClient:
             "job.progress", aio_pika.ExchangeType.FANOUT, durable=False
         )
 
-        # Exchange "rec" (direct) → Queue "rec.index"
+        # Exchange "rec" (direct) → Queue "rec.index" + Queue "rec.indexed"
         rec_exchange = await ch.declare_exchange(
             "rec", aio_pika.ExchangeType.DIRECT, durable=True
         )
@@ -99,6 +99,11 @@ class RabbitMQClient:
             },
         )
         await rec_queue.bind(rec_exchange, routing_key="")
+
+        # rec.indexed — rec-service publishes after QDrant upsert,
+        # backend consumes to update tracks.qdrant_synced in PG.
+        rec_indexed_queue = await ch.declare_queue("rec.indexed", durable=True)
+        await rec_indexed_queue.bind(rec_exchange, routing_key="indexed")
 
         logger.info("rabbitmq_topology_declared")
 
