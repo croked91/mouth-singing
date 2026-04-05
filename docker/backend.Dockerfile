@@ -6,19 +6,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Shared package
+# Shared deps (cached while pyproject.toml unchanged)
 COPY shared/pyproject.toml /shared/pyproject.toml
-COPY shared/karaoke_shared/ /shared/karaoke_shared/
-RUN pip install --no-cache-dir /shared/
+RUN mkdir -p /shared/karaoke_shared && touch /shared/karaoke_shared/__init__.py \
+    && pip install --no-cache-dir -e /shared/
 
-# Backend dependencies (install from pyproject.toml first for caching)
+# Backend deps (cached while pyproject.toml unchanged)
 COPY backend/pyproject.toml /app/pyproject.toml
 RUN pip install --no-cache-dir .
 
-# Backend source code
+# Source code (changes here don't rebuild deps)
+COPY shared/karaoke_shared/ /shared/karaoke_shared/
 COPY backend/app/ /app/app/
 
-# Pre-create data directories
 RUN mkdir -p /data/sqlite /data/media/mp3 /data/media/instrumental /data/media/clips
 
 EXPOSE 8000

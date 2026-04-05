@@ -23,11 +23,11 @@ RUN pip install --no-cache-dir \
     torch torchaudio \
     --index-url https://download.pytorch.org/whl/cu130
 
-# Layer 2: shared package with ML extras
+# Layer 2: shared package deps with ML extras (cached while pyproject.toml unchanged)
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel
 COPY shared/pyproject.toml /shared/pyproject.toml
-COPY shared/karaoke_shared/ /shared/karaoke_shared/
-RUN pip install --no-cache-dir "/shared/[ml]" \
+RUN mkdir -p /shared/karaoke_shared && touch /shared/karaoke_shared/__init__.py \
+    && pip install --no-cache-dir -e "/shared/[ml]" \
     && pip install --no-cache-dir "sentence-transformers>=2.2,<3" "transformers>=4.36,<5"
 
 # Layer 3: CTranslate2 + faster-whisper
@@ -45,7 +45,8 @@ RUN pip install --no-cache-dir \
     pyphen>=0.16 beautifulsoup4>=4.12 lxml>=5.0 pydantic-settings>=2.0 \
     "openai>=1.0"
 
-# Layer 7: project code
+# Layer 7: project code (changes here don't rebuild deps)
+COPY shared/karaoke_shared/ /shared/karaoke_shared/
 COPY worker/ /project/worker/
 COPY scripts/ /project/scripts/
 

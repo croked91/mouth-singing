@@ -648,8 +648,7 @@ karaoke/
 ├── docker/
 │   ├── backend.Dockerfile
 │   ├── frontend.Dockerfile           # Multi-stage node → nginx
-│   ├── worker-gpu.Dockerfile         # CUDA 12.1 + cuDNN 8
-│   └── worker-api.Dockerfile         # CPU-only + external APIs
+│   └── worker-gpu.Dockerfile         # CUDA 12.1 + cuDNN 8
 │
 ├── tests/                            # pytest (unit + integration + e2e)
 ├── journals/                         # Документация проекта

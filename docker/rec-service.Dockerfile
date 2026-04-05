@@ -8,19 +8,20 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# Shared package (with ML extras)
+# Shared deps with ML extras (cached while pyproject.toml unchanged)
 COPY shared/pyproject.toml /shared/pyproject.toml
-COPY shared/karaoke_shared/ /shared/karaoke_shared/
-RUN pip install --no-cache-dir "/shared[ml]"
+RUN mkdir -p /shared/karaoke_shared && touch /shared/karaoke_shared/__init__.py \
+    && pip install --no-cache-dir -e "/shared[ml]"
 
 # PyTorch CPU (needed by sentence-transformers)
 RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 
-# Rec-service dependencies
+# Rec-service deps (cached while pyproject.toml unchanged)
 COPY rec-service/pyproject.toml /app/pyproject.toml
 RUN pip install --no-cache-dir .
 
-# Rec-service source code
+# Source code (changes here don't rebuild deps)
+COPY shared/karaoke_shared/ /shared/karaoke_shared/
 COPY rec-service/app/ /app/app/
 
 CMD ["python", "-m", "app.main"]
