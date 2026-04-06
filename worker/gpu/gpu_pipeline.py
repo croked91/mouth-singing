@@ -292,7 +292,9 @@ class GpuPipeline(BasePipeline):
         )
 
         await self.job_service.mark_step(job_id, "transcribing", 0)
+
         result = await asyncio.to_thread(self.whisper.transcribe, cleaned_path)
+
         await self.job_service.mark_step(job_id, "transcribing", 100)
         return result
 

@@ -1,8 +1,8 @@
 """Whisper ASR transcriber for song identification.
 
-Wraps faster-whisper for local speech-to-text. Accuracy is not critical —
-the result is used only to identify the song for LLM lyrics search.
-Errors in 20-30% of words are acceptable.
+Uses HuggingFace Transformers (PyTorch-native) for local speech-to-text.
+Accuracy is not critical — the result is used only to identify the song
+for LLM lyrics search. Errors in 20-30% of words are acceptable.
 """
 
 from __future__ import annotations
@@ -15,6 +15,12 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
+MODEL_ID_MAP = {
+    "tiny": "openai/whisper-tiny",
+    "base": "openai/whisper-base",
+    "small": "openai/whisper-small",
+}
+
 
 @dataclass
 class WhisperResult:
@@ -25,15 +31,16 @@ class WhisperResult:
 
 
 class WhisperTranscriber:
-    """Wrapper around faster-whisper for local ASR.
+    """PyTorch-native Whisper transcriber via HuggingFace Transformers.
 
+    No CTranslate2 — avoids ~28 s CUDA kernel JIT on first inference.
     The model is loaded once at construction and held in memory.
     Methods are synchronous; use asyncio.to_thread for async contexts.
 
     Args:
-        model_size: 'tiny' (~70MB, ~5s on T4) or 'base' (~140MB).
+        model_size: 'tiny' (~70MB) or 'base' (~140MB).
         device: 'cuda' or 'cpu'.
-        compute_type: 'float16' for GPU, 'int8' for CPU.
+        compute_type: 'float16' for GPU, ignored for CPU.
         model_cache_dir: Directory for HuggingFace model cache.
     """
 
@@ -48,19 +55,33 @@ class WhisperTranscriber:
         self._device = device
         self._compute_type = compute_type
         self._model_cache_dir = model_cache_dir
-        self._model = self._load_model()
+        self._model = None
+        self._processor = None
+        self._torch_dtype = None
+        self._load_model()
 
     def _load_model(self):
-        from faster_whisper import WhisperModel
+        import torch
+        from transformers import WhisperForConditionalGeneration, WhisperProcessor
 
-        model = WhisperModel(
-            self._model_size,
-            device=self._device,
-            compute_type=self._compute_type,
-            download_root=self._model_cache_dir,
+        model_id = MODEL_ID_MAP.get(self._model_size, f"openai/whisper-{self._model_size}")
+
+        self._torch_dtype = (
+            torch.float16 if self._device == "cuda" and "16" in self._compute_type
+            else torch.float32
         )
-        logger.info("whisper_loaded", model_size=self._model_size, device=self._device)
-        return model
+
+        self._processor = WhisperProcessor.from_pretrained(
+            model_id, cache_dir=self._model_cache_dir,
+        )
+        self._model = WhisperForConditionalGeneration.from_pretrained(
+            model_id,
+            cache_dir=self._model_cache_dir,
+            dtype=self._torch_dtype,
+        ).to(self._device)
+
+        logger.info("whisper_loaded", model_size=self._model_size, device=self._device,
+                     backend="transformers")
 
     def transcribe(self, audio_path: str) -> WhisperResult:
         """Transcribe an audio file.
@@ -71,53 +92,91 @@ class WhisperTranscriber:
         Returns:
             WhisperResult with text, language, confidence.
         """
+        import torch
+        import librosa
+
         if self._model is None:
-            self._model = self._load_model()
+            self._load_model()
 
         logger.info("whisper_starting", audio_path=audio_path)
         t0 = time.monotonic()
 
-        segments_gen, info = self._model.transcribe(
-            audio_path,
-            beam_size=1,
-            vad_filter=False,
-            language=None,
-            condition_on_previous_text=False,
-            temperature=0.0,
-        )
+        audio, _ = librosa.load(audio_path, sr=16000, mono=True)
 
-        segments = list(segments_gen)
+        # Process in 30-second chunks (Whisper's native window size)
+        chunk_samples = 30 * 16000
+        all_text_parts = []
+        all_log_probs = []
+        language = "en"
 
-        if not segments:
-            logger.warning("whisper_empty_result", audio_path=audio_path)
-            return WhisperResult(text="", language=info.language or "en", confidence=0.0)
+        for chunk_start in range(0, len(audio), chunk_samples):
+            chunk = audio[chunk_start:chunk_start + chunk_samples]
 
-        text = " ".join(s.text.strip() for s in segments if s.text.strip())
+            inputs = self._processor(
+                chunk, sampling_rate=16000, return_tensors="pt",
+            )
+            input_features = inputs.input_features.to(
+                device=self._device, dtype=self._torch_dtype,
+            )
 
-        avg_logprob = sum(s.avg_logprob for s in segments) / len(segments)
-        confidence = min(1.0, max(0.0, math.exp(avg_logprob)))
+            with torch.no_grad():
+                output = self._model.generate(
+                    input_features,
+                    return_dict_in_generate=True,
+                    output_scores=True,
+                    max_new_tokens=440,
+                )
+
+            token_ids = output.sequences[0]
+            chunk_text = self._processor.decode(token_ids, skip_special_tokens=True).strip()
+            if chunk_text:
+                all_text_parts.append(chunk_text)
+
+            # Detect language from first chunk
+            if chunk_start == 0:
+                first_tokens = self._processor.decode(token_ids[:4], skip_special_tokens=False)
+                for lang_code in ["ru", "en", "es", "fr", "de", "it", "pt", "zh", "ja", "ko",
+                                  "uk", "pl", "cs", "tr", "ar", "hi", "th", "vi", "nl", "sv"]:
+                    if f"<|{lang_code}|>" in first_tokens:
+                        language = lang_code
+                        break
+
+            # Collect log-probs for confidence
+            if output.scores:
+                for i, score in enumerate(output.scores):
+                    tok = token_ids[i + 1] if i + 1 < len(token_ids) else None
+                    if tok is not None:
+                        lp = torch.log_softmax(score[0], dim=-1)[tok].item()
+                        all_log_probs.append(lp)
+
+        text = " ".join(all_text_parts)
+
+        confidence = 0.5
+        if all_log_probs:
+            avg_logprob = sum(all_log_probs) / len(all_log_probs)
+            confidence = min(1.0, max(0.0, math.exp(avg_logprob)))
+
+        elapsed = round(time.monotonic() - t0, 2)
 
         logger.info(
             "whisper_completed",
-            language=info.language,
+            language=language,
             confidence=round(confidence, 3),
-            segments=len(segments),
+            segments=1,
             text_length=len(text),
-            duration_sec=round(time.monotonic() - t0, 2),
+            duration_sec=elapsed,
         )
 
-        return WhisperResult(
-            text=text,
-            language=info.language or "en",
-            confidence=confidence,
-        )
+        return WhisperResult(text=text, language=language, confidence=confidence)
 
     def cleanup(self) -> None:
         """Release VRAM held by the model."""
         import gc
 
         del self._model
-        self._model = None  # type: ignore[assignment]
+        del self._processor
+        self._model = None
+        self._processor = None
         gc.collect()
 
         try:

@@ -16,3 +16,8 @@ tests/
 LICENSE
 
 .claude/
+keys/
+Makefile
+conftest.py
+pytest.ini
+amnezia_config.vpn*

@@ -34,8 +34,8 @@ services:
       UVR_MODEL_NAME: ${UVR_MODEL_NAME:-model_bs_roformer_ep_317_sdr_12.9755.ckpt}
       UVR_TORCH_DEVICE: cuda
       WHISPER_MODEL_SIZE: ${WHISPER_MODEL_SIZE:-tiny}
-      WHISPER_DEVICE: cuda
-      WHISPER_COMPUTE_TYPE: float16
+      WHISPER_DEVICE: ${WHISPER_DEVICE:-cuda}
+      WHISPER_COMPUTE_TYPE: ${WHISPER_COMPUTE_TYPE:-float16}
       VAD_TOP_DB: "35"
       # OpenAI (Whisper API / embedder in API mode)
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}

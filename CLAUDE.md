@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Karaoke web application for club rooms. Kiosk-style (no user registration). ~17,000 tracks in catalog. Supports user MP3 uploads with auto-generated karaoke (vocal separation, transcription, syllable-level alignment).
 
-GPU mode only: Local UVR (BS-Roformer) + faster-whisper + CTC alignment (requires NVIDIA GPU).
+GPU mode only: Local UVR (BS-Roformer) + Whisper (PyTorch Transformers) + CTC alignment (requires NVIDIA GPU).
 
 ## Commands
 
@@ -28,6 +28,9 @@ make ps              # Show running containers
 make health          # Check all service health
 make clean           # Stop containers and prune images
 make build-gpu       # Build images without starting
+
+# Migrations
+make migrate-qdrant-clusters  # Backfill rec_cluster_id into QDrant (run before deploying new backend)
 
 # Tests (requires local venv with deps installed)
 python -m pytest tests/ -v              # All tests
@@ -62,10 +65,10 @@ frontend/     → React 19 + TypeScript + MUI + Zustand. Vite build. Pages in sr
 
 1. Frontend creates sessions, manages FIFO queue, searches tracks
 2. Backend serves REST API + SSE for job progress; redirects audio playback to S3 presigned URLs
-3. On MP3 upload:
-   - Backend uploads to S3 → creates job in PostgreSQL → publishes to RabbitMQ "jobs" exchange
-   - Worker consumes from "jobs.process" queue → runs pipeline → creates track in PostgreSQL → publishes to "rec" exchange
-   - Rec Service consumes from "rec.index" queue → extracts features → embeds lyrics → syncs QDrant → marks qdrant_synced=1
+3. On MP3 upload (deferred track creation — no track record until pipeline completes):
+   - Backend uploads to S3 → creates `job_queue` record (mp3_key, artist_hint, title_hint) → publishes to RabbitMQ "jobs" exchange
+   - Worker consumes from "jobs.process" queue → downloads from S3 → runs pipeline → stores intermediate data in job_queue.data JSONB → at finalization: INSERT INTO tracks (status=ready, qdrant_synced=0) → publishes {track_id, mp3_key, lyrics} to "rec" exchange
+   - Rec Service consumes from "rec.index" queue → extracts features → embeds lyrics → assigns rec_cluster → QDrant upsert → UPDATE tracks SET qdrant_synced=1
 4. SSE progress delivered via RabbitMQ "job.progress" fanout exchange (fallback: DB polling)
 5. Player page renders syllable-by-syllable highlighting synced to audio playback
 
@@ -84,16 +87,10 @@ SEPARATING → VAD → TRANSCRIBING → SEARCHING_LYRICS → ALIGNING → LINE_B
 
 Worker creates track at finalization (deferred track creation — no track record until pipeline completes). Then publishes to Rec Service.
 
-### Upload flow (deferred track creation)
-
-1. Backend uploads MP3 to S3 → creates `job_queue` record (mp3_key, artist_hint, title_hint) → publishes to RabbitMQ
-2. Worker consumes message → downloads from S3 → runs pipeline → stores intermediate data in job_queue.data JSONB
-3. At finalization: INSERT INTO tracks (status=ready, qdrant_synced=0) + publish {track_id, mp3_key, lyrics} to "rec" exchange
-4. Rec Service: extract features → embed lyrics → assign rec_cluster → QDrant upsert → UPDATE tracks SET qdrant_synced=1
-
 ### Key patterns
 
-- All Python config via pydantic-settings, loaded from env vars (no prefix). Defaults in `backend/app/config.py` and `worker/app/config.py`
+- All Python config via pydantic-settings, loaded from env vars (no prefix). Defaults in `backend/app/config.py`, `worker/app/config.py`, `rec-service/app/config.py`
+- Each component has its own `pyproject.toml` with dependencies (backend/, worker/, shared/, rec-service/). Install in editable mode: `pip install -e shared/ -e backend/` etc.
 - Structured logging via structlog (JSON output). Use `structlog.get_logger(__name__)`
 - Root `conftest.py` adds worker/, shared/, backend/ to sys.path for test imports
 - pytest uses `asyncio_mode = auto` (no need for `@pytest.mark.asyncio`)
