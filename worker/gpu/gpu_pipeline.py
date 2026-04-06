@@ -105,10 +105,21 @@ class GpuPipeline(BasePipeline):
             # Free VRAM before Whisper.
             await asyncio.to_thread(self.uvr.cleanup)
 
-            # Upload instrumental to S3.
+            # Convert instrumental WAV→MP3 and upload to S3.
+            instrumental_mp3 = f"/tmp/{job.id}_instrumental.mp3"
+            proc = await asyncio.create_subprocess_exec(
+                "ffmpeg", "-y", "-i", instrumental_path,
+                "-codec:a", "libmp3lame", "-b:a", "192k",
+                instrumental_mp3,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            await proc.wait()
+
             instrumental_key = f"instrumentals/{job.id}.mp3"
-            with open(instrumental_path, "rb") as f:
+            with open(instrumental_mp3, "rb") as f:
                 await self.storage.upload(instrumental_key, f.read())
+            Path(instrumental_mp3).unlink(missing_ok=True)
             await self.repo.update_job_data(
                 job.id, {"instrumental_key": instrumental_key}
             )
@@ -279,6 +290,8 @@ class GpuPipeline(BasePipeline):
                     model_cache_dir=self.uvr.model_cache_dir,
                     media_root=self.uvr.media_root,
                     model_name=self.uvr._model_name,
+                    batch_size=self.uvr._batch_size,
+                    use_autocast=self.uvr._use_autocast,
                 )
                 return await asyncio.to_thread(self.uvr.separate, mp3_path)
             raise

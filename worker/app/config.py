@@ -70,6 +70,8 @@ class WorkerSettings(BaseSettings):
 
     uvr_model_name: str = "model_bs_roformer_ep_317_sdr_12.9755.ckpt"
     uvr_torch_device: str = "cuda"
+    uvr_batch_size: int = 4
+    uvr_use_autocast: bool = True
 
     # ------------------------------------------------------------------
     # GPU mode: faster-whisper local ASR

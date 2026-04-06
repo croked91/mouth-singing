@@ -33,11 +33,15 @@ class UVRSeparator:
         media_root: str,
         model_name: str | None = None,
         torch_device: str = "cuda",
+        batch_size: int = 1,
+        use_autocast: bool = False,
     ) -> None:
         self.model_cache_dir = model_cache_dir
         self.media_root = media_root
         self._model_name = model_name or self.MODEL_NAME
         self.torch_device = torch_device
+        self._batch_size = batch_size
+        self._use_autocast = use_autocast
         self._separator: object | None = None
         self._output_dir: str | None = None
 
@@ -55,7 +59,13 @@ class UVRSeparator:
         self._separator = Separator(
             output_dir=self._output_dir,
             model_file_dir=self.model_cache_dir,
-            output_format="MP3",
+            output_format="WAV",
+            use_autocast=self._use_autocast,
+            mdxc_params={
+                "segment_size": 512,
+                "batch_size": self._batch_size,
+                "overlap": 8,
+            },
         )
         self._separator.load_model(model_filename=self._model_name)
 
