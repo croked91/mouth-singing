@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Karaoke web application for club rooms. Kiosk-style (no user registration). ~17,000 tracks in catalog. Supports user MP3 uploads with auto-generated karaoke (vocal separation, transcription, syllable-level alignment).
 
-GPU mode only: Local UVR (BS-Roformer) + Whisper (PyTorch Transformers) + CTC alignment (requires NVIDIA GPU).
+GPU mode only: Direct PyTorch BS-Roformer (vocal separation) + Whisper (PyTorch Transformers) + CTC alignment (requires NVIDIA GPU).
 
 ## Commands
 
@@ -84,6 +84,11 @@ frontend/     → React 19 + TypeScript + MUI + Zustand. Vite build. Pages in sr
 
 Processing order (defined in `PipelineStep` enum):
 SEPARATING → VAD → TRANSCRIBING → SEARCHING_LYRICS → ALIGNING → LINE_BREAKING
+
+- **SEPARATING**: Direct PyTorch BS-Roformer inference (`worker/gpu/uvr_separator.py`). Model loaded in FP16, batched chunk processing with overlap-add on GPU, autocast enabled. Vocals output as 16kHz mono WAV (ready for VAD/Whisper). Instrumental WAV→MP3 conversion (ffmpeg, matching original bitrate via ffprobe) and S3 upload run as background asyncio task parallel to VAD+Whisper.
+- **VAD**: RMS energy detection via PyTorch CPU (`worker/common/vad_processor.py`). No librosa dependency — uses `torch.unfold` + threshold. Audio loaded via soundfile, resampled via `torchaudio.functional.resample` if needed.
+- **TRANSCRIBING**: HuggingFace Transformers Whisper (PyTorch-native, not CTranslate2). Model stays in VRAM between tracks (no per-job cleanup). First job on cold worker ~9s (CUDA JIT), subsequent ~1.8s.
+- **ALIGNING**: MMS-300M CTC forced aligner via torchaudio on GPU.
 
 Worker creates track at finalization (deferred track creation — no track record until pipeline completes). Then publishes to Rec Service.
 

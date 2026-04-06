@@ -48,10 +48,10 @@ def _build_gpu_pipeline(
         model_cache_dir=settings.model_cache_dir,
         media_root=settings.media_root,
         model_name=settings.uvr_model_name,
-        batch_size=settings.uvr_batch_size,
+        chunk_batch_size=settings.uvr_chunk_batch_size,
         use_autocast=settings.uvr_use_autocast,
+        overlap=settings.uvr_overlap,
     )
-
     whisper = WhisperTranscriber(
         model_size=settings.whisper_model_size,
         device=settings.whisper_device,

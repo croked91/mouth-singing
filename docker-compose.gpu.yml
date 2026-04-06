@@ -36,7 +36,7 @@ services:
       WHISPER_MODEL_SIZE: ${WHISPER_MODEL_SIZE:-tiny}
       WHISPER_DEVICE: ${WHISPER_DEVICE:-cuda}
       WHISPER_COMPUTE_TYPE: ${WHISPER_COMPUTE_TYPE:-float16}
-      VAD_TOP_DB: "35"
+      VAD_TOP_DB: ${VAD_TOP_DB:-16}
       # OpenAI (Whisper API / embedder in API mode)
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       # Lyrics agent (DeepSeek + Yandex Search)

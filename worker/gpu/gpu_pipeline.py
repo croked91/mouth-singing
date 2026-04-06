@@ -102,37 +102,23 @@ class GpuPipeline(BasePipeline):
                 local_mp3
             )
 
-            # Free VRAM before Whisper.
+            # Free UVR VRAM.
             await asyncio.to_thread(self.uvr.cleanup)
 
-            # Convert instrumental WAV→MP3 and upload to S3.
-            instrumental_mp3 = f"/tmp/{job.id}_instrumental.mp3"
-            proc = await asyncio.create_subprocess_exec(
-                "ffmpeg", "-y", "-i", instrumental_path,
-                "-codec:a", "libmp3lame", "-b:a", "192k",
-                instrumental_mp3,
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL,
-            )
-            await proc.wait()
-
+            # Launch instrumental encode + upload in background.
             instrumental_key = f"instrumentals/{job.id}.mp3"
-            with open(instrumental_mp3, "rb") as f:
-                await self.storage.upload(instrumental_key, f.read())
-            Path(instrumental_mp3).unlink(missing_ok=True)
-            await self.repo.update_job_data(
-                job.id, {"instrumental_key": instrumental_key}
+            instrumental_upload_task = asyncio.create_task(
+                self._encode_and_upload_instrumental(
+                    instrumental_path, instrumental_key, job.id, local_mp3,
+                )
             )
 
             await self.job_service.mark_step(job.id, "separating", 100)
 
             # ==============================================================
-            # STEPS 2+3: VAD + ASR (sequential)
+            # STEPS 2+3: VAD + ASR (sequential, runs while upload proceeds)
             # ==============================================================
             whisper_result = await self._vad_and_transcribe(vocals_path, job.id)
-
-            # Free Whisper VRAM.
-            await asyncio.to_thread(self.whisper.cleanup)
 
             # ==============================================================
             # STEP 4: LLM lyrics search (~2-5s)
@@ -218,6 +204,9 @@ class GpuPipeline(BasePipeline):
             # FINALIZATION: create track, publish to Rec Service
             # ==============================================================
 
+            # Wait for instrumental upload to finish before creating track.
+            await instrumental_upload_task
+
             # Gather all data from job_queue.data JSONB.
             updated_job = await self.repo.get_job(job.id)
             job_data = updated_job.data or {} if updated_job else {}
@@ -276,6 +265,43 @@ class GpuPipeline(BasePipeline):
     # Helper methods
     # ------------------------------------------------------------------
 
+    async def _encode_and_upload_instrumental(
+        self, instrumental_path: str, instrumental_key: str, job_id: str,
+        original_mp3: str,
+    ) -> None:
+        """Convert instrumental WAV→MP3 and upload to S3 (runs in background)."""
+        # Detect original bitrate to preserve quality.
+        bitrate = "192k"
+        try:
+            probe = await asyncio.create_subprocess_exec(
+                "ffprobe", "-v", "quiet", "-show_entries", "format=bit_rate",
+                "-of", "csv=p=0", original_mp3,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            stdout, _ = await probe.communicate()
+            orig_bps = int(stdout.decode().strip())
+            bitrate = f"{orig_bps // 1000}k"
+        except Exception:
+            pass
+
+        instrumental_mp3 = f"/tmp/{job_id}_instrumental.mp3"
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg", "-y", "-i", instrumental_path,
+            "-codec:a", "libmp3lame", "-b:a", bitrate,
+            instrumental_mp3,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await proc.wait()
+
+        with open(instrumental_mp3, "rb") as f:
+            await self.storage.upload(instrumental_key, f.read())
+        Path(instrumental_mp3).unlink(missing_ok=True)
+        await self.repo.update_job_data(
+            job_id, {"instrumental_key": instrumental_key}
+        )
+
     async def _separate_with_fallback(self, mp3_path: str) -> tuple[str, str]:
         """Try GPU separation, fall back to CPU on OOM."""
         try:
@@ -284,14 +310,14 @@ class GpuPipeline(BasePipeline):
             if "out of memory" in str(exc).lower() or "cuda" in str(exc).lower():
                 logger.warning("uvr_cuda_oom_fallback", error=str(exc))
                 await asyncio.to_thread(self.uvr.cleanup)
-                import os
-                os.environ["CUDA_VISIBLE_DEVICES"] = ""
                 self.uvr = UVRSeparator(
                     model_cache_dir=self.uvr.model_cache_dir,
                     media_root=self.uvr.media_root,
                     model_name=self.uvr._model_name,
-                    batch_size=self.uvr._batch_size,
-                    use_autocast=self.uvr._use_autocast,
+                    torch_device="cpu",
+                    chunk_batch_size=1,
+                    use_autocast=False,
+                    overlap=self.uvr._overlap,
                 )
                 return await asyncio.to_thread(self.uvr.separate, mp3_path)
             raise

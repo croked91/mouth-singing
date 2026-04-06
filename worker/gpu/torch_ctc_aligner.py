@@ -199,10 +199,16 @@ class TorchCTCAligner:
 
     def _load_audio(self, path: str) -> torch.Tensor:
         """Load audio as 16 kHz mono tensor."""
-        import librosa
+        import soundfile as sf
+        import torchaudio.functional as F
 
-        data, _ = librosa.load(path, sr=_SAMPLE_RATE, mono=True)
-        return torch.from_numpy(data).unsqueeze(0)  # (1, samples)
+        data, sr = sf.read(path, dtype="float32")
+        if data.ndim > 1:
+            data = data.mean(axis=1)
+        t = torch.from_numpy(data)
+        if sr != _SAMPLE_RATE:
+            t = F.resample(t, sr, _SAMPLE_RATE)
+        return t.unsqueeze(0)  # (1, samples)
 
     # ------------------------------------------------------------------
     # Internal: text preprocessing

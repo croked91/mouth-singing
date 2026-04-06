@@ -83,6 +83,27 @@ class WhisperTranscriber:
         logger.info("whisper_loaded", model_size=self._model_size, device=self._device,
                      backend="transformers")
 
+    def warmup(self) -> None:
+        """Run full-length dummy inference to trigger CUDA kernel JIT compilation."""
+        import numpy as np
+        import torch
+
+        if self._model is None:
+            self._load_model()
+
+        # Use 30 sec of silence (one full Whisper chunk) with max tokens
+        # to compile all CUDA kernels used during real inference.
+        dummy = self._processor(
+            np.zeros(30 * 16000, dtype=np.float32),
+            sampling_rate=16000, return_tensors="pt",
+        )
+        with torch.no_grad():
+            self._model.generate(
+                dummy.input_features.to(device=self._device, dtype=self._torch_dtype),
+                max_new_tokens=440,
+            )
+        logger.info("whisper_warmup_done")
+
     def transcribe(self, audio_path: str) -> WhisperResult:
         """Transcribe an audio file.
 
@@ -93,7 +114,8 @@ class WhisperTranscriber:
             WhisperResult with text, language, confidence.
         """
         import torch
-        import librosa
+        import soundfile as sf
+        import torchaudio.functional as F
 
         if self._model is None:
             self._load_model()
@@ -101,7 +123,13 @@ class WhisperTranscriber:
         logger.info("whisper_starting", audio_path=audio_path)
         t0 = time.monotonic()
 
-        audio, _ = librosa.load(audio_path, sr=16000, mono=True)
+        data, sr = sf.read(audio_path, dtype="float32")
+        if data.ndim > 1:
+            data = data.mean(axis=1)
+        if sr != 16000:
+            audio = F.resample(torch.from_numpy(data), sr, 16000).numpy()
+        else:
+            audio = data
 
         # Process in 30-second chunks (Whisper's native window size)
         chunk_samples = 30 * 16000
