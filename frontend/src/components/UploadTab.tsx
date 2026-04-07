@@ -2,7 +2,6 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   Box,
   Typography,
-  InputBase,
   LinearProgress,
   ButtonBase,
   IconButton,
@@ -195,8 +194,6 @@ export const UploadTab: React.FC<UploadTabProps> = ({
   onTrackUploaded,
 }) => {
   const [file, setFile] = useState<File | null>(null);
-  const [artist, setArtist] = useState('');
-  const [title, setTitle] = useState('');
   const [isDragOver, setIsDragOver] = useState(false);
   const [fileSizeError, setFileSizeError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -346,9 +343,6 @@ export const UploadTab: React.FC<UploadTabProps> = ({
 
     const localJobId = `local-${++jobCounter}`;
     const fileName = file.name;
-    const artistVal = artist.trim() || undefined;
-    const titleVal = title.trim() || undefined;
-
     // Add job card immediately
     const newJob: UploadJob = {
       id: localJobId,
@@ -359,14 +353,12 @@ export const UploadTab: React.FC<UploadTabProps> = ({
 
     // Reset form so user can upload another
     setFile(null);
-    setArtist('');
-    setTitle('');
     setUploading(true);
 
     let uploadResponse: { track_id: string; job_id: string; status: string };
 
     try {
-      uploadResponse = await api.uploadTrack(file, artistVal, titleVal);
+      uploadResponse = await api.uploadTrack(file);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Ошибка загрузки';
       updateJob(localJobId, { phase: { kind: 'error', message } });
@@ -386,7 +378,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({
     });
 
     subscribeJob(localJobId, job_id, track_id);
-  }, [file, artist, title, uploading, updateJob, subscribeJob]);
+  }, [file, uploading, updateJob, subscribeJob]);
 
   // ── Derived ──────────────────────────────────────────────────────────────
 
@@ -519,97 +511,6 @@ export const UploadTab: React.FC<UploadTabProps> = ({
         <FolderOpenIcon sx={{ fontSize: 18 }} />
         ВЫБРАТЬ ФАЙЛ
       </ButtonBase>
-
-      {/* Metadata fields */}
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-        <Typography
-          sx={{
-            fontSize: '11px',
-            fontWeight: 700,
-            letterSpacing: '0.12em',
-            color: 'rgba(255,255,255,0.3)',
-            textTransform: 'uppercase',
-          }}
-        >
-          ДЕТАЛИ ТРЕКА (необязательно)
-        </Typography>
-
-        <Box sx={{ display: 'flex', gap: 1.5 }}>
-          {/* Artist field */}
-          <Box
-            sx={{
-              flex: 1,
-              display: 'flex',
-              alignItems: 'center',
-              height: 44,
-              borderRadius: '12px',
-              background: 'rgba(255,255,255,0.05)',
-              border: '1px solid rgba(255,255,255,0.1)',
-              px: 1.75,
-              transition: 'border-color 0.2s ease',
-              '&:focus-within': {
-                borderColor: 'rgba(6,182,212,0.45)',
-              },
-            }}
-          >
-            <InputBase
-              value={artist}
-              onChange={(e) => setArtist(e.target.value)}
-              placeholder="напр. Кино"
-              disabled={uploading}
-              fullWidth
-              sx={{
-                color: '#FFFFFF',
-                fontSize: '14px',
-                '& input': {
-                  padding: 0,
-                  '&::placeholder': {
-                    color: 'rgba(255,255,255,0.25)',
-                    opacity: 1,
-                  },
-                },
-              }}
-            />
-          </Box>
-
-          {/* Title field */}
-          <Box
-            sx={{
-              flex: 1,
-              display: 'flex',
-              alignItems: 'center',
-              height: 44,
-              borderRadius: '12px',
-              background: 'rgba(255,255,255,0.05)',
-              border: '1px solid rgba(255,255,255,0.1)',
-              px: 1.75,
-              transition: 'border-color 0.2s ease',
-              '&:focus-within': {
-                borderColor: 'rgba(6,182,212,0.45)',
-              },
-            }}
-          >
-            <InputBase
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="напр. Группа крови"
-              disabled={uploading}
-              fullWidth
-              sx={{
-                color: '#FFFFFF',
-                fontSize: '14px',
-                '& input': {
-                  padding: 0,
-                  '&::placeholder': {
-                    color: 'rgba(255,255,255,0.25)',
-                    opacity: 1,
-                  },
-                },
-              }}
-            />
-          </Box>
-        </Box>
-      </Box>
 
       {/* Upload button */}
       <ButtonBase

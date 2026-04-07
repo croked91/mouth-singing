@@ -166,16 +166,14 @@ export const QueuePage: React.FC = () => {
     [sessionId, russianOnly]
   );
 
-  // Auto-fetch on mount, tab change, tag change, or after adding a track
+  // Fetch recommendations once on mount, on tag change, or after a track is added
   useEffect(() => {
-    if (activeTab === TAB_RECOMMENDATIONS) {
-      void fetchRecommendations(selectedTagId ?? undefined);
-    }
-    // Also refresh tags
+    void fetchRecommendations(selectedTagId ?? undefined);
     if (sessionId && recsRefreshCounter > 0) {
       void api.getTags(sessionId).then(setMoodTags).catch(() => {});
     }
-  }, [activeTab, fetchRecommendations, selectedTagId, recsRefreshCounter]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTagId, recsRefreshCounter, russianOnly]);
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 

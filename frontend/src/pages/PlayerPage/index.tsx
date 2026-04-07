@@ -61,7 +61,10 @@ export const PlayerPage: React.FC = () => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(1);
+  const [volume, setVolume] = useState(() => {
+    const saved = localStorage.getItem('karaoke_volume');
+    return saved !== null ? Number(saved) : 1;
+  });
 
   // rAF loop for progress slider
   const sliderRafRef = useRef<number | null>(null);
@@ -116,6 +119,7 @@ export const PlayerPage: React.FC = () => {
 
     const trackId = currentEntry.track.id;
     audio.src = `/api/v1/tracks/${trackId}/stream`;
+    audio.volume = volume;
     audio.load();
 
     // Autoplay — browser allows it after recent user gesture ("ПЕТЬ" click).
@@ -255,6 +259,7 @@ export const PlayerPage: React.FC = () => {
       const vol = Array.isArray(value) ? value[0] : value;
       audio.volume = vol;
       setVolume(vol);
+      localStorage.setItem('karaoke_volume', String(vol));
     },
     []
   );
