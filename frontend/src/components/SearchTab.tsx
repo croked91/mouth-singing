@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Box,
+  CircularProgress,
   Typography,
   InputBase,
   IconButton,
@@ -9,6 +10,8 @@ import {
   ListItem,
   ListItemButton,
   Paper,
+  Popper,
+  ClickAwayListener,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import CloseIcon from '@mui/icons-material/Close';
@@ -21,6 +24,7 @@ import type { TrackSearchItem } from '../types';
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const DEBOUNCE_MS = 300;
+const PAGE_SIZE = 20;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -220,8 +224,31 @@ export const SearchTab: React.FC<SearchTabProps> = ({
   const [addingTrackId, setAddingTrackId] = useState<string | null>(null);
   const [searched, setSearched] = useState(false);
 
+  // Infinite scroll state
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const suggestGenRef = useRef(0); // generation counter — invalidates stale suggest responses
+  const loadMoreRef = useRef<() => Promise<void>>(async () => {});
   const inputRef = useRef<HTMLInputElement>(null);
+  const searchBarRef = useRef<HTMLDivElement>(null);
+  const popperRef = useRef<HTMLDivElement>(null);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const searchQueryRef = useRef('');
+
+  // ── Helpers: kill pending suggestions ─────────────────────────────────
+
+  const dismissSuggestions = useCallback(() => {
+    if (debounceTimerRef.current !== null) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+    suggestGenRef.current += 1; // invalidate any in-flight API response
+    setSuggestions([]);
+    setShowSuggestions(false);
+  }, []);
 
   // ── Suggestion debounce ──────────────────────────────────────────────────
 
@@ -238,11 +265,15 @@ export const SearchTab: React.FC<SearchTabProps> = ({
       return;
     }
 
+    const gen = ++suggestGenRef.current;
+
     debounceTimerRef.current = setTimeout(() => {
       void api.suggestTracks(trimmed).then((data) => {
+        if (gen !== suggestGenRef.current) return; // stale — search or newer typing happened
         setSuggestions(data);
         setShowSuggestions(data.length > 0);
       }).catch(() => {
+        if (gen !== suggestGenRef.current) return;
         setSuggestions([]);
         setShowSuggestions(false);
       });
@@ -261,34 +292,98 @@ export const SearchTab: React.FC<SearchTabProps> = ({
     const trimmed = q.trim();
     if (!trimmed) return;
 
-    setShowSuggestions(false);
+    dismissSuggestions();
     setLoading(true);
     setSearched(true);
+    setOffset(0);
+    searchQueryRef.current = trimmed;
 
     try {
-      const data = await api.searchTracks(trimmed);
+      const data = await api.searchTracks(trimmed, PAGE_SIZE, 0);
       setResults(data.items);
       setResultsTotal(data.total);
+      setHasMore(data.items.length < data.total);
     } catch {
       setResults([]);
       setResultsTotal(0);
+      setHasMore(false);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [dismissSuggestions]);
+
+  // ── Load more (infinite scroll) ─────────────────────────────────────────
+
+  const loadMore = useCallback(async (): Promise<void> => {
+    if (loadingMore || !hasMore) return;
+
+    const currentQuery = searchQueryRef.current;
+    const newOffset = offset + PAGE_SIZE;
+    setLoadingMore(true);
+
+    try {
+      const data = await api.searchTracks(currentQuery, PAGE_SIZE, newOffset);
+      if (searchQueryRef.current !== currentQuery) return;
+
+      setResults((prev) => (prev ? [...prev, ...data.items] : data.items));
+      setOffset(newOffset);
+      setHasMore(newOffset + data.items.length < data.total);
+    } catch {
+      // Don't clear results on load-more failure
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [offset, hasMore, loadingMore]);
+
+  // Keep ref in sync so the observer callback always calls the latest version.
+  loadMoreRef.current = loadMore;
+
+  // ── Scroll-based auto-load ───────────────────────────────────────────────
+  // Uses capture-phase scroll listener on window — catches scroll on ANY
+  // ancestor regardless of which container actually scrolls.  Checks the
+  // sentinel's viewport position via getBoundingClientRect.
+
+  useEffect(() => {
+    if (!hasMore) return;
+
+    let rafId = 0;
+    const check = () => {
+      const sentinel = sentinelRef.current;
+      if (!sentinel) return;
+      const rect = sentinel.getBoundingClientRect();
+      if (rect.top < window.innerHeight + 300) {
+        void loadMoreRef.current();
+      }
+    };
+
+    const onScroll = () => {
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(check);
+    };
+
+    // capture: true catches scroll events from inner containers (scroll doesn't bubble)
+    window.addEventListener('scroll', onScroll, { passive: true, capture: true });
+    return () => {
+      window.removeEventListener('scroll', onScroll, { capture: true } as EventListenerOptions);
+      cancelAnimationFrame(rafId);
+    };
+  }, [hasMore]);
+
+  // ── Handlers ────────────────────────────────────────────────────────────
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {
     if (e.key === 'Enter') {
+      dismissSuggestions();
       void runSearch(query);
     }
     if (e.key === 'Escape') {
-      setShowSuggestions(false);
+      dismissSuggestions();
     }
   };
 
   const handleSuggestionClick = (suggestion: string): void => {
     setQuery(suggestion);
-    setShowSuggestions(false);
+    dismissSuggestions();
     void runSearch(suggestion);
   };
 
@@ -298,7 +393,14 @@ export const SearchTab: React.FC<SearchTabProps> = ({
     setShowSuggestions(false);
     setResults(null);
     setSearched(false);
+    setHasMore(false);
+    setOffset(0);
     inputRef.current?.focus();
+  };
+
+  const handleClickAway = (event: MouseEvent | TouchEvent): void => {
+    if (popperRef.current?.contains(event.target as Node)) return;
+    setShowSuggestions(false);
   };
 
   const handleTrackSelect = async (trackId: string): Promise<void> => {
@@ -314,103 +416,108 @@ export const SearchTab: React.FC<SearchTabProps> = ({
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-      {/* Search input */}
-      <Box sx={{ position: 'relative' }}>
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            height: 48,
-            borderRadius: '24px',
-            background: 'rgba(255,255,255,0.06)',
-            border: '1px solid rgba(255,255,255,0.12)',
-            px: 2,
-            gap: 1.25,
-            transition: 'border-color 0.2s ease',
-            '&:focus-within': {
-              borderColor: 'rgba(6,182,212,0.55)',
-              background: 'rgba(6,182,212,0.05)',
-            },
-          }}
-        >
-          <SearchIcon sx={{ color: 'rgba(255,255,255,0.35)', fontSize: 20, flexShrink: 0 }} />
-
-          <InputBase
-            inputRef={inputRef}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onFocus={() => {
-              if (suggestions.length > 0) setShowSuggestions(true);
-            }}
-            placeholder="Исполнитель, название, текст..."
-            fullWidth
+      {/* Search input + suggestions */}
+      <ClickAwayListener onClickAway={handleClickAway}>
+        <Box>
+          <Box
+            ref={searchBarRef}
             sx={{
-              color: '#FFFFFF',
-              fontSize: '14px',
-              '& input': {
-                padding: 0,
-                '&::placeholder': {
-                  color: 'rgba(255,255,255,0.3)',
-                  opacity: 1,
-                },
+              display: 'flex',
+              alignItems: 'center',
+              height: 48,
+              borderRadius: '24px',
+              background: 'rgba(255,255,255,0.06)',
+              border: '1px solid rgba(255,255,255,0.12)',
+              px: 2,
+              gap: 1.25,
+              transition: 'border-color 0.2s ease',
+              '&:focus-within': {
+                borderColor: 'rgba(6,182,212,0.55)',
+                background: 'rgba(6,182,212,0.05)',
               },
             }}
-          />
-
-          {query && (
-            <IconButton
-              size="small"
-              onClick={handleClear}
-              sx={{ color: 'rgba(255,255,255,0.35)', p: 0.25, flexShrink: 0 }}
-            >
-              <CloseIcon sx={{ fontSize: 18 }} />
-            </IconButton>
-          )}
-        </Box>
-
-        {/* Suggestions dropdown */}
-        {showSuggestions && suggestions.length > 0 && (
-          <Paper
-            elevation={8}
-            sx={{
-              position: 'absolute',
-              top: 'calc(100% + 6px)',
-              left: 0,
-              right: 0,
-              zIndex: 10,
-              background: 'rgba(15,10,40,0.97)',
-              border: '1px solid rgba(6,182,212,0.3)',
-              borderRadius: '16px',
-              overflow: 'hidden',
-              backdropFilter: 'blur(20px)',
-            }}
           >
-            <List dense disablePadding>
-              {suggestions.map((s, i) => (
-                <ListItem key={i} disablePadding>
-                  <ListItemButton
-                    onClick={() => handleSuggestionClick(s)}
-                    sx={{
-                      px: 2,
-                      py: 1,
-                      gap: 1.5,
-                      '&:hover': {
-                        background: 'rgba(6,182,212,0.12)',
-                      },
-                    }}
-                  >
-                    <SearchIcon sx={{ fontSize: 16, color: 'rgba(6,182,212,0.6)', flexShrink: 0 }} />
-                    <Typography sx={{ fontSize: '14px', color: 'rgba(255,255,255,0.85)' }}>
-                      {s}
-                    </Typography>
-                  </ListItemButton>
-                </ListItem>
-              ))}
-            </List>
-          </Paper>
-        )}
-      </Box>
+            <SearchIcon sx={{ color: 'rgba(255,255,255,0.35)', fontSize: 20, flexShrink: 0 }} />
+
+            <InputBase
+              inputRef={inputRef}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={handleKeyDown}
+              onFocus={() => {
+                if (suggestions.length > 0 && !searched) setShowSuggestions(true);
+              }}
+              placeholder="Исполнитель, название, текст..."
+              fullWidth
+              sx={{
+                color: '#FFFFFF',
+                fontSize: '14px',
+                '& input': {
+                  padding: 0,
+                  '&::placeholder': {
+                    color: 'rgba(255,255,255,0.3)',
+                    opacity: 1,
+                  },
+                },
+              }}
+            />
+
+            {query && (
+              <IconButton
+                size="small"
+                onClick={handleClear}
+                sx={{ color: 'rgba(255,255,255,0.35)', p: 0.25, flexShrink: 0 }}
+              >
+                <CloseIcon sx={{ fontSize: 18 }} />
+              </IconButton>
+            )}
+          </Box>
+
+          {/* Suggestions dropdown (Popper portal — not clipped by overflow) */}
+          <Popper
+            open={showSuggestions && suggestions.length > 0}
+            anchorEl={searchBarRef.current}
+            placement="bottom-start"
+            style={{ width: searchBarRef.current?.clientWidth, zIndex: 1300 }}
+            modifiers={[{ name: 'offset', options: { offset: [0, 6] } }]}
+          >
+            <Paper
+              ref={popperRef}
+              elevation={8}
+              sx={{
+                background: 'rgba(15,10,40,0.97)',
+                border: '1px solid rgba(6,182,212,0.3)',
+                borderRadius: '16px',
+                overflow: 'hidden',
+                backdropFilter: 'blur(20px)',
+              }}
+            >
+              <List dense disablePadding>
+                {suggestions.map((s, i) => (
+                  <ListItem key={i} disablePadding>
+                    <ListItemButton
+                      onClick={() => handleSuggestionClick(s)}
+                      sx={{
+                        px: 2,
+                        py: 1,
+                        gap: 1.5,
+                        '&:hover': {
+                          background: 'rgba(6,182,212,0.12)',
+                        },
+                      }}
+                    >
+                      <SearchIcon sx={{ fontSize: 16, color: 'rgba(6,182,212,0.6)', flexShrink: 0 }} />
+                      <Typography sx={{ fontSize: '14px', color: 'rgba(255,255,255,0.85)' }}>
+                        {s}
+                      </Typography>
+                    </ListItemButton>
+                  </ListItem>
+                ))}
+              </List>
+            </Paper>
+          </Popper>
+        </Box>
+      </ClickAwayListener>
 
       {/* Loading skeletons */}
       {loading && (
@@ -456,6 +563,35 @@ export const SearchTab: React.FC<SearchTabProps> = ({
               isAdding={addingTrackId === track.id}
             />
           ))}
+
+          {/* Infinite scroll sentinel + load-more button */}
+          {hasMore && (
+            <Box
+              ref={sentinelRef}
+              onClick={() => { if (!loadingMore) void loadMore(); }}
+              sx={{
+                display: 'flex',
+                justifyContent: 'center',
+                py: 2,
+                cursor: loadingMore ? 'default' : 'pointer',
+              }}
+            >
+              {loadingMore ? (
+                <CircularProgress size={28} sx={{ color: 'rgba(6,182,212,0.6)' }} />
+              ) : (
+                <Typography
+                  sx={{
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    color: 'rgba(6,182,212,0.7)',
+                    '&:hover': { color: '#67E8F9' },
+                  }}
+                >
+                  Показать ещё
+                </Typography>
+              )}
+            </Box>
+          )}
         </Box>
       )}
 

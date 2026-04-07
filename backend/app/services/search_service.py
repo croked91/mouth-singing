@@ -75,30 +75,19 @@ class SearchService:
         self.embedder = embedder
 
     async def search(
-        self, query: str, limit: int = 20, offset: int = 0
+        self, query: str, limit: int = 20, offset: int = 0,
     ) -> SearchResult:
         """Run a hybrid search and return a combined, deduplicated result set.
-
-        Steps:
-        1. Run FTS5 via the SQLite repository.
-        2. If fewer than 5 FTS results were found AND an embedder is available,
-           run semantic search in QDrant and fetch the matching Track records.
-        3. Merge: FTS results first, then semantic results that are not already
-           present in the FTS list.
-        4. Apply offset/limit to the merged list and return.
 
         Args:
             query: The user's search string.
             limit: Maximum number of results to return.
             offset: Number of results to skip (for pagination).
-
-        Returns:
-            A SearchResult with total and the paginated items.
         """
-        # Fetch FTS results WITHOUT offset so we can merge correctly with
-        # semantic results and then paginate the combined list.
-        fts_tracks = await self.sqlite_repo.search_fts(
-            query, limit=limit + offset, offset=0
+        # Run FTS and count in parallel for accurate pagination total.
+        fts_tracks, fts_total = await asyncio.gather(
+            self.sqlite_repo.search_fts(query, limit=limit + offset, offset=0),
+            self.sqlite_repo.search_fts_count(query),
         )
 
         semantic_tracks: list[Track] = []
@@ -112,7 +101,7 @@ class SearchService:
 
         merged = self._merge_results(fts_tracks, semantic_tracks)
 
-        total = len(merged)
+        total = max(fts_total, len(merged))
         paged = merged[offset : offset + limit]
 
         # Batch-fetch artist images.

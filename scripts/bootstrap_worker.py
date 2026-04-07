@@ -53,8 +53,8 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--busy-timeout",
         type=int,
-        default=10000,
-        help="SQLite busy timeout in ms (default: 10000)",
+        default=30000,
+        help="SQLite busy timeout in ms (default: 30000)",
     )
     return p.parse_args()
 

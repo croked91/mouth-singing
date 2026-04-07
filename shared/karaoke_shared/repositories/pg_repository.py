@@ -265,21 +265,24 @@ class PgRepository:
         )
         return {t.id: t for t in (self._track_from_row(r) for r in rows)}
 
+    # Custom ts_rank weights: {D, C, B, A} where tsvector weights are
+    # artist='A', title='B', lyrics='C'.  Priority: artist > title > lyrics.
+    _TS_RANK_WEIGHTS = "'{0, 0.1, 0.4, 1.0}'"
+
     async def search_fts(
-        self, query: str, limit: int = 20, offset: int = 0
+        self, query: str, limit: int = 20, offset: int = 0,
     ) -> list[Track]:
         """Full-text search over artist, title, and lyrics using tsvector."""
         import re
         tokens = re.findall(r'[\w.]+', query, re.UNICODE)
         if not tokens:
             return []
-        # Build tsquery: each token joined with &
-        ts_query = " & ".join(tokens)
 
         try:
             rows = await self.pool.fetch(
-                """
-                SELECT *, ts_rank(search_vector, plainto_tsquery('simple', $1)) AS rank
+                f"""
+                SELECT *, ts_rank({self._TS_RANK_WEIGHTS}, search_vector,
+                                  plainto_tsquery('simple', $1)) AS rank
                 FROM tracks
                 WHERE search_vector @@ plainto_tsquery('simple', $1)
                   AND status = $2
@@ -291,6 +294,26 @@ class PgRepository:
         except Exception:
             return []
         return [self._track_from_row(row) for row in rows]
+
+    async def search_fts_count(self, query: str) -> int:
+        """Count total FTS matches (for pagination)."""
+        import re
+        tokens = re.findall(r'[\w.]+', query, re.UNICODE)
+        if not tokens:
+            return 0
+
+        try:
+            count = await self.pool.fetchval(
+                """
+                SELECT COUNT(*) FROM tracks
+                WHERE search_vector @@ plainto_tsquery('simple', $1)
+                  AND status = $2
+                """,
+                query, TrackStatus.READY,
+            )
+            return count or 0
+        except Exception:
+            return 0
 
     async def update_popularity(
         self,
