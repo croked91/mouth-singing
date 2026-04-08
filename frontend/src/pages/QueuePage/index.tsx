@@ -5,64 +5,33 @@ import {
   Box,
   Chip,
   CircularProgress,
-  FormControlLabel,
   IconButton,
-  Switch,
-  Tab,
-  Tabs,
+  Snackbar,
   Toolbar,
   Tooltip,
   Typography,
   Alert,
-  Snackbar,
 } from '@mui/material';
 import MicIcon from '@mui/icons-material/Mic';
 import LockIcon from '@mui/icons-material/Lock';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import QueueMusicIcon from '@mui/icons-material/QueueMusic';
-import SearchIcon from '@mui/icons-material/Search';
+import HistoryIcon from '@mui/icons-material/History';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
-import CloudUploadIcon from '@mui/icons-material/CloudUpload';
 
 import { CosmicBackground } from '../../components/CosmicBackground';
 import { TrackCard } from '../../components/TrackCard';
-import { QueueItem } from '../../components/QueueItem';
 import { SearchTab } from '../../components/SearchTab';
 import { UploadTab } from '../../components/UploadTab';
+import { HistoryDrawer } from '../../components/HistoryDrawer';
 import { useSessionStore } from '../../store/sessionStore';
-import { useQueueStore } from '../../store/queueStore';
 import { api } from '../../services/api';
 import type { RecommendationResponse, MoodTag } from '../../types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const AVATAR_GRADIENTS = [
-  'linear-gradient(135deg, #7C3AED, #EC4899)',
-  'linear-gradient(135deg, #2563EB, #06B6D4)',
-  'linear-gradient(135deg, #059669, #10B981)',
-  'linear-gradient(135deg, #D97706, #F59E0B)',
-];
-
-const QUEUE_POLL_INTERVAL_MS = 5000;
-
 const STRATEGY_LABELS: Record<string, string> = {
   popular: 'ПОПУЛЯРНОЕ',
   cluster: 'НАСТРОЕНИЕ',
 };
-
-const TAB_RECOMMENDATIONS = 1;
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function getAvatarGradient(index: number): string {
-  return AVATAR_GRADIENTS[index % AVATAR_GRADIENTS.length];
-}
-
-function getInitials(name: string): string {
-  const words = name.trim().split(/\s+/);
-  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
-  return (words[0][0] + words[words.length - 1][0]).toUpperCase();
-}
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
@@ -70,35 +39,45 @@ export const QueuePage: React.FC = () => {
   const { id: sessionId } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  // Store state
+  // Session store
   const { participants, loadSession } = useSessionStore();
-  const { currentEntry, upcoming, loadQueue, addToQueue } = useQueueStore();
 
-  // Local state
-  const [activeTab, setActiveTab] = useState<number>(TAB_RECOMMENDATIONS);
+  // Recommendations state
   const [recommendations, setRecommendations] = useState<RecommendationResponse | null>(null);
   const [recsLoading, setRecsLoading] = useState(false);
   const [recsError, setRecsError] = useState<string | null>(null);
-  const [addingTrackId, setAddingTrackId] = useState<string | null>(null);
-  const [snackMessage, setSnackMessage] = useState<string | null>(null);
 
-  // Mood tags state
+  // Mood tags
   const [moodTags, setMoodTags] = useState<MoodTag[]>([]);
   const [selectedTagId, setSelectedTagId] = useState<number | null>(null);
   const [russianOnly, setRussianOnly] = useState(false);
   const [recsRefreshCounter, setRecsRefreshCounter] = useState(0);
 
-  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // Track how many times each track was shown without being selected.
-  // Persisted in sessionStorage to survive tab switches and re-renders.
+  // Play action
+  const [playingTrackId, setPlayingTrackId] = useState<string | null>(null);
+  const [snackMessage, setSnackMessage] = useState<string | null>(null);
+
+  // History drawer
+  const [historyOpen, setHistoryOpen] = useState(false);
+
+  // Search active — when SearchTab has results, hide recommendations
+  const [searchActive, setSearchActive] = useState(false);
+
+  // Track shown counts for recommendation rotation
   const getShownCounts = (): Record<string, number> => {
     try {
       const raw = sessionStorage.getItem(`shownCounts_${sessionId}`);
       return raw ? JSON.parse(raw) : {};
-    } catch { return {}; }
+    } catch {
+      return {};
+    }
   };
   const setShownCounts = (counts: Record<string, number>) => {
-    try { sessionStorage.setItem(`shownCounts_${sessionId}`, JSON.stringify(counts)); } catch {}
+    try {
+      sessionStorage.setItem(`shownCounts_${sessionId}`, JSON.stringify(counts));
+    } catch {
+      // sessionStorage unavailable
+    }
   };
   const shownCountRef = useRef<Record<string, number>>(getShownCounts());
 
@@ -106,48 +85,26 @@ export const QueuePage: React.FC = () => {
 
   useEffect(() => {
     if (!sessionId) return;
-
     void loadSession(sessionId);
-    void loadQueue(sessionId);
-
-    // Fetch mood tags
     void api.getTags(sessionId).then(setMoodTags).catch(() => {});
-
-    // Poll queue every 5s
-    pollTimerRef.current = setInterval(() => {
-      void loadQueue(sessionId);
-    }, QUEUE_POLL_INTERVAL_MS);
-
-    return () => {
-      if (pollTimerRef.current !== null) {
-        clearInterval(pollTimerRef.current);
-      }
-    };
-  }, [sessionId, loadSession, loadQueue]);
+  }, [sessionId, loadSession]);
 
   // ── Fetch recommendations ─────────────────────────────────────────────────
 
   const fetchRecommendations = useCallback(
     async (tagId?: number): Promise<void> => {
       if (!sessionId) return;
-
       setRecsLoading(true);
       setRecsError(null);
-
       try {
         const language = russianOnly ? 'ru' : undefined;
-
-        // Exclude tracks shown 2+ times without being selected.
         let excludeIds: string[] | undefined;
         if (tagId === undefined) {
           const dismissed = Object.entries(shownCountRef.current)
             .filter(([, count]) => count >= 2)
             .map(([id]) => id);
-          if (dismissed.length > 0) {
-            excludeIds = dismissed;
-          }
+          if (dismissed.length > 0) excludeIds = dismissed;
         }
-
         const data = await api.getRecommendations(sessionId, 10, tagId, language, excludeIds);
         if (tagId === undefined) {
           for (const t of data.tracks) {
@@ -157,16 +114,14 @@ export const QueuePage: React.FC = () => {
         }
         setRecommendations(data);
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Ошибка загрузки рекомендаций';
-        setRecsError(message);
+        setRecsError(err instanceof Error ? err.message : 'Ошибка загрузки рекомендаций');
       } finally {
         setRecsLoading(false);
       }
     },
-    [sessionId, russianOnly]
+    [sessionId, russianOnly],
   );
 
-  // Fetch recommendations once on mount, on tag change, or after a track is added
   useEffect(() => {
     void fetchRecommendations(selectedTagId ?? undefined);
     if (sessionId && recsRefreshCounter > 0) {
@@ -177,528 +132,59 @@ export const QueuePage: React.FC = () => {
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
-  const handleTagClick = useCallback(
-    (tagId: number): void => {
-      // Toggle tag selection — the useEffect on selectedTagId will fetch.
-      setSelectedTagId((prev) => (prev === tagId ? null : tagId));
-    },
-    []
-  );
-
-  const handleRussianOnlyToggle = useCallback((): void => {
-    setRussianOnly((prev) => !prev);
-  }, []);
-
   const ensureParticipant = useCallback(async (): Promise<string> => {
     if (participants.length > 0) return participants[0].id;
-    // Auto-create default participant on first track selection
     const { addParticipant } = useSessionStore.getState();
     const p = await addParticipant('Певец');
     return p.id;
   }, [participants]);
 
-  const handleTrackSelect = useCallback(
+  const handlePlay = useCallback(
     async (trackId: string): Promise<void> => {
-      if (!sessionId) return;
-
-      setAddingTrackId(trackId);
+      if (!sessionId || playingTrackId) return;
+      setPlayingTrackId(trackId);
       try {
         const participantId = await ensureParticipant();
-        await addToQueue(sessionId, participantId, trackId);
-        // Reset shown count — track was selected, not dismissed.
+        const startData = await api.directPlay(sessionId, participantId, trackId);
+        // Reset shown count — track was selected.
         delete shownCountRef.current[trackId];
         setShownCounts(shownCountRef.current);
-        setSnackMessage('Трек добавлен в очередь!');
-        // Refresh recommendations and tags after adding a track.
-        // Use fresh sessionId/selectedTagId via closures that are always current.
         setRecsRefreshCounter((c) => c + 1);
+        navigate(`/session/${sessionId}/play/${startData.entry_id}`, {
+          state: { startData },
+        });
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Ошибка добавления в очередь';
+        const message = err instanceof Error ? err.message : 'Ошибка воспроизведения';
         setSnackMessage(`Ошибка: ${message}`);
       } finally {
-        setAddingTrackId(null);
+        setPlayingTrackId(null);
       }
     },
-    [sessionId, ensureParticipant, addToQueue]
+    [sessionId, playingTrackId, ensureParticipant, navigate],
   );
 
-  const { skipTurn } = useQueueStore();
-
-  const handleSkip = useCallback(async (): Promise<void> => {
-    if (!currentEntry || !sessionId) return;
-    try {
-      await skipTurn(currentEntry.id, sessionId);
-    } catch {
-      // Silently ignore — queue will be refreshed by store
-    }
-  }, [currentEntry, sessionId, skipTurn]);
-
-  const handleAdminClick = useCallback((): void => {
-    navigate('/admin');
-  }, [navigate]);
-
-  // ── Derived values ──────────────────────────────────────────────────────────
-
-  const currentSinger = currentEntry?.participant ?? null;
-  const currentSingerName = currentSinger?.display_name ?? null;
-  const currentSingerIndex = currentSinger
-    ? participants.findIndex((p) => p.id === currentSinger.id)
-    : 0;
-
-  // ── Render helpers ──────────────────────────────────────────────────────────
-
-  const renderCurrentSingerCard = (): React.ReactNode => {
-    if (!currentSingerName) {
-      return (
-        <Box
-          sx={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            py: 5,
-            gap: 1.5,
-          }}
-        >
-          <QueueMusicIcon sx={{ fontSize: 40, color: 'rgba(124,58,237,0.4)' }} />
-          <Typography
-            sx={{
-              fontSize: '14px',
-              color: 'rgba(255,255,255,0.35)',
-              textAlign: 'center',
-            }}
-          >
-            Никто ещё не поёт
-          </Typography>
-        </Box>
-      );
-    }
-
-    const gradient = getAvatarGradient(currentSingerIndex >= 0 ? currentSingerIndex : 0);
-
-    return (
-      <Box
-        sx={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: 2,
-          py: 2,
-        }}
-      >
-        {/* Avatar with animated glow ring */}
-        <Box sx={{ position: 'relative' }}>
-          {/* Outer glow ring */}
-          <Box
-            sx={{
-              position: 'absolute',
-              inset: -6,
-              borderRadius: '50%',
-              background: gradient,
-              opacity: 0.35,
-              filter: 'blur(8px)',
-              '@keyframes glowPulse': {
-                '0%, 100%': { opacity: 0.35, transform: 'scale(1)' },
-                '50%': { opacity: 0.55, transform: 'scale(1.06)' },
-              },
-              animation: 'glowPulse 2.8s ease-in-out infinite',
-            }}
-          />
-
-          {/* Avatar circle */}
-          <Box
-            sx={{
-              width: 88,
-              height: 88,
-              borderRadius: '50%',
-              background: gradient,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: '1.875rem',
-              fontWeight: 700,
-              color: '#fff',
-              position: 'relative',
-              zIndex: 1,
-              boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
-            }}
-          >
-            {getInitials(currentSingerName)}
-          </Box>
-
-          {/* Status dot */}
-          <Box
-            sx={{
-              position: 'absolute',
-              bottom: 4,
-              right: 4,
-              width: 14,
-              height: 14,
-              borderRadius: '50%',
-              backgroundColor: '#10B981',
-              border: '2px solid #0D0B2B',
-              zIndex: 2,
-              '@keyframes statusPulse': {
-                '0%, 100%': { boxShadow: '0 0 0 0 rgba(16,185,129,0.5)' },
-                '50%': { boxShadow: '0 0 0 5px rgba(16,185,129,0)' },
-              },
-              animation: 'statusPulse 2s ease-in-out infinite',
-            }}
-          />
-        </Box>
-
-        {/* Singer name */}
-        <Box sx={{ textAlign: 'center' }}>
-          <Typography
-            sx={{
-              fontSize: '28px',
-              fontWeight: 700,
-              color: '#FFFFFF',
-              lineHeight: 1.2,
-              mb: 0.5,
-            }}
-          >
-            {currentSingerName}
-          </Typography>
-          <Typography
-            sx={{
-              fontSize: '14px',
-              color: '#A78BFA',
-              fontWeight: 500,
-            }}
-          >
-            Ваша очередь выбирать!
-          </Typography>
-        </Box>
-
-        {/* Track info */}
-        {currentEntry?.track && (
-          <Box
-            sx={{
-              px: 2,
-              py: 0.875,
-              borderRadius: '12px',
-              background: 'rgba(124,58,237,0.15)',
-              border: '1px solid rgba(167,139,250,0.2)',
-              textAlign: 'center',
-              maxWidth: '90%',
-            }}
-          >
-            <Typography
-              sx={{
-                fontSize: '13px',
-                fontWeight: 600,
-                color: '#FFFFFF',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {currentEntry.track.title}
-            </Typography>
-            <Typography
-              sx={{
-                fontSize: '12px',
-                color: 'rgba(255,255,255,0.45)',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {currentEntry.track.artist}
-            </Typography>
-          </Box>
-        )}
-
-        {/* Processing indicator */}
-        {currentEntry && currentEntry.track && currentEntry.track.status !== 'ready' && (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-            <CircularProgress size={20} sx={{ color: '#A78BFA' }} />
-            <Typography sx={{ fontSize: '13px', color: 'rgba(255,255,255,0.5)' }}>
-              Трек обрабатывается...
-            </Typography>
-          </Box>
-        )}
-
-        {/* Play button */}
-        {currentEntry && currentEntry.track?.status === 'ready' && (
-          <Box
-            component="button"
-            onClick={() => {
-              navigate(`/session/${sessionId}/play/${currentEntry.id}`);
-            }}
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 1,
-              px: 4,
-              py: 1.5,
-              borderRadius: '16px',
-              background: 'linear-gradient(135deg, #7C3AED, #2563EB)',
-              border: 'none',
-              color: '#FFFFFF',
-              fontSize: '16px',
-              fontWeight: 700,
-              letterSpacing: '0.1em',
-              textTransform: 'uppercase',
-              cursor: 'pointer',
-              boxShadow: '0 4px 24px rgba(124,58,237,0.4)',
-              transition: 'all 0.2s ease',
-              '&:hover': {
-                transform: 'scale(1.04)',
-                boxShadow: '0 6px 32px rgba(124,58,237,0.55)',
-              },
-            }}
-          >
-            <PlayArrowIcon sx={{ fontSize: 24 }} />
-            ПЕТЬ
-          </Box>
-        )}
-      </Box>
-    );
-  };
-
-  const renderQueueStrip = (): React.ReactNode => (
-    <Box>
-      <Typography
-        sx={{
-          fontSize: '11px',
-          fontWeight: 700,
-          letterSpacing: '0.12em',
-          color: 'rgba(255,255,255,0.35)',
-          textTransform: 'uppercase',
-          mb: 1.5,
-        }}
-      >
-        СЛЕДУЮЩИЙ
-      </Typography>
-
-      {upcoming.length === 0 ? (
-        <Box
-          sx={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            py: 3,
-            gap: 1,
-            border: '1px dashed rgba(255,255,255,0.10)',
-            borderRadius: '14px',
-          }}
-        >
-          <QueueMusicIcon sx={{ fontSize: 28, color: 'rgba(124,58,237,0.4)' }} />
-          <Typography
-            sx={{
-              fontSize: '12px',
-              color: 'rgba(255,255,255,0.3)',
-              textAlign: 'center',
-            }}
-          >
-            Очередь пуста — выберите трек справа
-          </Typography>
-        </Box>
-      ) : (
-        <Box
-          sx={{
-            display: 'flex',
-            gap: 2,
-            overflowX: 'auto',
-            pb: 1,
-            // Hide scrollbar cross-browser
-            scrollbarWidth: 'none',
-            '&::-webkit-scrollbar': { display: 'none' },
-          }}
-        >
-          {upcoming.map((entry, index) => (
-            <QueueItem key={entry.id} entry={entry} index={index} />
-          ))}
-        </Box>
-      )}
-    </Box>
-  );
-
-  const renderRecommendationsTab = (): React.ReactNode => {
-    return (
-      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-        {/* Language toggle */}
-        <FormControlLabel
-          control={
-            <Switch
-              checked={russianOnly}
-              onChange={handleRussianOnlyToggle}
-              sx={{
-                '& .MuiSwitch-switchBase.Mui-checked': {
-                  color: '#A78BFA',
-                },
-                '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
-                  backgroundColor: '#7C3AED',
-                },
-                '& .MuiSwitch-track': {
-                  backgroundColor: 'rgba(255,255,255,0.2)',
-                },
-              }}
-            />
-          }
-          label="Только на русском"
-          sx={{
-            '& .MuiFormControlLabel-label': {
-              fontSize: '14px',
-              fontWeight: 500,
-              color: 'rgba(255,255,255,0.7)',
-            },
-          }}
-        />
-
-        {/* Strategy label + mood tags inline */}
-        {recommendations && (
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-            <Typography
-              sx={{
-                fontSize: '11px',
-                fontWeight: 700,
-                letterSpacing: '0.12em',
-                color: 'rgba(255,255,255,0.35)',
-                textTransform: 'uppercase',
-                flexShrink: 0,
-              }}
-            >
-              {STRATEGY_LABELS[recommendations.strategy] ?? recommendations.strategy}
-            </Typography>
-            {moodTags.slice(0, 3).map((tag) => (
-              <Chip
-                key={tag.id}
-                label={tag.name}
-                onClick={() => handleTagClick(tag.id)}
-                variant={selectedTagId === tag.id ? 'filled' : 'outlined'}
-                size="small"
-                sx={{
-                  flexShrink: 0,
-                  borderRadius: '20px',
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  transition: 'all 0.2s ease',
-                  ...(selectedTagId === tag.id
-                    ? {
-                        background: 'linear-gradient(135deg, #7C3AED, #2563EB)',
-                        color: '#FFFFFF',
-                        border: '1px solid rgba(167,139,250,0.5)',
-                        boxShadow: '0 2px 12px rgba(124,58,237,0.4)',
-                      }
-                    : {
-                        background: 'rgba(255,255,255,0.06)',
-                        color: 'rgba(255,255,255,0.6)',
-                        borderColor: 'rgba(255,255,255,0.15)',
-                        '&:hover': {
-                          background: 'rgba(124,58,237,0.15)',
-                          borderColor: 'rgba(167,139,250,0.4)',
-                          color: '#A78BFA',
-                        },
-                      }),
-                }}
-              />
-            ))}
-          </Box>
-        )}
-
-        {/* Loading state */}
-        {recsLoading && (
-          <Box
-            sx={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              gap: 2,
-              py: 6,
-            }}
-          >
-            <CircularProgress size={36} sx={{ color: '#7C3AED' }} />
-            <Typography sx={{ fontSize: '13px', color: 'rgba(255,255,255,0.4)' }}>
-              Подбираем треки...
-            </Typography>
-          </Box>
-        )}
-
-        {/* Error state */}
-        {recsError && !recsLoading && (
-          <Alert
-            severity="error"
-            sx={{
-              backgroundColor: 'rgba(248,113,113,0.1)',
-              border: '1px solid rgba(248,113,113,0.3)',
-              color: '#FCA5A5',
-              borderRadius: '12px',
-              '& .MuiAlert-icon': { color: '#F87171' },
-            }}
-          >
-            {recsError}
-          </Alert>
-        )}
-
-        {/* Track list (single column, larger cards) */}
-        {recommendations && !recsLoading && recommendations.tracks.length > 0 && (
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: '1fr',
-              gap: 1.5,
-            }}
-          >
-            {recommendations.tracks.map((track) => (
-              <TrackCard
-                key={track.id}
-                track={track}
-                onSelect={(trackId) => { void handleTrackSelect(trackId); }}
-                isAdding={addingTrackId === track.id}
-              />
-            ))}
-          </Box>
-        )}
-
-        {/* Empty recommendations */}
-        {recommendations && !recsLoading && recommendations.tracks.length === 0 && (
-          <Box
-            sx={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              py: 6,
-              gap: 1.5,
-            }}
-          >
-            <AutoAwesomeIcon sx={{ fontSize: 36, color: 'rgba(124,58,237,0.4)' }} />
-            <Typography sx={{ color: 'rgba(255,255,255,0.35)', textAlign: 'center' }}>
-              Пока нет рекомендаций — найдите трек через поиск или загрузите свой
-            </Typography>
-          </Box>
-        )}
-      </Box>
-    );
-  };
+  const handleTagClick = useCallback((tagId: number): void => {
+    setSelectedTagId((prev) => (prev === tagId ? null : tagId));
+  }, []);
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
   return (
     <CosmicBackground>
-      <Box
-        sx={{
-          display: 'flex',
-          flexDirection: 'column',
-          minHeight: '100vh',
-        }}
-      >
-        {/* ── Top Navigation Bar ── */}
-        <AppBar position="sticky" elevation={0} sx={{ height: 72 }}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+
+        {/* ── AppBar ── */}
+        <AppBar position="sticky" elevation={0} sx={{ height: 64 }}>
           <Toolbar
             sx={{
-              height: 72,
-              minHeight: '72px !important',
+              height: 64,
+              minHeight: '64px !important',
               justifyContent: 'space-between',
               px: { xs: 2, md: 3 },
             }}
           >
-            {/* Left: Logo */}
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 140 }}>
+            {/* Logo */}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
               <Box
                 sx={{
                   width: 36,
@@ -728,96 +214,21 @@ export const QueuePage: React.FC = () => {
               </Typography>
             </Box>
 
-            {/* Center: Now singing */}
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1.25,
-                position: 'absolute',
-                left: '50%',
-                transform: 'translateX(-50%)',
-              }}
-            >
-              <Box
-                sx={{
-                  '@keyframes micPulse': {
-                    '0%, 100%': { opacity: 1, transform: 'scale(1)' },
-                    '50%': { opacity: 0.5, transform: 'scale(0.9)' },
-                  },
-                  animation: currentSingerName
-                    ? 'micPulse 1.4s ease-in-out infinite'
-                    : 'none',
-                  display: 'flex',
-                  alignItems: 'center',
-                }}
-              >
-                <MicIcon
-                  sx={{
-                    fontSize: 18,
-                    color: currentSingerName ? '#A78BFA' : 'rgba(255,255,255,0.25)',
-                  }}
-                />
-              </Box>
-
-              <Typography
-                sx={{
-                  fontSize: '13px',
-                  fontWeight: 700,
-                  letterSpacing: '0.08em',
-                  textTransform: 'uppercase',
-                  color: currentSingerName
-                    ? '#FFFFFF'
-                    : 'rgba(255,255,255,0.35)',
-                }}
-              >
-                {currentSingerName
-                  ? `СЕЙЧАС ПОЁТ: ${currentSingerName}`
-                  : 'НИКТО НЕ ПОЁТ'}
-              </Typography>
-            </Box>
-
-            {/* Right: Skip + Admin */}
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1,
-                minWidth: 140,
-                justifyContent: 'flex-end',
-              }}
-            >
-              {currentEntry && (
-                <Box
-                  component="button"
-                  onClick={() => { void handleSkip(); }}
-                  sx={{
-                    px: 2,
-                    py: 0.625,
-                    borderRadius: '20px',
-                    background: 'rgba(248,113,113,0.15)',
-                    border: '1px solid rgba(248,113,113,0.35)',
-                    color: '#FCA5A5',
-                    fontSize: '12px',
-                    fontWeight: 700,
-                    letterSpacing: '0.08em',
-                    textTransform: 'uppercase',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                    '&:hover': {
-                      background: 'rgba(248,113,113,0.25)',
-                      borderColor: 'rgba(248,113,113,0.55)',
-                    },
-                  }}
+            {/* Right: History + Admin */}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Tooltip title="История сессии" placement="bottom">
+                <IconButton
+                  size="small"
+                  onClick={() => setHistoryOpen(true)}
+                  sx={{ color: 'rgba(255,255,255,0.5)' }}
                 >
-                  ПРОПУСТИТЬ
-                </Box>
-              )}
-
+                  <HistoryIcon sx={{ fontSize: 20 }} />
+                </IconButton>
+              </Tooltip>
               <Tooltip title="Панель администратора" placement="bottom">
                 <IconButton
                   size="small"
-                  onClick={handleAdminClick}
+                  onClick={() => navigate('/admin')}
                   sx={{ color: 'rgba(255,255,255,0.4)' }}
                 >
                   <LockIcon sx={{ fontSize: 18 }} />
@@ -827,55 +238,31 @@ export const QueuePage: React.FC = () => {
           </Toolbar>
         </AppBar>
 
-        {/* ── Two-panel layout ── */}
-        <Box
-          sx={{
-            flex: 1,
-            display: 'flex',
-            gap: 0,
-            overflow: 'hidden',
-          }}
-        >
-          {/* ── Left Panel (480px fixed) ── */}
+        {/* ── Two-column layout ── */}
+        <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+
+          {/* ── Left column: Upload ── */}
           <Box
             sx={{
-              width: 480,
+              width: '22.5%',
+              minWidth: 240,
+              maxWidth: 380,
               flexShrink: 0,
-              display: 'flex',
-              flexDirection: 'column',
               borderRight: '1px solid rgba(255,255,255,0.08)',
               overflowY: 'auto',
-              p: 3,
-              gap: 3,
+              p: 2,
             }}
           >
-            {/* Current Singer Card (glassmorphism) */}
-            <Box
-              sx={{
-                background: 'rgba(255,255,255,0.06)',
-                border: '1px solid rgba(255,255,255,0.12)',
-                backdropFilter: 'blur(24px)',
-                borderRadius: '24px',
-                p: 3,
-              }}
-            >
-              {renderCurrentSingerCard()}
-            </Box>
-
-            {/* Queue Strip */}
-            <Box
-              sx={{
-                background: 'rgba(255,255,255,0.04)',
-                border: '1px solid rgba(255,255,255,0.08)',
-                borderRadius: '20px',
-                p: 2.5,
-              }}
-            >
-              {renderQueueStrip()}
-            </Box>
+            {sessionId && (
+              <UploadTab
+                sessionId={sessionId}
+                onTrackUploaded={(trackId) => { void handlePlay(trackId); }}
+                compact
+              />
+            )}
           </Box>
 
-          {/* ── Right Panel (flex: 1) ── */}
+          {/* ── Right column: Search + Recommendations ── */}
           <Box
             sx={{
               flex: 1,
@@ -885,87 +272,169 @@ export const QueuePage: React.FC = () => {
               p: 3,
             }}
           >
-            {/* Tab bar */}
-            <Box
-              sx={{
-                background: 'rgba(255,255,255,0.04)',
-                border: '1px solid rgba(255,255,255,0.08)',
-                borderRadius: '16px',
-                p: '4px',
-                mb: 3,
-              }}
-            >
-              <Tabs
-                value={activeTab}
-                onChange={(_, newValue: number) => setActiveTab(newValue)}
-                variant="fullWidth"
-                TabIndicatorProps={{ style: { display: 'none' } }}
-                sx={{
-                  minHeight: 'unset',
-                  '& .MuiTab-root': {
-                    minHeight: 40,
-                    py: 0.875,
-                    px: 1.5,
-                    borderRadius: '12px',
-                    fontSize: '13px',
-                    fontWeight: 600,
-                    letterSpacing: '0.04em',
-                    textTransform: 'none',
-                    color: 'rgba(255,255,255,0.5)',
-                    transition: 'all 0.2s ease',
-                    gap: 0.75,
-                    '&.Mui-selected': {
-                      color: '#A78BFA',
-                      background: 'rgba(124,58,237,0.35)',
-                      border: '1px solid rgba(167,139,250,0.4)',
-                    },
-                    '& .MuiTab-iconWrapper': {
-                      mb: '0 !important',
-                    },
-                  },
-                }}
-              >
-                <Tab
-                  icon={<SearchIcon sx={{ fontSize: 16 }} />}
-                  iconPosition="start"
-                  label="Поиск трека"
-                />
-                <Tab
-                  icon={<AutoAwesomeIcon sx={{ fontSize: 16 }} />}
-                  iconPosition="start"
-                  label="Рекомендации"
-                />
-                <Tab
-                  icon={<CloudUploadIcon sx={{ fontSize: 16 }} />}
-                  iconPosition="start"
-                  label="Загрузить"
-                />
-              </Tabs>
-            </Box>
-
-            {/* Tab content */}
-            <Box sx={{ flex: 1 }}>
-              {activeTab === 0 && sessionId && (
+            {/* Search (always visible) */}
+            {sessionId && (
+              <Box sx={{ mb: searchActive ? 0 : 3 }}>
                 <SearchTab
                   sessionId={sessionId}
-                  onTrackSelected={(trackId) => { void handleTrackSelect(trackId); }}
+                  onTrackSelected={(trackId) => { void handlePlay(trackId); }}
+                  onSearchStateChange={setSearchActive}
                 />
-              )}
-              {activeTab === TAB_RECOMMENDATIONS && renderRecommendationsTab()}
-              {sessionId && (
-                <Box sx={{ display: activeTab === 2 ? 'block' : 'none' }}>
-                  <UploadTab
-                    sessionId={sessionId}
-                    onTrackUploaded={(trackId) => { void handleTrackSelect(trackId); }}
-                  />
+              </Box>
+            )}
+
+            {/* Recommendations (hidden when search is active) */}
+            {!searchActive && (
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+
+                {/* Mood tags + language filter */}
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                  {recommendations && (
+                    <Typography
+                      sx={{
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        letterSpacing: '0.12em',
+                        color: 'rgba(255,255,255,0.35)',
+                        textTransform: 'uppercase',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {STRATEGY_LABELS[recommendations.strategy] ?? recommendations.strategy}
+                    </Typography>
+                  )}
+
+                  {moodTags.slice(0, 5).map((tag) => (
+                    <Chip
+                      key={tag.id}
+                      label={tag.name}
+                      onClick={() => handleTagClick(tag.id)}
+                      variant={selectedTagId === tag.id ? 'filled' : 'outlined'}
+                      size="small"
+                      sx={{
+                        flexShrink: 0,
+                        borderRadius: '20px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        transition: 'all 0.2s ease',
+                        ...(selectedTagId === tag.id
+                          ? {
+                              background: 'linear-gradient(135deg, #7C3AED, #2563EB)',
+                              color: '#FFFFFF',
+                              border: '1px solid rgba(167,139,250,0.5)',
+                              boxShadow: '0 2px 12px rgba(124,58,237,0.4)',
+                            }
+                          : {
+                              background: 'rgba(255,255,255,0.06)',
+                              color: 'rgba(255,255,255,0.6)',
+                              borderColor: 'rgba(255,255,255,0.15)',
+                              '&:hover': {
+                                background: 'rgba(124,58,237,0.15)',
+                                borderColor: 'rgba(167,139,250,0.4)',
+                                color: '#A78BFA',
+                              },
+                            }),
+                      }}
+                    />
+                  ))}
+
+                  {/* Language toggle */}
+                  <Box sx={{ display: 'flex', alignItems: 'center', ml: 'auto', flexShrink: 0 }}>
+                    <Chip
+                      label="RU"
+                      onClick={() => setRussianOnly((prev) => !prev)}
+                      variant={russianOnly ? 'filled' : 'outlined'}
+                      size="small"
+                      sx={{
+                        borderRadius: '20px',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        minWidth: 40,
+                        ...(russianOnly
+                          ? {
+                              background: 'rgba(124,58,237,0.4)',
+                              color: '#A78BFA',
+                              border: '1px solid rgba(167,139,250,0.4)',
+                            }
+                          : {
+                              background: 'rgba(255,255,255,0.06)',
+                              color: 'rgba(255,255,255,0.4)',
+                              borderColor: 'rgba(255,255,255,0.12)',
+                            }),
+                      }}
+                    />
+                  </Box>
                 </Box>
-              )}
-            </Box>
+
+                {/* Loading */}
+                {recsLoading && (
+                  <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, py: 6 }}>
+                    <CircularProgress size={36} sx={{ color: '#7C3AED' }} />
+                    <Typography sx={{ fontSize: '13px', color: 'rgba(255,255,255,0.4)' }}>
+                      Подбираем треки...
+                    </Typography>
+                  </Box>
+                )}
+
+                {/* Error */}
+                {recsError && !recsLoading && (
+                  <Alert
+                    severity="error"
+                    sx={{
+                      backgroundColor: 'rgba(248,113,113,0.1)',
+                      border: '1px solid rgba(248,113,113,0.3)',
+                      color: '#FCA5A5',
+                      borderRadius: '12px',
+                      '& .MuiAlert-icon': { color: '#F87171' },
+                    }}
+                  >
+                    {recsError}
+                  </Alert>
+                )}
+
+                {/* Track list */}
+                {recommendations && !recsLoading && recommendations.tracks.length > 0 && (
+                  <Box sx={{ display: 'grid', gridTemplateColumns: '1fr', gap: 1.5 }}>
+                    {recommendations.tracks.map((track) => (
+                      <TrackCard
+                        key={track.id}
+                        track={track}
+                        onSelect={(trackId) => { void handlePlay(trackId); }}
+                        isAdding={playingTrackId === track.id}
+                      />
+                    ))}
+                  </Box>
+                )}
+
+                {/* Empty */}
+                {recommendations && !recsLoading && recommendations.tracks.length === 0 && (
+                  <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 6, gap: 1.5 }}>
+                    <AutoAwesomeIcon sx={{ fontSize: 36, color: 'rgba(124,58,237,0.4)' }} />
+                    <Typography sx={{ color: 'rgba(255,255,255,0.35)', textAlign: 'center' }}>
+                      Пока нет рекомендаций — найдите трек через поиск или загрузите свой
+                    </Typography>
+                  </Box>
+                )}
+              </Box>
+            )}
           </Box>
         </Box>
       </Box>
 
-      {/* Success / error snackbar */}
+      {/* History drawer */}
+      {sessionId && (
+        <HistoryDrawer
+          open={historyOpen}
+          onClose={() => setHistoryOpen(false)}
+          sessionId={sessionId}
+          onTrackSelect={(trackId) => {
+            setHistoryOpen(false);
+            void handlePlay(trackId);
+          }}
+        />
+      )}
+
+      {/* Snackbar */}
       <Snackbar
         open={snackMessage !== null}
         autoHideDuration={3000}

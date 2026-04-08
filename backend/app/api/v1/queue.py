@@ -56,6 +56,13 @@ class AddToQueueRequest(BaseModel):
     track_id: str
 
 
+class DirectPlayRequest(BaseModel):
+    """Request body for the direct-play endpoint (no queue UI)."""
+
+    track_id: str
+    participant_id: str
+
+
 class StartPlayingResponse(BaseModel):
     """Payload returned when playback starts — gives the frontend what it needs."""
 
@@ -63,6 +70,8 @@ class StartPlayingResponse(BaseModel):
     clip_url: str | None
     syllable_timings: list[SyllableTiming] | None
     duration_sec: int | None
+    title: str | None = None
+    artist: str | None = None
 
 
 class FinishPlayingResponse(BaseModel):
@@ -231,6 +240,8 @@ async def start_playing(
         clip_url=stream_url,
         syllable_timings=track.syllable_timings if track else None,
         duration_sec=track.duration_sec if track else None,
+        title=track.title if track else None,
+        artist=track.artist if track else None,
     )
 
 
@@ -273,6 +284,50 @@ async def finish_playing(
     return FinishPlayingResponse(
         next_participant=next_participant,
         next_entry_id=next_entry.id,
+    )
+
+
+@router.post(
+    "/sessions/{session_id}/play",
+    response_model=StartPlayingResponse,
+    summary="Pick a track and start playing immediately",
+)
+async def direct_play(
+    session_id: str,
+    body: DirectPlayRequest,
+    repo: PgRepository = Depends(get_repo),
+) -> StartPlayingResponse:
+    """Create a queue entry and start playback in one atomic call.
+
+    Combines ``add_to_queue`` + ``start_playing`` for the "pick and sing"
+    flow where there is no visible queue.
+    """
+    session = await repo.get_session(session_id)
+    if session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Session '{session_id}' not found.",
+        )
+    if session.status != "active":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Session '{session_id}' is not active.",
+        )
+
+    service = QueueService(repo)
+    entry = await service.add_to_queue(session_id, body.participant_id, body.track_id)
+    await service.start_playing(entry.id)
+
+    track = await repo.get_track(entry.track_id)
+    stream_url = f"/api/v1/tracks/{entry.track_id}/stream" if track else None
+
+    return StartPlayingResponse(
+        entry_id=entry.id,
+        clip_url=stream_url,
+        syllable_timings=track.syllable_timings if track else None,
+        duration_sec=track.duration_sec if track else None,
+        title=track.title if track else None,
+        artist=track.artist if track else None,
     )
 
 

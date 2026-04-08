@@ -7,10 +7,10 @@ import {
   IconButton,
 } from '@mui/material';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
-import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import CloseIcon from '@mui/icons-material/Close';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 
 import { api } from '../services/api';
 import { subscribeToJobStatus } from '../services/sseService';
@@ -80,6 +80,7 @@ let jobCounter = 0;
 interface UploadTabProps {
   sessionId: string;
   onTrackUploaded: (trackId: string) => void;
+  compact?: boolean;
 }
 
 // ─── JobCard ──────────────────────────────────────────────────────────────────
@@ -87,7 +88,8 @@ interface UploadTabProps {
 const JobCard: React.FC<{
   job: UploadJob;
   onDismiss: (id: string) => void;
-}> = ({ job, onDismiss }) => {
+  onPlay?: (trackId: string) => void;
+}> = ({ job, onDismiss, onPlay }) => {
   const { phase } = job;
 
   return (
@@ -163,7 +165,7 @@ const JobCard: React.FC<{
 
         {phase.kind === 'done' && (
           <Typography sx={{ fontSize: '11px', color: '#10B981' }}>
-            Готово, добавлен в очередь
+            Готово
           </Typography>
         )}
 
@@ -174,8 +176,25 @@ const JobCard: React.FC<{
         )}
       </Box>
 
-      {/* Dismiss button for done/error */}
-      {(phase.kind === 'done' || phase.kind === 'error') && (
+      {/* Play button for done */}
+      {phase.kind === 'done' && onPlay && (
+        <IconButton
+          size="small"
+          onClick={() => onPlay(phase.trackId)}
+          sx={{
+            width: 32,
+            height: 32,
+            background: 'linear-gradient(135deg, #7C3AED, #2563EB)',
+            color: '#FFFFFF',
+            '&:hover': { opacity: 0.85 },
+          }}
+        >
+          <PlayArrowIcon sx={{ fontSize: 18 }} />
+        </IconButton>
+      )}
+
+      {/* Dismiss button for error */}
+      {phase.kind === 'error' && (
         <IconButton
           size="small"
           onClick={() => onDismiss(job.id)}
@@ -192,6 +211,7 @@ const JobCard: React.FC<{
 
 export const UploadTab: React.FC<UploadTabProps> = ({
   onTrackUploaded,
+  compact = false,
 }) => {
   const [file, setFile] = useState<File | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -386,8 +406,19 @@ export const UploadTab: React.FC<UploadTabProps> = ({
 
   // ── Render ───────────────────────────────────────────────────────────────
 
+  // ── Auto-upload on file select in compact mode ──────────────────────────
+
+  useEffect(() => {
+    if (compact && file && !uploading) {
+      void handleUpload();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [file, compact]);
+
+  // ── Render ───────────────────────────────────────────────────────────────
+
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3, position: 'relative' }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: compact ? 2 : 3, position: 'relative' }}>
 
       {/* Drag & Drop Zone */}
       <Box
@@ -396,8 +427,8 @@ export const UploadTab: React.FC<UploadTabProps> = ({
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         sx={{
-          height: 240,
-          borderRadius: '20px',
+          height: compact ? 120 : 240,
+          borderRadius: compact ? '16px' : '20px',
           border: `2px dashed ${isDragOver ? 'rgba(6,182,212,0.9)' : 'rgba(6,182,212,0.4)'}`,
           background: isDragOver
             ? 'rgba(6,182,212,0.08)'
@@ -406,7 +437,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          gap: 1.5,
+          gap: compact ? 1 : 1.5,
           cursor: 'pointer',
           transition: 'border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease',
           boxShadow: isDragOver
@@ -416,30 +447,47 @@ export const UploadTab: React.FC<UploadTabProps> = ({
           overflow: 'hidden',
         }}
       >
-        {/* Default zone content */}
-        <Box
-          sx={{
-            width: 72,
-            height: 72,
-            borderRadius: '50%',
-            background: 'linear-gradient(135deg, rgba(6,182,212,0.2), rgba(124,58,237,0.2))',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <CloudUploadIcon
+        {/* Icon */}
+        {!compact && (
+          <Box
             sx={{
-              fontSize: 36,
-              background: 'linear-gradient(135deg, #06B6D4, #7C3AED)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              backgroundClip: 'text',
+              width: 72,
+              height: 72,
+              borderRadius: '50%',
+              background: 'linear-gradient(135deg, rgba(6,182,212,0.2), rgba(124,58,237,0.2))',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
             }}
-          />
-        </Box>
+          >
+            <CloudUploadIcon
+              sx={{
+                fontSize: 36,
+                background: 'linear-gradient(135deg, #06B6D4, #7C3AED)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                backgroundClip: 'text',
+              }}
+            />
+          </Box>
+        )}
 
-        {file ? (
+        {compact ? (
+          <>
+            <CloudUploadIcon
+              sx={{
+                fontSize: 28,
+                color: isDragOver ? '#67E8F9' : 'rgba(6,182,212,0.7)',
+              }}
+            />
+            <Typography sx={{ fontSize: '13px', fontWeight: 600, color: isDragOver ? '#67E8F9' : 'rgba(255,255,255,0.6)', textAlign: 'center', px: 1 }}>
+              {isDragOver ? 'Отпустите!' : 'Перетащите MP3 или нажмите'}
+            </Typography>
+            <Typography sx={{ fontSize: '11px', color: 'rgba(255,255,255,0.25)' }}>
+              до {MAX_FILE_SIZE_MB} МБ
+            </Typography>
+          </>
+        ) : file ? (
           <>
             <Typography sx={{ fontSize: '15px', fontWeight: 600, color: '#FFFFFF' }}>
               {file.name}
@@ -462,7 +510,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({
 
       {/* File size error */}
       {fileSizeError && (
-        <Typography sx={{ fontSize: '13px', color: '#FCA5A5', textAlign: 'center' }}>
+        <Typography sx={{ fontSize: compact ? '11px' : '13px', color: '#FCA5A5', textAlign: 'center' }}>
           {fileSizeError}
         </Typography>
       )}
@@ -476,72 +524,73 @@ export const UploadTab: React.FC<UploadTabProps> = ({
         style={{ display: 'none' }}
       />
 
-      {/* Divider */}
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-        <Box sx={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.08)' }} />
-        <Typography sx={{ fontSize: '12px', color: 'rgba(255,255,255,0.25)', letterSpacing: '0.08em' }}>
-          — ИЛИ —
-        </Typography>
-        <Box sx={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.08)' }} />
-      </Box>
+      {/* Full-size mode: extra buttons */}
+      {!compact && (
+        <>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+            <Box sx={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.08)' }} />
+            <Typography sx={{ fontSize: '12px', color: 'rgba(255,255,255,0.25)', letterSpacing: '0.08em' }}>
+              — ИЛИ —
+            </Typography>
+            <Box sx={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.08)' }} />
+          </Box>
 
-      {/* Choose file button */}
-      <ButtonBase
-        onClick={handleZoneClick}
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 1,
-          py: 1.5,
-          borderRadius: '14px',
-          border: '1px solid rgba(6,182,212,0.4)',
-          color: '#67E8F9',
-          fontSize: '13px',
-          fontWeight: 700,
-          letterSpacing: '0.08em',
-          textTransform: 'uppercase',
-          transition: 'background 0.2s ease, border-color 0.2s ease',
-          '&:hover': {
-            background: 'rgba(6,182,212,0.1)',
-            borderColor: 'rgba(6,182,212,0.7)',
-          },
-        }}
-      >
-        <FolderOpenIcon sx={{ fontSize: 18 }} />
-        ВЫБРАТЬ ФАЙЛ
-      </ButtonBase>
+          <ButtonBase
+            onClick={handleZoneClick}
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 1,
+              py: 1.5,
+              borderRadius: '14px',
+              border: '1px solid rgba(6,182,212,0.4)',
+              color: '#67E8F9',
+              fontSize: '13px',
+              fontWeight: 700,
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+              transition: 'background 0.2s ease, border-color 0.2s ease',
+              '&:hover': {
+                background: 'rgba(6,182,212,0.1)',
+                borderColor: 'rgba(6,182,212,0.7)',
+              },
+            }}
+          >
+            ВЫБРАТЬ ФАЙЛ
+          </ButtonBase>
 
-      {/* Upload button */}
-      <ButtonBase
-        onClick={() => { void handleUpload(); }}
-        disabled={!canUpload}
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: 1,
-          py: 1.75,
-          borderRadius: '14px',
-          background: canUpload
-            ? 'linear-gradient(135deg, #06B6D4, #7C3AED)'
-            : 'rgba(255,255,255,0.06)',
-          color: canUpload ? '#FFFFFF' : 'rgba(255,255,255,0.25)',
-          fontSize: '13px',
-          fontWeight: 700,
-          letterSpacing: '0.1em',
-          textTransform: 'uppercase',
-          boxShadow: canUpload ? '0 4px 24px rgba(6,182,212,0.3)' : 'none',
-          transition: 'opacity 0.2s ease, box-shadow 0.2s ease',
-          '&:hover': canUpload ? { opacity: 0.88 } : {},
-          '&:disabled': {
-            cursor: 'not-allowed',
-          },
-        }}
-      >
-        <CloudUploadIcon sx={{ fontSize: 18 }} />
-        ЗАГРУЗИТЬ И СОЗДАТЬ KARAOKE
-      </ButtonBase>
+          <ButtonBase
+            onClick={() => { void handleUpload(); }}
+            disabled={!canUpload}
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 1,
+              py: 1.75,
+              borderRadius: '14px',
+              background: canUpload
+                ? 'linear-gradient(135deg, #06B6D4, #7C3AED)'
+                : 'rgba(255,255,255,0.06)',
+              color: canUpload ? '#FFFFFF' : 'rgba(255,255,255,0.25)',
+              fontSize: '13px',
+              fontWeight: 700,
+              letterSpacing: '0.1em',
+              textTransform: 'uppercase',
+              boxShadow: canUpload ? '0 4px 24px rgba(6,182,212,0.3)' : 'none',
+              transition: 'opacity 0.2s ease, box-shadow 0.2s ease',
+              '&:hover': canUpload ? { opacity: 0.88 } : {},
+              '&:disabled': {
+                cursor: 'not-allowed',
+              },
+            }}
+          >
+            <CloudUploadIcon sx={{ fontSize: 18 }} />
+            ЗАГРУЗИТЬ И СОЗДАТЬ KARAOKE
+          </ButtonBase>
+        </>
+      )}
 
       {/* Active/completed job cards */}
       {jobs.length > 0 && (
@@ -555,10 +604,10 @@ export const UploadTab: React.FC<UploadTabProps> = ({
               textTransform: 'uppercase',
             }}
           >
-            ЗАГРУЗКИ
+            {compact ? 'МОИ ЗАГРУЗКИ' : 'ЗАГРУЗКИ'}
           </Typography>
           {jobs.map((job) => (
-            <JobCard key={job.id} job={job} onDismiss={dismissJob} />
+            <JobCard key={job.id} job={job} onDismiss={dismissJob} onPlay={onTrackUploaded} />
           ))}
         </Box>
       )}

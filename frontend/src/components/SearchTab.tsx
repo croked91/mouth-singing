@@ -17,6 +17,7 @@ import SearchIcon from '@mui/icons-material/Search';
 import CloseIcon from '@mui/icons-material/Close';
 import SearchOffIcon from '@mui/icons-material/SearchOff';
 import MusicNoteIcon from '@mui/icons-material/MusicNote';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 
 import { api } from '../services/api';
 import type { TrackSearchItem } from '../types';
@@ -40,6 +41,7 @@ function formatDuration(seconds: number | null): string {
 interface SearchTabProps {
   sessionId: string;
   onTrackSelected: (trackId: string) => void | Promise<void>;
+  onSearchStateChange?: (active: boolean) => void;
 }
 
 // ─── SearchResultCard ─────────────────────────────────────────────────────────
@@ -163,25 +165,24 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
       {formatDuration(track.duration_sec)}
     </Typography>
 
-    {/* Add indicator */}
-    <Typography
+    {/* Play button */}
+    <Box
       sx={{
-        px: 1.75,
-        py: 0.625,
-        borderRadius: '20px',
-        background: 'rgba(6,182,212,0.25)',
-        border: '1px solid rgba(6,182,212,0.45)',
-        color: '#67E8F9',
-        fontSize: '11px',
-        fontWeight: 700,
-        letterSpacing: '0.08em',
-        textTransform: 'uppercase',
+        width: 36,
+        height: 36,
+        borderRadius: '50%',
+        background: 'linear-gradient(135deg, #06B6D4, #7C3AED)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
         flexShrink: 0,
         opacity: isAdding ? 0.4 : 1,
+        transition: 'transform 0.15s ease',
+        '&:hover': { transform: 'scale(1.1)' },
       }}
     >
-      {isAdding ? '...' : '+'}
-    </Typography>
+      <PlayArrowIcon sx={{ fontSize: 20, color: '#FFFFFF' }} />
+    </Box>
   </Box>
 );
 
@@ -214,6 +215,7 @@ const SkeletonCard: React.FC = () => (
 
 export const SearchTab: React.FC<SearchTabProps> = ({
   onTrackSelected,
+  onSearchStateChange,
 }) => {
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -295,6 +297,7 @@ export const SearchTab: React.FC<SearchTabProps> = ({
     dismissSuggestions();
     setLoading(true);
     setSearched(true);
+    onSearchStateChange?.(true);
     setOffset(0);
     searchQueryRef.current = trimmed;
 
@@ -396,6 +399,7 @@ export const SearchTab: React.FC<SearchTabProps> = ({
     setHasMore(false);
     setOffset(0);
     inputRef.current?.focus();
+    onSearchStateChange?.(false);
   };
 
   const handleClickAway = (event: MouseEvent | TouchEvent): void => {
@@ -630,52 +634,6 @@ export const SearchTab: React.FC<SearchTabProps> = ({
         </Box>
       )}
 
-      {/* Initial state — no search yet */}
-      {!loading && !searched && (
-        <Box
-          sx={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            py: 8,
-            gap: 1.5,
-          }}
-        >
-          <Box
-            sx={{
-              width: 64,
-              height: 64,
-              borderRadius: '50%',
-              background: 'linear-gradient(135deg, rgba(6,182,212,0.2), rgba(124,58,237,0.2))',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <SearchIcon sx={{ fontSize: 30, color: 'rgba(6,182,212,0.6)' }} />
-          </Box>
-          <Typography
-            sx={{
-              fontSize: '14px',
-              color: 'rgba(255,255,255,0.3)',
-              textAlign: 'center',
-            }}
-          >
-            Начните вводить для поиска
-          </Typography>
-          <Typography
-            sx={{
-              fontSize: '12px',
-              color: 'rgba(255,255,255,0.2)',
-              textAlign: 'center',
-              maxWidth: 280,
-            }}
-          >
-            Поиск по исполнителю, названию или тексту песни
-          </Typography>
-        </Box>
-      )}
     </Box>
   );
 };

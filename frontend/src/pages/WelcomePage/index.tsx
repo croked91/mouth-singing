@@ -17,7 +17,7 @@ import { CosmicBackground } from '../../components/CosmicBackground';
 import { useSessionStore } from '../../store/sessionStore';
 
 const FEATURE_PILLS = [
-  { label: 'Очередь песен', icon: <QueueMusicIcon sx={{ fontSize: 16 }} /> },
+  { label: '17 000 треков', icon: <QueueMusicIcon sx={{ fontSize: 16 }} /> },
   { label: 'Загрузите свой трек', icon: <CloudUploadIcon sx={{ fontSize: 16 }} /> },
   { label: 'ИИ-рекомендации', icon: <AutoAwesomeIcon sx={{ fontSize: 16 }} /> },
 ];
@@ -35,7 +35,7 @@ export const WelcomePage: React.FC = () => {
     try {
       const sessionId = await createSession('default');
       await addParticipant('Певец');
-      navigate(`/session/${sessionId}/queue`);
+      navigate(`/session/${sessionId}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Ошибка создания сессии';
       setStartError(message);
@@ -123,7 +123,7 @@ export const WelcomePage: React.FC = () => {
             lineHeight: 1.6,
           }}
         >
-          Выбирайте песни, вставайте в очередь и пусть ночь начнётся.
+          Выбирайте песни и пусть ночь начнётся.
         </Typography>
 
         {/* CTA Button */}

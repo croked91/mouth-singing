@@ -4,7 +4,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import {
   Box,
   CircularProgress,
@@ -23,7 +23,7 @@ import VolumeDownIcon from '@mui/icons-material/VolumeDown';
 
 import { api } from '../../services/api';
 import { LyricHighlight } from '../../components/LyricHighlight';
-import type { StartPlayingResponse, QueueEntryWithDetails } from '../../types';
+import type { StartPlayingResponse } from '../../types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -38,22 +38,19 @@ function formatTime(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-function getInitials(name: string): string {
-  const words = name.trim().split(/\s+/);
-  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
-  return (words[0][0] + words[words.length - 1][0]).toUpperCase();
-}
-
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export const PlayerPage: React.FC = () => {
   const { id: sessionId, entryId } = useParams<{ id: string; entryId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // startData may be passed via navigation state from the main page
+  const navStartData = (location.state as { startData?: StartPlayingResponse } | null)?.startData ?? null;
 
   // ── API response state ──────────────────────────────────────────────────────
-  const [startData, setStartData] = useState<StartPlayingResponse | null>(null);
-  const [currentEntry, setCurrentEntry] = useState<QueueEntryWithDetails | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [startData, setStartData] = useState<StartPlayingResponse | null>(navStartData);
+  const [isLoading, setIsLoading] = useState(navStartData === null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   // ── Audio playback state ────────────────────────────────────────────────────
@@ -76,28 +73,15 @@ export const PlayerPage: React.FC = () => {
   // ── Load data on mount ──────────────────────────────────────────────────────
 
   useEffect(() => {
-    if (!sessionId || !entryId) return;
+    if (!entryId || startData) return;
 
     let cancelled = false;
 
     const load = async (): Promise<void> => {
       try {
-        const [startRes, queueRes] = await Promise.all([
-          api.startPlaying(entryId),
-          api.getQueue(sessionId),
-        ]);
-
+        const startRes = await api.startPlaying(entryId);
         if (cancelled) return;
-
         setStartData(startRes);
-
-        // Find current entry in queue (current or upcoming)
-        const allEntries = [
-          ...(queueRes.current ? [queueRes.current] : []),
-          ...queueRes.upcoming,
-        ];
-        const entry = allEntries.find((e) => e.id === entryId) ?? queueRes.current;
-        setCurrentEntry(entry ?? null);
       } catch (err) {
         if (!cancelled) {
           setLoadError(err instanceof Error ? err.message : 'Ошибка запуска');
@@ -109,16 +93,16 @@ export const PlayerPage: React.FC = () => {
 
     void load();
     return () => { cancelled = true; };
-  }, [sessionId, entryId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entryId]);
 
   // ── Wire audio element once track_id is known ────────────────────────────────
 
   useEffect(() => {
     const audio = audioRef.current;
-    if (!audio || !currentEntry?.track?.id) return;
+    if (!audio || !startData?.clip_url) return;
 
-    const trackId = currentEntry.track.id;
-    audio.src = `/api/v1/tracks/${trackId}/stream`;
+    audio.src = startData.clip_url;
     audio.volume = volume;
     audio.load();
 
@@ -134,7 +118,8 @@ export const PlayerPage: React.FC = () => {
       audio.removeEventListener('canplay', handleCanPlay);
       audio.pause();
     };
-  }, [currentEntry]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startData?.clip_url]);
 
   // ── Audio event listeners ───────────────────────────────────────────────────
   // Re-run when isLoading changes so listeners attach after <audio> is mounted.
@@ -275,7 +260,7 @@ export const PlayerPage: React.FC = () => {
     } catch {
       // Navigate regardless — best-effort finish call
     } finally {
-      navigate(`/session/${sessionId}/queue`);
+      navigate(`/session/${sessionId}`);
     }
   }, [entryId, sessionId, navigate]);
 
@@ -335,8 +320,6 @@ export const PlayerPage: React.FC = () => {
 
   // ─── Derived values ────────────────────────────────────────────────────────────
 
-  const track = currentEntry?.track ?? null;
-  const participant = currentEntry?.participant ?? null;
   const syllableTimings = startData?.syllable_timings ?? null;
 
   // ─── Render ────────────────────────────────────────────────────────────────────
@@ -419,98 +402,36 @@ export const PlayerPage: React.FC = () => {
           borderBottom: '1px solid rgba(255,255,255,0.06)',
         }}
       >
-        {/* Left: track info + singer */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
-          {/* Track title + artist */}
-          <Box>
-            <Typography
-              sx={{
-                fontWeight: 700,
-                fontSize: '20px',
-                color: '#FFFFFF',
-                lineHeight: 1.2,
-                maxWidth: '480px',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {track?.title ?? '—'}
-            </Typography>
-            <Typography
-              sx={{
-                fontWeight: 400,
-                fontSize: '18px',
-                color: 'rgba(255,255,255,0.55)',
-                lineHeight: 1.2,
-                maxWidth: '480px',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {track?.artist ?? ''}
-            </Typography>
-          </Box>
-
-          {/* Divider */}
-          {participant && (
-            <Box
-              sx={{
-                width: '1px',
-                height: '32px',
-                backgroundColor: 'rgba(255,255,255,0.12)',
-              }}
-            />
-          )}
-
-          {/* Singer avatar + label */}
-          {participant && (
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <Box
-                sx={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: '50%',
-                  background: 'linear-gradient(135deg, #7C3AED, #2563EB)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '13px',
-                  fontWeight: 700,
-                  color: '#FFFFFF',
-                  flexShrink: 0,
-                }}
-              >
-                {getInitials(participant.display_name)}
-              </Box>
-              <Box>
-                <Typography
-                  sx={{
-                    fontSize: '11px',
-                    fontWeight: 600,
-                    letterSpacing: '0.1em',
-                    color: 'rgba(255,255,255,0.38)',
-                    textTransform: 'uppercase',
-                    lineHeight: 1,
-                    mb: '2px',
-                  }}
-                >
-                  Поёт
-                </Typography>
-                <Typography
-                  sx={{
-                    fontSize: '15px',
-                    fontWeight: 600,
-                    color: '#FFFFFF',
-                    lineHeight: 1,
-                  }}
-                >
-                  {participant.display_name}
-                </Typography>
-              </Box>
-            </Box>
-          )}
+        {/* Left: track info */}
+        <Box>
+          <Typography
+            sx={{
+              fontWeight: 700,
+              fontSize: '20px',
+              color: '#FFFFFF',
+              lineHeight: 1.2,
+              maxWidth: '600px',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {startData?.title ?? '—'}
+          </Typography>
+          <Typography
+            sx={{
+              fontWeight: 400,
+              fontSize: '18px',
+              color: 'rgba(255,255,255,0.55)',
+              lineHeight: 1.2,
+              maxWidth: '600px',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {startData?.artist ?? ''}
+          </Typography>
         </Box>
 
         {/* Right: ЗАВЕРШИТЬ button */}

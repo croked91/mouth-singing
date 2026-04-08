@@ -12,6 +12,7 @@ import type {
   ActiveJob,
   StartPlayingResponse,
   FinishPlayingResponse,
+  HistoryItem,
 } from '../types';
 
 const apiClient = axios.create({
@@ -170,6 +171,25 @@ export const api = {
   getActiveJobs: async (): Promise<ActiveJob[]> => {
     const response = await apiClient.get<ActiveJob[]>('/jobs/active');
     return response.data;
+  },
+
+  directPlay: async (
+    sessionId: string,
+    participantId: string,
+    trackId: string,
+  ): Promise<StartPlayingResponse> => {
+    const response = await apiClient.post<StartPlayingResponse>(
+      `/sessions/${sessionId}/play`,
+      { track_id: trackId, participant_id: participantId },
+    );
+    return response.data;
+  },
+
+  getSessionHistory: async (sessionId: string): Promise<HistoryItem[]> => {
+    const response = await apiClient.get<{ items: HistoryItem[] }>(
+      `/sessions/${sessionId}/history`,
+    );
+    return response.data.items;
   },
 
   uploadTrack: async (file: File, artist?: string, title?: string): Promise<UploadResponse> => {

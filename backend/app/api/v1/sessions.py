@@ -50,6 +50,24 @@ class AddParticipantRequest(BaseModel):
     name: str | None = None
 
 
+class HistoryItem(BaseModel):
+    """A single played track in the session history."""
+
+    track_id: str
+    artist: str
+    title: str
+    duration_sec: int | None = None
+    artist_image_url: str | None = None
+    played_at: str
+    source: str
+
+
+class SessionHistoryResponse(BaseModel):
+    """List of tracks played during a session."""
+
+    items: list[HistoryItem]
+
+
 # ---------------------------------------------------------------------------
 # Route handlers
 # ---------------------------------------------------------------------------
@@ -133,6 +151,59 @@ async def add_participant(
         )
 
     return await service.add_participant(session_id, body.name)
+
+
+@router.get(
+    "/{session_id}/history",
+    response_model=SessionHistoryResponse,
+    summary="Get tracks played during a session",
+)
+async def get_session_history(
+    session_id: str,
+    repo: PgRepository = Depends(get_repo),
+) -> SessionHistoryResponse:
+    """Return the list of tracks played in this session, newest first."""
+    session = await repo.get_session(session_id)
+    if session is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Session '{session_id}' not found.",
+        )
+
+    history = await repo.get_history_by_session(session_id)
+    if not history:
+        return SessionHistoryResponse(items=[])
+
+    track_ids = list({h.track_id for h in history})
+    tracks = await repo.get_tracks_by_ids(track_ids)
+
+    artist_names = list({t.artist for t in tracks.values()})
+    artists = await repo.get_artists_by_names(artist_names)
+
+    items: list[HistoryItem] = []
+    for h in sorted(history, key=lambda x: x.played_at, reverse=True):
+        track = tracks.get(h.track_id)
+        if track is None:
+            continue
+        artist_data = artists.get(track.artist)
+        image_url = (
+            f"/api/v1/media/artists/{artist_data['image_path']}"
+            if artist_data and artist_data.get("image_path")
+            else None
+        )
+        items.append(
+            HistoryItem(
+                track_id=track.id,
+                artist=track.artist,
+                title=track.title,
+                duration_sec=track.duration_sec,
+                artist_image_url=image_url,
+                played_at=h.played_at,
+                source=track.source,
+            )
+        )
+
+    return SessionHistoryResponse(items=items)
 
 
 @router.delete(

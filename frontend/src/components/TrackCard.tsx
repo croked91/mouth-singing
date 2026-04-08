@@ -1,6 +1,7 @@
 import React from 'react';
 import { Box, Typography } from '@mui/material';
 import MusicNoteIcon from '@mui/icons-material/MusicNote';
+import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import type { RecommendedTrackItem } from '../types';
 
 interface TrackCardProps {
@@ -102,25 +103,24 @@ export const TrackCard: React.FC<TrackCardProps> = ({
         </Typography>
       </Box>
 
-      {/* Add indicator */}
-      <Typography
+      {/* Play button */}
+      <Box
         sx={{
-          px: 1.75,
-          py: 0.625,
-          borderRadius: '20px',
-          background: 'rgba(124,58,237,0.4)',
-          border: '1px solid rgba(167,139,250,0.35)',
-          color: '#A78BFA',
-          fontSize: '11px',
-          fontWeight: 700,
-          letterSpacing: '0.08em',
-          textTransform: 'uppercase',
+          width: 36,
+          height: 36,
+          borderRadius: '50%',
+          background: 'linear-gradient(135deg, #7C3AED, #2563EB)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
           flexShrink: 0,
           opacity: isAdding ? 0.45 : 1,
+          transition: 'transform 0.15s ease',
+          '&:hover': { transform: 'scale(1.1)' },
         }}
       >
-        {isAdding ? '...' : '+'}
-      </Typography>
+        <PlayArrowIcon sx={{ fontSize: 20, color: '#FFFFFF' }} />
+      </Box>
     </Box>
   );
 };

@@ -14,7 +14,7 @@ const App: React.FC = () => {
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<WelcomePage />} />
-          <Route path="/session/:id/queue" element={<QueuePage />} />
+          <Route path="/session/:id" element={<QueuePage />} />
           <Route path="/session/:id/play/:entryId" element={<PlayerPage />} />
           <Route path="/admin" element={<AdminPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />

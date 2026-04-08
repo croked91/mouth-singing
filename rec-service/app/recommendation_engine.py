@@ -268,9 +268,16 @@ class RecommendationEngine:
                 covered_clusters.add(cid)
 
         available = [t for t in self._tags if t["cluster_id"] not in covered_clusters]
-        if len(available) <= limit:
-            return available
-        return random.sample(available, limit)
+
+        # Deduplicate: at most one tag per cluster_id (random pick).
+        by_cluster: dict[int, list[dict]] = {}
+        for t in available:
+            by_cluster.setdefault(t["cluster_id"], []).append(t)
+        deduped = [random.choice(tags) for tags in by_cluster.values()]
+
+        if len(deduped) <= limit:
+            return deduped
+        return random.sample(deduped, limit)
 
     # ------------------------------------------------------------------
     # Helpers

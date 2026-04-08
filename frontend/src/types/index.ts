@@ -138,9 +138,21 @@ export interface StartPlayingResponse {
   clip_url: string | null;
   syllable_timings: SyllableTiming[] | null;
   duration_sec: number | null;
+  title: string | null;
+  artist: string | null;
 }
 
 export interface FinishPlayingResponse {
   next_participant: Participant | null;
   next_entry_id: string | null;
+}
+
+export interface HistoryItem {
+  track_id: string;
+  artist: string;
+  title: string;
+  duration_sec: number | null;
+  artist_image_url: string | null;
+  played_at: string;
+  source: string;
 }
