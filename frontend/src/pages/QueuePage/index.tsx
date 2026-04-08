@@ -241,28 +241,7 @@ export const QueuePage: React.FC = () => {
         {/* ── Two-column layout ── */}
         <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
 
-          {/* ── Left column: Upload ── */}
-          <Box
-            sx={{
-              width: '22.5%',
-              minWidth: 240,
-              maxWidth: 380,
-              flexShrink: 0,
-              borderRight: '1px solid rgba(255,255,255,0.08)',
-              overflowY: 'auto',
-              p: 2,
-            }}
-          >
-            {sessionId && (
-              <UploadTab
-                sessionId={sessionId}
-                onTrackUploaded={(trackId) => { void handlePlay(trackId); }}
-                compact
-              />
-            )}
-          </Box>
-
-          {/* ── Right column: Search + Recommendations ── */}
+          {/* ── Left column: Search + Recommendations ── */}
           <Box
             sx={{
               flex: 1,
@@ -416,6 +395,27 @@ export const QueuePage: React.FC = () => {
                   </Box>
                 )}
               </Box>
+            )}
+          </Box>
+
+          {/* ── Right column: Upload ── */}
+          <Box
+            sx={{
+              width: '25%',
+              minWidth: 260,
+              maxWidth: 400,
+              flexShrink: 0,
+              borderLeft: '1px solid rgba(255,255,255,0.08)',
+              overflowY: 'auto',
+              p: 2,
+            }}
+          >
+            {sessionId && (
+              <UploadTab
+                sessionId={sessionId}
+                onPlay={(trackId) => { void handlePlay(trackId); }}
+                compact
+              />
             )}
           </Box>
         </Box>

@@ -50,10 +50,12 @@ export function subscribeToJobStatus(
   eventSource.addEventListener('error', errorListener);
 
   eventSource.onerror = () => {
-    if (onError) {
-      onError();
+    // EventSource auto-reconnects on transient network errors.
+    // Only report fatal disconnection when the connection is permanently closed
+    // (HTTP error like 404, or server closed the stream).
+    if (eventSource.readyState === EventSource.CLOSED) {
+      if (onError) onError();
     }
-    eventSource.close();
   };
 
   return () => {

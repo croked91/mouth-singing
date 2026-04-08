@@ -14,7 +14,7 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 
 import { api } from '../services/api';
 import { subscribeToJobStatus } from '../services/sseService';
-import type { ActiveJob, JobStatusEvent } from '../types';
+import type { JobStatusEvent } from '../types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -41,11 +41,18 @@ interface UploadJob {
   id: string;
   fileName: string;
   phase: JobPhase;
-  /** Backend job ID for SSE subscription */
   backendJobId?: string;
-  /** Track ID returned by upload endpoint */
   trackId?: string;
   unsubscribe?: () => void;
+}
+
+/** Serializable subset of UploadJob for sessionStorage persistence. */
+interface PersistedJob {
+  id: string;
+  fileName: string;
+  phase: JobPhase;
+  backendJobId?: string;
+  trackId?: string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -59,18 +66,26 @@ function isValidFileSize(file: File): boolean {
   return file.size <= MAX_FILE_SIZE_MB * 1024 * 1024;
 }
 
-/** Convert an ActiveJob from the backend into a local UploadJob. */
-function activeJobToUploadJob(aj: ActiveJob): UploadJob {
-  const stepLabel = aj.current_step
-    ? (STEP_LABELS[aj.current_step] ?? aj.current_step)
-    : 'Обработка...';
-  return {
-    id: `backend-${aj.job_id}`,
-    fileName: `${aj.artist} — ${aj.title}`,
-    phase: { kind: 'processing', step: stepLabel, progress: aj.progress },
-    backendJobId: aj.job_id,
-    trackId: aj.track_id,
-  };
+function storageKey(sessionId: string): string {
+  return `uploadJobs_${sessionId}`;
+}
+
+function loadPersistedJobs(sessionId: string): UploadJob[] {
+  try {
+    const raw = sessionStorage.getItem(storageKey(sessionId));
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistJobs(sessionId: string, jobs: UploadJob[]): void {
+  try {
+    const serializable: PersistedJob[] = jobs.map(({ unsubscribe: _, ...rest }) => rest);
+    sessionStorage.setItem(storageKey(sessionId), JSON.stringify(serializable));
+  } catch {
+    // sessionStorage unavailable
+  }
 }
 
 let jobCounter = 0;
@@ -79,7 +94,7 @@ let jobCounter = 0;
 
 interface UploadTabProps {
   sessionId: string;
-  onTrackUploaded: (trackId: string) => void;
+  onPlay: (trackId: string) => void;
   compact?: boolean;
 }
 
@@ -210,20 +225,24 @@ const JobCard: React.FC<{
 // ─── UploadTab ────────────────────────────────────────────────────────────────
 
 export const UploadTab: React.FC<UploadTabProps> = ({
-  onTrackUploaded,
+  sessionId,
+  onPlay,
   compact = false,
 }) => {
   const [file, setFile] = useState<File | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
   const [fileSizeError, setFileSizeError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [jobs, setJobs] = useState<UploadJob[]>([]);
+  const [jobs, setJobs] = useState<UploadJob[]>(() => loadPersistedJobs(sessionId));
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const jobsRef = useRef<UploadJob[]>([]);
   jobsRef.current = jobs;
-  const onTrackUploadedRef = useRef(onTrackUploaded);
-  onTrackUploadedRef.current = onTrackUploaded;
+
+  // Persist jobs to sessionStorage on every change
+  useEffect(() => {
+    persistJobs(sessionId, jobs);
+  }, [jobs, sessionId]);
 
   // ── Subscribe a job to SSE ──────────────────────────────────────────────
 
@@ -235,10 +254,9 @@ export const UploadTab: React.FC<UploadTabProps> = ({
           const finalTrackId = event.track_id ?? trackId;
           setJobs((prev) => prev.map((j) =>
             j.id === localJobId
-              ? { ...j, phase: { kind: 'done' as const, trackId: finalTrackId! }, unsubscribe: undefined }
+              ? { ...j, phase: { kind: 'done' as const, trackId: finalTrackId! }, trackId: finalTrackId, unsubscribe: undefined }
               : j
           ));
-          if (finalTrackId) onTrackUploadedRef.current(finalTrackId);
         } else if (event.status === 'error') {
           setJobs((prev) => prev.map((j) =>
             j.id === localJobId
@@ -267,37 +285,17 @@ export const UploadTab: React.FC<UploadTabProps> = ({
     ));
   }, []);
 
-  // ── Restore active jobs from backend on mount ───────────────────────────
+  // ── Restore: re-subscribe persisted processing jobs from sessionStorage ──
 
   useEffect(() => {
-    let cancelled = false;
-
-    void api.getActiveJobs().then((activeJobs) => {
-      if (cancelled || activeJobs.length === 0) return;
-
-      // Only add jobs not already tracked locally
-      setJobs((prev) => {
-        const existingBackendIds = new Set(prev.map((j) => j.backendJobId).filter(Boolean));
-        const newJobs = activeJobs
-          .filter((aj) => !existingBackendIds.has(aj.job_id))
-          .map(activeJobToUploadJob);
-        return [...newJobs, ...prev];
-      });
-
-      // Subscribe each restored job to SSE
-      for (const aj of activeJobs) {
-        const localId = `backend-${aj.job_id}`;
-        // Check not already subscribed
-        const existing = jobsRef.current.find((j) => j.id === localId);
-        if (existing?.unsubscribe) continue;
-        subscribeJob(localId, aj.job_id, aj.track_id);
+    for (const j of jobsRef.current) {
+      if (j.phase.kind === 'processing' && j.backendJobId && !j.unsubscribe) {
+        subscribeJob(j.id, j.backendJobId, j.trackId);
       }
-    }).catch(() => { /* network error — ignore, jobs just won't appear */ });
-
-    return () => { cancelled = true; };
+    }
   }, [subscribeJob]);
 
-  // Cleanup all SSE subscriptions on unmount
+  // Cleanup SSE on unmount
   useEffect(() => {
     return () => {
       jobsRef.current.forEach((j) => j.unsubscribe?.());
@@ -363,7 +361,6 @@ export const UploadTab: React.FC<UploadTabProps> = ({
 
     const localJobId = `local-${++jobCounter}`;
     const fileName = file.name;
-    // Add job card immediately
     const newJob: UploadJob = {
       id: localJobId,
       fileName,
@@ -371,7 +368,6 @@ export const UploadTab: React.FC<UploadTabProps> = ({
     };
     setJobs((prev) => [newJob, ...prev]);
 
-    // Reset form so user can upload another
     setFile(null);
     setUploading(true);
 
@@ -390,7 +386,6 @@ export const UploadTab: React.FC<UploadTabProps> = ({
 
     const { job_id, track_id } = uploadResponse;
 
-    // Start processing phase (track is added to queue only after processing completes)
     updateJob(localJobId, {
       phase: { kind: 'processing', step: 'Начинаем обработку...', progress: 0 },
       backendJobId: job_id,
@@ -403,8 +398,6 @@ export const UploadTab: React.FC<UploadTabProps> = ({
   // ── Derived ──────────────────────────────────────────────────────────────
 
   const canUpload = file !== null && !uploading;
-
-  // ── Render ───────────────────────────────────────────────────────────────
 
   // ── Auto-upload on file select in compact mode ──────────────────────────
 
@@ -447,7 +440,6 @@ export const UploadTab: React.FC<UploadTabProps> = ({
           overflow: 'hidden',
         }}
       >
-        {/* Icon */}
         {!compact && (
           <Box
             sx={{
@@ -508,14 +500,12 @@ export const UploadTab: React.FC<UploadTabProps> = ({
         )}
       </Box>
 
-      {/* File size error */}
       {fileSizeError && (
         <Typography sx={{ fontSize: compact ? '11px' : '13px', color: '#FCA5A5', textAlign: 'center' }}>
           {fileSizeError}
         </Typography>
       )}
 
-      {/* Hidden file input */}
       <input
         ref={fileInputRef}
         type="file"
@@ -524,7 +514,6 @@ export const UploadTab: React.FC<UploadTabProps> = ({
         style={{ display: 'none' }}
       />
 
-      {/* Full-size mode: extra buttons */}
       {!compact && (
         <>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
@@ -592,7 +581,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({
         </>
       )}
 
-      {/* Active/completed job cards */}
+      {/* Upload job cards */}
       {jobs.length > 0 && (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
           <Typography
@@ -604,10 +593,10 @@ export const UploadTab: React.FC<UploadTabProps> = ({
               textTransform: 'uppercase',
             }}
           >
-            {compact ? 'МОИ ЗАГРУЗКИ' : 'ЗАГРУЗКИ'}
+            МОИ ЗАГРУЗКИ
           </Typography>
           {jobs.map((job) => (
-            <JobCard key={job.id} job={job} onDismiss={dismissJob} onPlay={onTrackUploaded} />
+            <JobCard key={job.id} job={job} onDismiss={dismissJob} onPlay={onPlay} />
           ))}
         </Box>
       )}
