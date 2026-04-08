@@ -47,8 +47,9 @@ def clean_lyrics(raw: str) -> str:
     # If no section markers, use all text
     lyrics = "\n".join(clean_lines).strip() if clean_lines else raw
 
-    # Remove section markers like [Intro], [Verse 1], [Припев]
-    lyrics = re.sub(r"\[.*?\]\n?", "", lyrics).strip()
+    # Remove section markers like [Intro], [Verse 1], [Припев: Artist]
+    # Use DOTALL to handle multi-line markers (e.g. [Припев: Artist\n& Artist2\n])
+    lyrics = re.sub(r"\[.*?\]\n?", "", lyrics, flags=re.DOTALL).strip()
 
     # Collapse 3+ blank lines into 2
     lyrics = re.sub(r"\n{3,}", "\n\n", lyrics)

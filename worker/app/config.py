@@ -35,7 +35,7 @@ class WorkerSettings(BaseSettings):
     log_level: str = "INFO"
 
     # ------------------------------------------------------------------
-    # Common: lyrics agent (DeepSeek + Yandex Search)
+    # Common: lyrics search (providers + DeepSeek verifier + agent fallback)
     # ------------------------------------------------------------------
 
     deepseek_api_key: str = ""
@@ -44,6 +44,11 @@ class WorkerSettings(BaseSettings):
     yandex_search_folder_id: str = ""
     lyrics_agent_max_iterations: int = 15
     lyrics_agent_timeout: float = 15.0
+
+    # Lyrics providers
+    genius_token: str = ""
+    lyrics_provider_timeout: float = 10.0
+    lyrics_search_fragments: int = 2
 
     # ------------------------------------------------------------------
     # Common: CTC aligner

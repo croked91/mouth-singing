@@ -29,7 +29,7 @@ from karaoke_shared.storage import S3Storage
 
 from worker.common.base_pipeline import BasePipeline
 from worker.common.ctc_aligner import CTCAligner
-from worker.common.lyrics_agent import LyricsAgent
+from worker.common.lyrics import LyricsProviderChain
 from worker.common.lyrics_searcher import LyricsSearchError
 from worker.common.vad_processor import VADProcessor
 from worker.gpu.uvr_separator import UVRSeparator
@@ -61,7 +61,7 @@ class GpuPipeline(BasePipeline):
         repo: PgRepository,
         whisper: WhisperTranscriber,
         vad_processor: VADProcessor,
-        lyrics_searcher: LyricsAgent | None,
+        lyrics_searcher: LyricsProviderChain | None,
         ctc_aligner: CTCAligner,
         storage: S3Storage,
         rmq: RabbitMQClient,
@@ -133,12 +133,7 @@ class GpuPipeline(BasePipeline):
 
             artist_hint = job.artist_hint
             title_hint = job.title_hint
-            if not artist_hint or not title_hint:
-                parsed_artist, parsed_title = self._parse_hints_from_path(
-                    job.mp3_key
-                )
-                artist_hint = artist_hint or parsed_artist
-                title_hint = title_hint or parsed_title
+            filename = (job.data or {}).get("filename")
 
             try:
                 lyrics_result = await self.lyrics_searcher.search(
@@ -146,6 +141,7 @@ class GpuPipeline(BasePipeline):
                     detected_language=whisper_result.language,
                     artist_hint=artist_hint,
                     title_hint=title_hint,
+                    filename=filename,
                 )
             except LyricsSearchError as exc:
                 logger.error("lyrics_search_failed", job_id=job.id, error=str(exc))

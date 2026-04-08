@@ -336,6 +336,7 @@ class LyricsAgent:
         client = OpenAI(
             api_key=self._deepseek_api_key,
             base_url="https://api.deepseek.com",
+            timeout=120.0,
         )
 
         messages: list[dict] = [
@@ -456,6 +457,7 @@ class LyricsAgent:
         client = OpenAI(
             api_key=self._deepseek_api_key,
             base_url="https://api.deepseek.com",
+            timeout=60.0,
         )
 
         user_parts = [f"Текст песни:\n{lyrics[:2000]}"]

@@ -43,6 +43,10 @@ def _build_gpu_pipeline(
     from worker.common.vad_processor import VADProcessor
     from worker.gpu.torch_ctc_aligner import TorchCTCAligner
     from worker.common.lyrics_agent import LyricsAgent
+    from worker.common.lyrics import LyricsProviderChain
+    from worker.common.lyrics.providers.lrclib import LRCLibProvider
+    from worker.common.lyrics.providers.lyricsovh import LyricsOvhProvider
+    from worker.common.lyrics.verifier import LyricsVerifier
 
     uvr = UVRSeparator(
         model_cache_dir=settings.model_cache_dir,
@@ -61,13 +65,38 @@ def _build_gpu_pipeline(
 
     vad = VADProcessor(top_db=settings.vad_top_db)
 
-    lyrics_searcher: LyricsAgent | None = None
+    # -- Lyrics provider chain ------------------------------------------------
+    provider_timeout = settings.lyrics_provider_timeout
+
+    # Genius searches by lyrics text; LRCLib/Lyrics.ovh search by artist+title
+    text_providers = []
+    if settings.genius_token:
+        from worker.common.lyrics.providers.genius import GeniusProvider
+        text_providers.append(
+            GeniusProvider(token=settings.genius_token, timeout=provider_timeout),
+        )
+
+    metadata_providers = [
+        LRCLibProvider(timeout=provider_timeout),
+        LyricsOvhProvider(timeout=provider_timeout),
+    ]
+
+    verifier = (
+        LyricsVerifier(
+            deepseek_api_key=settings.deepseek_api_key,
+            model=settings.deepseek_model,
+        )
+        if settings.deepseek_api_key
+        else None
+    )
+
+    fallback_agent = None
     if (
         settings.deepseek_api_key
         and settings.yandex_search_api_key
         and settings.yandex_search_folder_id
     ):
-        lyrics_searcher = LyricsAgent(
+        fallback_agent = LyricsAgent(
             deepseek_api_key=settings.deepseek_api_key,
             yandex_search_api_key=settings.yandex_search_api_key,
             yandex_search_folder_id=settings.yandex_search_folder_id,
@@ -75,14 +104,21 @@ def _build_gpu_pipeline(
             max_iterations=settings.lyrics_agent_max_iterations,
             timeout=settings.lyrics_agent_timeout,
         )
-        logger.info("lyrics_agent_enabled", model=settings.deepseek_model)
-    else:
-        logger.error(
-            "lyrics_agent_keys_missing",
-            deepseek=bool(settings.deepseek_api_key),
-            yandex_key=bool(settings.yandex_search_api_key),
-            yandex_folder=bool(settings.yandex_search_folder_id),
-        )
+
+    lyrics_searcher = LyricsProviderChain(
+        text_providers=text_providers,
+        metadata_providers=metadata_providers,
+        verifier=verifier,
+        fallback_agent=fallback_agent,
+        search_fragments=settings.lyrics_search_fragments,
+    )
+    logger.info(
+        "lyrics_chain_enabled",
+        text_providers=[p.name for p in text_providers],
+        metadata_providers=[p.name for p in metadata_providers],
+        has_verifier=verifier is not None,
+        has_fallback=fallback_agent is not None,
+    )
 
     ctc_aligner = TorchCTCAligner(
         device="cuda",

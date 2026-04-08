@@ -16,8 +16,8 @@ import structlog
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile, status
 from fastapi import File as FastAPIFile
 from karaoke_shared.models.track import Track
-from karaoke_shared.repositories.qdrant_repository import QDrantRepository
 from karaoke_shared.repositories.pg_repository import PgRepository
+from karaoke_shared.repositories.qdrant_repository import QDrantRepository
 from karaoke_shared.storage import S3Storage
 from pydantic import BaseModel
 
@@ -192,7 +192,7 @@ async def upload_track(
 
     rmq = getattr(request.app.state, "rmq", None)
     service = TrackService(repo, storage, rmq)
-    job = await service.upload_mp3(content, artist, title)
+    job = await service.upload_mp3(content, artist, title, filename=filename)
 
     logger.info(
         "track_upload_accepted",

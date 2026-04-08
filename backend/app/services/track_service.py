@@ -8,9 +8,9 @@ at pipeline finalisation (deferred track creation).
 from __future__ import annotations
 
 import structlog
+from karaoke_shared.messaging.rabbitmq import RabbitMQClient
 from karaoke_shared.models.job import Job, JobCreate
 from karaoke_shared.models.track import Track
-from karaoke_shared.messaging.rabbitmq import RabbitMQClient
 from karaoke_shared.repositories.pg_repository import PgRepository
 from karaoke_shared.storage import S3Storage
 
@@ -43,6 +43,8 @@ class TrackService:
         content: bytes,
         artist: str | None,
         title: str | None,
+        *,
+        filename: str | None = None,
     ) -> Job:
         """Upload MP3 to S3 and create a pending job record.
 
@@ -54,13 +56,16 @@ class TrackService:
             content: The raw MP3 file bytes.
             artist: Artist name hint from upload form, or None.
             title: Track title hint from upload form, or None.
+            filename: Original filename from upload (for worker parsing).
 
         Returns:
             The newly created Job record.
         """
+        initial_data = {"filename": filename} if filename else None
         job_data = JobCreate(
             artist_hint=artist or None,
             title_hint=title or None,
+            data=initial_data,
         )
         job_id = job_data.id
 

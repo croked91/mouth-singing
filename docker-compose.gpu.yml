@@ -44,6 +44,8 @@ services:
       DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
       YANDEX_SEARCH_API_KEY: ${YANDEX_SEARCH_API_KEY:-}
       YANDEX_SEARCH_FOLDER_ID: ${YANDEX_SEARCH_FOLDER_ID:-}
+      # Lyrics providers (optional)
+      GENIUS_TOKEN: ${GENIUS_TOKEN:-}
       # Model cache
       HF_HOME: /data/models/huggingface
     volumes:
