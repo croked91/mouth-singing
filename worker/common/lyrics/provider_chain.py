@@ -91,7 +91,9 @@ class LyricsProviderChain:
         # Stage 1: collect candidates from providers (parallel)
         # ------------------------------------------------------------------
         candidates = await self._collect_candidates(
-            asr_text, artist_hint, title_hint,
+            asr_text,
+            artist_hint,
+            title_hint,
         )
         logger.info(
             "lyrics_candidates_collected",
@@ -108,7 +110,9 @@ class LyricsProviderChain:
         # ------------------------------------------------------------------
         if candidates and self._verifier:
             result = await self._verifier.verify(
-                asr_text, candidates, detected_language,
+                asr_text,
+                candidates,
+                detected_language,
             )
             if result:
                 logger.info(
@@ -127,7 +131,10 @@ class LyricsProviderChain:
         if self._fallback_agent:
             logger.info("lyrics_fallback_to_agent")
             return await self._fallback_agent.search(
-                asr_text, detected_language, artist_hint, title_hint,
+                asr_text,
+                detected_language,
+                artist_hint,
+                title_hint,
             )
 
         raise LyricsNotFoundError(
@@ -205,7 +212,8 @@ class LyricsProviderChain:
 
 
 async def _safe_text_search(
-    provider: TextSearchProvider, fragment: str,
+    provider: TextSearchProvider,
+    fragment: str,
 ) -> list[LyricsCandidate]:
     """Call provider.search_by_text, catching all exceptions."""
     try:
@@ -220,7 +228,9 @@ async def _safe_text_search(
 
 
 async def _safe_metadata_search(
-    provider: ArtistTitleProvider, artist: str, title: str,
+    provider: ArtistTitleProvider,
+    artist: str,
+    title: str,
 ) -> LyricsCandidate | None:
     """Call provider.search_by_metadata, catching all exceptions."""
     try:

@@ -40,14 +40,18 @@ _SYSTEM_PROMPT = """\
 1. Приблизительная расшифровка песни от Whisper (с ошибками).
 2. Несколько кандидатов — текстов песен из разных источников.
 
-Задача: выбери кандидата, текст которого лучше всего совпадает с расшифровкой, \
-и верни очищенный текст.
+Задача: выбери кандидата, текст которого лучше всего совпадает с расшифровкой.
 Учитывай что Whisper искажает слова — ищи смысловое совпадение, а не точное.
 
 Правила:
 - Если хотя бы один кандидат явно соответствует расшифровке (даже с учётом \
 ошибок Whisper) — выбери его.
 - Если ни один кандидат не подходит — ответь "none".
+- Выбирай кандидата, текст которого НАИБОЛЕЕ БЛИЗОК к расшифровке по содержанию \
+и объёму. Кандидат должен покрывать расшифровку, но НЕ содержать много лишнего \
+текста, которого нет в расшифровке. Если кандидат содержит дополнительные \
+куплеты/строки, которых нет в расшифровке — это другая версия песни (ремикс, \
+лонг микс), и его НЕ следует выбирать.
 - Укажи каноническое имя исполнителя и название песни.
 - В поле lyrics верни ПОЛНЫЙ ОЧИЩЕННЫЙ текст выбранного кандидата:
   - Без пометок [Куплет]/[Припев]/[Verse]/[Chorus] и любых тегов в квадратных \
@@ -74,7 +78,8 @@ class LyricsVerifier:
         self._model = model
 
     async def parse_filename(
-        self, filename: str,
+        self,
+        filename: str,
     ) -> tuple[str | None, str | None]:
         """Use DeepSeek to extract artist/title from a filename.
 
@@ -108,7 +113,19 @@ class LyricsVerifier:
         if not candidates:
             return None
 
+        for i, c in enumerate(candidates, 1):
+            cleaned = clean_lyrics(c.lyrics)
+            logger.info(
+                "verifier_candidate",
+                idx=i,
+                artist=c.artist,
+                title=c.title,
+                source=c.source,
+                chars=len(cleaned),
+            )
+
         user_message = self._build_user_message(asr_text, candidates, detected_language)
+        logger.info("verifier_prompt_size", chars=len(user_message))
 
         try:
             raw = await asyncio.to_thread(self._call_llm, user_message)
@@ -125,42 +142,23 @@ class LyricsVerifier:
         detected_language: str,
     ) -> str:
         parts = [
-            f"Расшифровка Whisper ({detected_language}):",
-            asr_text[:2000],
+            f'<asr language="{detected_language}" chars="{len(asr_text)}">',
+            asr_text,
+            "</asr>",
             "",
-            "Кандидаты:",
         ]
         for i, c in enumerate(candidates, 1):
-            # Clean and truncate lyrics before sending to LLM
-            lyrics_preview = clean_lyrics(c.lyrics)[:1500]
+            cleaned = clean_lyrics(c.lyrics)
+            n_lines = len([ln for ln in cleaned.splitlines() if ln.strip()])
             parts.append(
-                f"\n--- Кандидат {i} (источник: {c.source}) ---\n"
-                f"Исполнитель: {c.artist}\n"
-                f"Название: {c.title}\n"
-                f"Текст:\n{lyrics_preview}"
+                f'<candidate id="{i}" source="{c.source}" '
+                f'artist="{c.artist}" title="{c.title}" '
+                f'lines="{n_lines}" chars="{len(cleaned)}">'
             )
+            parts.append(cleaned)
+            parts.append("</candidate>")
+            parts.append("")
         return "\n".join(parts)
-
-    def _call_llm(
-        self,
-        user_message: str,
-        system_prompt: str = _SYSTEM_PROMPT,
-    ) -> str:
-        client = OpenAI(
-            api_key=self._api_key,
-            base_url="https://api.deepseek.com",
-            timeout=60.0,
-        )
-        response = client.chat.completions.create(
-            model=self._model,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message},
-            ],
-            temperature=0.0,
-            max_tokens=8192,
-        )
-        return response.choices[0].message.content or ""
 
     def _parse_response(
         self,
@@ -186,8 +184,7 @@ class LyricsVerifier:
             return None
 
         picked = candidates[idx]
-        # Prefer cleaned lyrics from DeepSeek, fall back to provider text
-        lyrics = data.get("lyrics") or picked.lyrics
+        lyrics = data.get("lyrics") or clean_lyrics(picked.lyrics)
         return LyricsResult(
             artist=data.get("artist") or picked.artist,
             title=data.get("title") or picked.title,
@@ -196,6 +193,35 @@ class LyricsVerifier:
             confidence="high",
             source_note=f"verified:{picked.source}",
         )
+
+    def _call_llm(
+        self,
+        user_message: str,
+        system_prompt: str = _SYSTEM_PROMPT,
+    ) -> str:
+        client = OpenAI(
+            api_key=self._api_key,
+            base_url="https://api.deepseek.com",
+            timeout=60.0,
+        )
+        response = client.chat.completions.create(
+            model=self._model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message},
+            ],
+            temperature=0.0,
+            max_tokens=8192,
+        )
+        return response.choices[0].message.content or ""
+
+
+def _lyrics_preview(text: str, max_chars: int = 2000) -> str:
+    """Return text as-is if short, or head + tail if long."""
+    if len(text) <= max_chars:
+        return text
+    half = max_chars // 2
+    return text[:half] + "\n\n[...пропущена середина...]\n\n" + text[-half:]
 
 
 def _extract_json(text: str) -> dict | None:

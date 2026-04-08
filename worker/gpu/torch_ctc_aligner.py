@@ -74,20 +74,22 @@ class TorchCTCAligner:
             cache_kwargs["cache_dir"] = self._cache_dir
 
         self._model = Wav2Vec2ForCTC.from_pretrained(
-            _HF_MODEL_ID, torch_dtype=torch.float16, **cache_kwargs,
+            _HF_MODEL_ID,
+            torch_dtype=torch.float16,
+            **cache_kwargs,
         )
         self._model.to(self._device).eval()
 
         # Build dictionary from processor vocab.
         # Vocab: <blank>=0, <pad>=1, </s>=2, <unk>=3, a=4, ..., x=30
         processor = Wav2Vec2Processor.from_pretrained(
-            _HF_MODEL_ID, **cache_kwargs,
+            _HF_MODEL_ID,
+            **cache_kwargs,
         )
         vocab = processor.tokenizer.get_vocab()
         # Keep only single-char alphabetic tokens + apostrophe.
         self._dictionary = {
-            k: v for k, v in vocab.items()
-            if len(k) == 1 and (k.isalpha() or k == "'")
+            k: v for k, v in vocab.items() if len(k) == 1 and (k.isalpha() or k == "'")
         }
         self._blank_idx = vocab.get("<blank>", 0)
 
@@ -110,7 +112,7 @@ class TorchCTCAligner:
         lyrics_text: str,
         language: str,
     ) -> tuple[list[SyllableTiming], AlignmentStats]:
-        """Align lyrics to vocals using GPU-accelerated CTC.
+        """Align lyrics to vocals using GPU-accelerated CTC (full-track).
 
         Raises:
             ValueError: If lyrics_text is empty.
@@ -124,53 +126,21 @@ class TorchCTCAligner:
         logger.info("ctc_alignment_starting", language=language, device=self._device)
         t0 = time.monotonic()
 
-        # 1. Load audio as 16kHz mono.
         waveform = self._load_audio(vocals_path)
+        emission, ratio = self._forward_pass(waveform)
 
-        # 2. Generate emissions — full audio, single forward pass on GPU.
-        #    HuggingFace Wav2Vec2ForCTC returns .logits (not a tuple).
-        with torch.inference_mode():
-            output = self._model(waveform.to(device=self._device, dtype=torch.float16))
-            # forced_align expects float32 emissions.
-            emission = torch.log_softmax(output.logits.float(), dim=-1)
-
-        # 3. Tokenize lyrics (romanize → filter → index).
         words, transcript, first_flags = self._tokenize_lyrics(lyrics_text, language)
         if not transcript:
             raise RuntimeError("No valid tokens after text preprocessing")
 
-        # 4. Build flat token list (excluding blank-mapped chars).
-        tokenized = [
-            self._dictionary[c]
-            for word in transcript
-            for c in word
-            if c in self._dictionary and self._dictionary[c] != 0
-        ]
-        if not tokenized:
-            raise RuntimeError("All tokens mapped to blank")
+        word_spans = self._align_tokens(emission, transcript)
 
-        # 5. Run forced alignment on GPU.
-        targets = torch.tensor([tokenized], dtype=torch.int64).to(emission.device)
-        aligned_tokens, scores = torchaudio.functional.forced_align(
-            emission, targets, blank=0,
-        )
-
-        # 6. Merge frame-level tokens into spans.
-        token_spans = torchaudio.functional.merge_tokens(
-            aligned_tokens[0], scores[0],
-        )
-
-        # 7. Group token spans into word spans.
-        word_lengths = [len(word) for word in transcript]
-        word_spans = self._unflatten(token_spans, word_lengths)
-
-        # 8. Convert to timestamps.
-        n_frames = emission.size(1)
-        ratio = waveform.size(1) / _SAMPLE_RATE / n_frames  # sec per frame
-
-        # 9. Build syllable timings.
         timings, stats = self._to_syllable_timings(
-            words, word_spans, ratio, language, first_flags,
+            words,
+            word_spans,
+            ratio,
+            language,
+            first_flags,
         )
 
         logger.info(
@@ -188,10 +158,58 @@ class TorchCTCAligner:
         if self._model is not None:
             del self._model
             self._model = None
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            logger.info("torch_ctc_cleanup_done")
+        self._dictionary = {}
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        logger.info("torch_ctc_cleanup_done")
+
+    # ------------------------------------------------------------------
+    # Internal: forward pass & token alignment
+    # ------------------------------------------------------------------
+
+    def _forward_pass(self, waveform: torch.Tensor) -> tuple[torch.Tensor, float]:
+        """Run model forward pass and return (emission, ratio).
+
+        ratio = seconds per emission frame.
+        """
+        with torch.inference_mode():
+            output = self._model(waveform.to(device=self._device, dtype=torch.float16))
+            emission = torch.log_softmax(output.logits.float(), dim=-1)
+
+        n_frames = emission.size(1)
+        ratio = waveform.size(1) / _SAMPLE_RATE / n_frames
+        return emission, ratio
+
+    def _align_tokens(
+        self,
+        emission: torch.Tensor,
+        transcript: list[list[str]],
+    ) -> list:
+        """Run forced alignment on emission and return per-word span lists."""
+        tokenized = [
+            self._dictionary[c]
+            for word in transcript
+            for c in word
+            if c in self._dictionary and self._dictionary[c] != 0
+        ]
+        if not tokenized:
+            raise RuntimeError("All tokens mapped to blank")
+
+        targets = torch.tensor([tokenized], dtype=torch.int64).to(emission.device)
+        aligned_tokens, scores = torchaudio.functional.forced_align(
+            emission,
+            targets,
+            blank=0,
+        )
+
+        token_spans = torchaudio.functional.merge_tokens(
+            aligned_tokens[0],
+            scores[0],
+        )
+
+        word_lengths = [len(word) for word in transcript]
+        return self._unflatten(token_spans, word_lengths)
 
     # ------------------------------------------------------------------
     # Internal: audio loading
@@ -215,7 +233,9 @@ class TorchCTCAligner:
     # ------------------------------------------------------------------
 
     def _tokenize_lyrics(
-        self, lyrics_text: str, language: str,
+        self,
+        lyrics_text: str,
+        language: str,
     ) -> tuple[list[str], list[list[str]], list[bool]]:
         """Preprocess and tokenize lyrics into word-level char lists.
 
@@ -244,7 +264,8 @@ class TorchCTCAligner:
                 romanized = unidecode(cleaned).lower()
                 # Keep only characters in dictionary with non-blank index.
                 chars = [
-                    c for c in romanized
+                    c
+                    for c in romanized
                     if c in self._dictionary and self._dictionary[c] != 0
                 ]
                 if not chars:
@@ -284,12 +305,13 @@ class TorchCTCAligner:
         ratio: float,
         language: str,
         first_flags: list[bool] | None = None,
+        time_offset: float = 0.0,
+        is_first_overall: bool = True,
     ) -> tuple[list[SyllableTiming], AlignmentStats]:
         """Convert word spans to syllable-level timings."""
         match_count = min(len(words), len(word_spans))
         stats = AlignmentStats(total_words=match_count)
         all_timings: list[SyllableTiming] = []
-        is_first_overall = True
 
         for i in range(match_count):
             word = words[i]
@@ -298,8 +320,8 @@ class TorchCTCAligner:
                 is_first_overall = False
                 continue
 
-            ws = spans[0].start * ratio
-            wend = spans[-1].end * ratio
+            ws = time_offset + spans[0].start * ratio
+            wend = time_offset + spans[-1].end * ratio
             if wend <= ws:
                 wend = ws + 0.05
 
@@ -319,9 +341,13 @@ class TorchCTCAligner:
 
             duration = wend - ws
             if len(parts) == 1:
-                all_timings.append(SyllableTiming(
-                    syllable=prefix + parts[0], start=ws, end=wend,
-                ))
+                all_timings.append(
+                    SyllableTiming(
+                        syllable=prefix + parts[0],
+                        start=round(ws, 3),
+                        end=round(wend, 3),
+                    )
+                )
             else:
                 cl = [max(len(p.strip()), 1) for p in parts]
                 tc = sum(cl)
@@ -330,11 +356,13 @@ class TorchCTCAligner:
                     frac = cl[pi] / tc
                     send = cur + duration * frac
                     d = (prefix + part) if pi == 0 else part
-                    all_timings.append(SyllableTiming(
-                        syllable=d,
-                        start=round(cur, 3),
-                        end=round(send, 3),
-                    ))
+                    all_timings.append(
+                        SyllableTiming(
+                            syllable=d,
+                            start=round(cur, 3),
+                            end=round(send, 3),
+                        )
+                    )
                     cur = send
             stats.proportional_fallback += 1
             is_first_overall = False

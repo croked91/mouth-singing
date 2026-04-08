@@ -171,7 +171,7 @@ export const QueuePage: React.FC = () => {
 
   return (
     <CosmicBackground>
-      <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+      <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
 
         {/* ── AppBar ── */}
         <AppBar position="sticky" elevation={0} sx={{ height: 64 }}>
@@ -406,7 +406,9 @@ export const QueuePage: React.FC = () => {
               maxWidth: 400,
               flexShrink: 0,
               borderLeft: '1px solid rgba(255,255,255,0.08)',
-              overflowY: 'auto',
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
               p: 2,
             }}
           >

@@ -81,9 +81,7 @@ class GpuPipeline(BasePipeline):
     async def process(self, job: Job) -> None:
         """Run the full GPU pipeline for a single job."""
         if not job.mp3_key:
-            await self.job_service.mark_failed(
-                job.id, f"Job {job.id} has no mp3_key"
-            )
+            await self.job_service.mark_failed(job.id, f"Job {job.id} has no mp3_key")
             return
 
         try:
@@ -109,7 +107,10 @@ class GpuPipeline(BasePipeline):
             instrumental_key = f"instrumentals/{job.id}.mp3"
             instrumental_upload_task = asyncio.create_task(
                 self._encode_and_upload_instrumental(
-                    instrumental_path, instrumental_key, job.id, local_mp3,
+                    instrumental_path,
+                    instrumental_key,
+                    job.id,
+                    local_mp3,
                 )
             )
 
@@ -118,7 +119,13 @@ class GpuPipeline(BasePipeline):
             # ==============================================================
             # STEPS 2+3: VAD + ASR (sequential, runs while upload proceeds)
             # ==============================================================
-            whisper_result = await self._vad_and_transcribe(vocals_path, job.id)
+            whisper_result, vad_segments = await self._vad_and_transcribe(
+                vocals_path,
+                job.id,
+            )
+
+            # Free Whisper VRAM.
+            await asyncio.to_thread(self.whisper.cleanup)
 
             # ==============================================================
             # STEP 4: LLM lyrics search (~2-5s)
@@ -127,7 +134,8 @@ class GpuPipeline(BasePipeline):
 
             if self.lyrics_searcher is None:
                 await self.job_service.mark_permanently_failed(
-                    job.id, "Lyrics agent not configured (check DEEPSEEK/YANDEX env vars)"
+                    job.id,
+                    "Lyrics agent not configured (check DEEPSEEK/YANDEX env vars)",
                 )
                 return
 
@@ -153,12 +161,15 @@ class GpuPipeline(BasePipeline):
             await self.job_service.mark_step(job.id, "searching_lyrics", 100)
 
             # Store lyrics result in job data for finalization.
-            await self.repo.update_job_data(job.id, {
-                "artist": lyrics_result.artist,
-                "title": lyrics_result.title,
-                "lyrics": lyrics_result.lyrics,
-                "language": lyrics_result.language,
-            })
+            await self.repo.update_job_data(
+                job.id,
+                {
+                    "artist": lyrics_result.artist,
+                    "title": lyrics_result.title,
+                    "lyrics": lyrics_result.lyrics,
+                    "language": lyrics_result.language,
+                },
+            )
 
             # ==============================================================
             # STEPS 5+6: CTC alignment (GPU via torchaudio)
@@ -193,7 +204,9 @@ class GpuPipeline(BasePipeline):
             # Clean up vocal files after line break detection.
             Path(vocals_path).unlink(missing_ok=True)
             track_id_stem = Path(vocals_path).stem.split("_")[0]
-            cleaned_path = Path(vocals_path).parent / f"cleaned_vocals_{track_id_stem}.wav"
+            cleaned_path = (
+                Path(vocals_path).parent / f"cleaned_vocals_{track_id_stem}.wav"
+            )
             cleaned_path.unlink(missing_ok=True)
 
             # ==============================================================
@@ -207,33 +220,44 @@ class GpuPipeline(BasePipeline):
             updated_job = await self.repo.get_job(job.id)
             job_data = updated_job.data or {} if updated_job else {}
 
-            track = await self.repo.create_track(TrackCreate(
-                artist=lyrics_result.artist,
-                title=lyrics_result.title,
-                source="user_upload",
-                instrumental_key=job_data.get("instrumental_key", instrumental_key),
-                lyrics_text=lyrics_result.lyrics,
-                syllable_timings=syllable_timings,
-                language=lyrics_result.language,
-                status="ready",
-                qdrant_synced=0,
-            ))
+            track = await self.repo.create_track(
+                TrackCreate(
+                    artist=lyrics_result.artist,
+                    title=lyrics_result.title,
+                    source="user_upload",
+                    instrumental_key=job_data.get("instrumental_key", instrumental_key),
+                    lyrics_text=lyrics_result.lyrics,
+                    syllable_timings=syllable_timings,
+                    language=lyrics_result.language,
+                    status="ready",
+                    qdrant_synced=0,
+                )
+            )
             track_id = track.id
 
             await self.repo.set_job_track_id(job.id, track_id)
 
-            await self.job_service.mark_completed(job.id, {
-                "track_id": track_id,
-                "instrumental_key": job_data.get("instrumental_key", instrumental_key),
-                "language": lyrics_result.language,
-            })
+            await self.job_service.mark_completed(
+                job.id,
+                {
+                    "track_id": track_id,
+                    "instrumental_key": job_data.get(
+                        "instrumental_key", instrumental_key
+                    ),
+                    "language": lyrics_result.language,
+                },
+            )
 
             # Publish to Rec Service for feature extraction + embedding + QDrant sync.
-            await self.rmq.publish("rec", "", {
-                "track_id": track_id,
-                "mp3_key": job.mp3_key,
-                "lyrics": lyrics_result.lyrics,
-            })
+            await self.rmq.publish(
+                "rec",
+                "",
+                {
+                    "track_id": track_id,
+                    "mp3_key": job.mp3_key,
+                    "lyrics": lyrics_result.lyrics,
+                },
+            )
 
             logger.info(
                 "pipeline_completed",
@@ -247,7 +271,14 @@ class GpuPipeline(BasePipeline):
             Path(instrumental_path).unlink(missing_ok=True)
 
         except Exception as exc:
-            logger.error("pipeline_failed", job_id=job.id, error=str(exc), exc_info=True)
+            logger.error(
+                "pipeline_failed", job_id=job.id, error=str(exc), exc_info=True
+            )
+            # Release GPU VRAM to prevent OOM on subsequent jobs.
+            try:
+                await asyncio.to_thread(self.cleanup)
+            except Exception:
+                pass
             await self.job_service.mark_permanently_failed(job.id, str(exc))
 
     def cleanup(self) -> None:
@@ -262,7 +293,10 @@ class GpuPipeline(BasePipeline):
     # ------------------------------------------------------------------
 
     async def _encode_and_upload_instrumental(
-        self, instrumental_path: str, instrumental_key: str, job_id: str,
+        self,
+        instrumental_path: str,
+        instrumental_key: str,
+        job_id: str,
         original_mp3: str,
     ) -> None:
         """Convert instrumental WAV→MP3 and upload to S3 (runs in background)."""
@@ -270,8 +304,14 @@ class GpuPipeline(BasePipeline):
         bitrate = "192k"
         try:
             probe = await asyncio.create_subprocess_exec(
-                "ffprobe", "-v", "quiet", "-show_entries", "format=bit_rate",
-                "-of", "csv=p=0", original_mp3,
+                "ffprobe",
+                "-v",
+                "quiet",
+                "-show_entries",
+                "format=bit_rate",
+                "-of",
+                "csv=p=0",
+                original_mp3,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
             )
@@ -283,8 +323,14 @@ class GpuPipeline(BasePipeline):
 
         instrumental_mp3 = f"/tmp/{job_id}_instrumental.mp3"
         proc = await asyncio.create_subprocess_exec(
-            "ffmpeg", "-y", "-i", instrumental_path,
-            "-codec:a", "libmp3lame", "-b:a", bitrate,
+            "ffmpeg",
+            "-y",
+            "-i",
+            instrumental_path,
+            "-codec:a",
+            "libmp3lame",
+            "-b:a",
+            bitrate,
             instrumental_mp3,
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
@@ -294,9 +340,7 @@ class GpuPipeline(BasePipeline):
         with open(instrumental_mp3, "rb") as f:
             await self.storage.upload(instrumental_key, f.read())
         Path(instrumental_mp3).unlink(missing_ok=True)
-        await self.repo.update_job_data(
-            job_id, {"instrumental_key": instrumental_key}
-        )
+        await self.repo.update_job_data(job_id, {"instrumental_key": instrumental_key})
 
     async def _separate_with_fallback(self, mp3_path: str) -> tuple[str, str]:
         """Try GPU separation, fall back to CPU on OOM."""
@@ -319,19 +363,34 @@ class GpuPipeline(BasePipeline):
             raise
 
     async def _vad_and_transcribe(
-        self, vocals_path: str, job_id: str
+        self,
+        vocals_path: str,
+        job_id: str,
     ):
-        """VAD + faster-whisper ASR (sequential)."""
-        cleaned_path = await asyncio.to_thread(
-            self.vad_processor.process, vocals_path
+        """VAD + Whisper ASR (sequential).
+
+        Whisper runs on the ORIGINAL vocals (not VAD-cleaned) so that
+        word timestamps are in original audio time — no projection needed.
+        VAD-cleaned audio is no longer used for ASR.
+
+        Returns:
+            (WhisperResult, vad_segments) where vad_segments is a list of
+            (start_sec, end_sec) voiced intervals in original audio time.
+        """
+        vad_result = await asyncio.to_thread(
+            self.vad_processor.process,
+            vocals_path,
         )
 
         await self.job_service.mark_step(job_id, "transcribing", 0)
 
-        result = await asyncio.to_thread(self.whisper.transcribe, cleaned_path)
+        result = await asyncio.to_thread(
+            self.whisper.transcribe,
+            vad_result.cleaned_path,
+        )
 
         await self.job_service.mark_step(job_id, "transcribing", 100)
-        return result
+        return result, vad_result.segments
 
     @staticmethod
     def _parse_hints_from_path(mp3_path: str) -> tuple[str | None, str | None]:

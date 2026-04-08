@@ -19,15 +19,17 @@ MODEL_ID_MAP = {
     "tiny": "openai/whisper-tiny",
     "base": "openai/whisper-base",
     "small": "openai/whisper-small",
+    "medium": "openai/whisper-medium",
 }
 
 
 @dataclass
 class WhisperResult:
     """ASR transcription result."""
-    text: str           # full text, segments joined by ' '
-    language: str       # two-letter code ('ru', 'en', ...)
-    confidence: float   # average log-prob → prob (0..1)
+
+    text: str  # full text, segments joined by ' '
+    language: str  # two-letter code ('ru', 'en', ...)
+    confidence: float  # average log-prob → prob (0..1)
 
 
 class WhisperTranscriber:
@@ -64,15 +66,19 @@ class WhisperTranscriber:
         import torch
         from transformers import WhisperForConditionalGeneration, WhisperProcessor
 
-        model_id = MODEL_ID_MAP.get(self._model_size, f"openai/whisper-{self._model_size}")
+        model_id = MODEL_ID_MAP.get(
+            self._model_size, f"openai/whisper-{self._model_size}"
+        )
 
         self._torch_dtype = (
-            torch.float16 if self._device == "cuda" and "16" in self._compute_type
+            torch.float16
+            if self._device == "cuda" and "16" in self._compute_type
             else torch.float32
         )
 
         self._processor = WhisperProcessor.from_pretrained(
-            model_id, cache_dir=self._model_cache_dir,
+            model_id,
+            cache_dir=self._model_cache_dir,
         )
         self._model = WhisperForConditionalGeneration.from_pretrained(
             model_id,
@@ -80,8 +86,12 @@ class WhisperTranscriber:
             dtype=self._torch_dtype,
         ).to(self._device)
 
-        logger.info("whisper_loaded", model_size=self._model_size, device=self._device,
-                     backend="transformers")
+        logger.info(
+            "whisper_loaded",
+            model_size=self._model_size,
+            device=self._device,
+            backend="transformers",
+        )
 
     def warmup(self) -> None:
         """Run full-length dummy inference to trigger CUDA kernel JIT compilation."""
@@ -95,7 +105,8 @@ class WhisperTranscriber:
         # to compile all CUDA kernels used during real inference.
         dummy = self._processor(
             np.zeros(30 * 16000, dtype=np.float32),
-            sampling_rate=16000, return_tensors="pt",
+            sampling_rate=16000,
+            return_tensors="pt",
         )
         with torch.no_grad():
             self._model.generate(
@@ -113,8 +124,8 @@ class WhisperTranscriber:
         Returns:
             WhisperResult with text, language, confidence.
         """
-        import torch
         import soundfile as sf
+        import torch
         import torchaudio.functional as F
 
         if self._model is None:
@@ -138,13 +149,16 @@ class WhisperTranscriber:
         language = "en"
 
         for chunk_start in range(0, len(audio), chunk_samples):
-            chunk = audio[chunk_start:chunk_start + chunk_samples]
+            chunk = audio[chunk_start : chunk_start + chunk_samples]
 
             inputs = self._processor(
-                chunk, sampling_rate=16000, return_tensors="pt",
+                chunk,
+                sampling_rate=16000,
+                return_tensors="pt",
             )
             input_features = inputs.input_features.to(
-                device=self._device, dtype=self._torch_dtype,
+                device=self._device,
+                dtype=self._torch_dtype,
             )
 
             with torch.no_grad():
@@ -156,15 +170,39 @@ class WhisperTranscriber:
                 )
 
             token_ids = output.sequences[0]
-            chunk_text = self._processor.decode(token_ids, skip_special_tokens=True).strip()
+            chunk_text = self._processor.decode(
+                token_ids, skip_special_tokens=True
+            ).strip()
             if chunk_text:
                 all_text_parts.append(chunk_text)
 
             # Detect language from first chunk
             if chunk_start == 0:
-                first_tokens = self._processor.decode(token_ids[:4], skip_special_tokens=False)
-                for lang_code in ["ru", "en", "es", "fr", "de", "it", "pt", "zh", "ja", "ko",
-                                  "uk", "pl", "cs", "tr", "ar", "hi", "th", "vi", "nl", "sv"]:
+                first_tokens = self._processor.decode(
+                    token_ids[:4], skip_special_tokens=False
+                )
+                for lang_code in [
+                    "ru",
+                    "en",
+                    "es",
+                    "fr",
+                    "de",
+                    "it",
+                    "pt",
+                    "zh",
+                    "ja",
+                    "ko",
+                    "uk",
+                    "pl",
+                    "cs",
+                    "tr",
+                    "ar",
+                    "hi",
+                    "th",
+                    "vi",
+                    "nl",
+                    "sv",
+                ]:
                     if f"<|{lang_code}|>" in first_tokens:
                         language = lang_code
                         break
@@ -190,7 +228,6 @@ class WhisperTranscriber:
             "whisper_completed",
             language=language,
             confidence=round(confidence, 3),
-            segments=1,
             text_length=len(text),
             duration_sec=elapsed,
         )
@@ -209,6 +246,7 @@ class WhisperTranscriber:
 
         try:
             import torch
+
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
         except ImportError:

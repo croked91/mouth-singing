@@ -41,6 +41,7 @@ interface UploadJob {
   id: string;
   fileName: string;
   phase: JobPhase;
+  createdAt: number;
   backendJobId?: string;
   trackId?: string;
   unsubscribe?: () => void;
@@ -51,6 +52,7 @@ interface PersistedJob {
   id: string;
   fileName: string;
   phase: JobPhase;
+  createdAt: number;
   backendJobId?: string;
   trackId?: string;
 }
@@ -88,7 +90,6 @@ function persistJobs(sessionId: string, jobs: UploadJob[]): void {
   }
 }
 
-let jobCounter = 0;
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -106,7 +107,6 @@ const JobCard: React.FC<{
   onPlay?: (trackId: string) => void;
 }> = ({ job, onDismiss, onPlay }) => {
   const { phase } = job;
-
   return (
     <Box
       sx={{
@@ -247,30 +247,31 @@ export const UploadTab: React.FC<UploadTabProps> = ({
   // ── Subscribe a job to SSE ──────────────────────────────────────────────
 
   const subscribeJob = useCallback((localJobId: string, backendJobId: string, trackId?: string) => {
-    const unsubscribe = subscribeToJobStatus(
+    let unsub: (() => void) | undefined;
+
+    const closeStream = () => {
+      if (unsub) { unsub(); unsub = undefined; }
+    };
+
+    unsub = subscribeToJobStatus(
       backendJobId,
       (event: JobStatusEvent) => {
-        if (event.status === 'completed') {
-          const finalTrackId = event.track_id ?? trackId;
-          setJobs((prev) => prev.map((j) =>
-            j.id === localJobId
-              ? { ...j, phase: { kind: 'done' as const, trackId: finalTrackId! }, trackId: finalTrackId, unsubscribe: undefined }
-              : j
-          ));
-        } else if (event.status === 'error') {
-          setJobs((prev) => prev.map((j) =>
-            j.id === localJobId
-              ? { ...j, phase: { kind: 'error' as const, message: event.error ?? 'Ошибка при обработке' }, unsubscribe: undefined }
-              : j
-          ));
-        } else {
+        setJobs((prev) => prev.map((j) => {
+          if (j.id !== localJobId) return j;
+          if (j.phase.kind === 'done' || j.phase.kind === 'error') return j;
+
+          if (event.status === 'completed') {
+            closeStream();
+            const finalTrackId = event.track_id ?? trackId;
+            return { ...j, phase: { kind: 'done' as const, trackId: finalTrackId! }, trackId: finalTrackId, unsubscribe: undefined };
+          }
+          if (event.status === 'error') {
+            closeStream();
+            return { ...j, phase: { kind: 'error' as const, message: event.error ?? 'Ошибка при обработке' }, unsubscribe: undefined };
+          }
           const stepLabel = event.step ? (STEP_LABELS[event.step] ?? event.step) : 'Обработка...';
-          setJobs((prev) => prev.map((j) =>
-            j.id === localJobId
-              ? { ...j, phase: { kind: 'processing' as const, step: stepLabel, progress: event.progress ?? 0 } }
-              : j
-          ));
-        }
+          return { ...j, phase: { kind: 'processing' as const, step: stepLabel, progress: event.progress ?? 0 } };
+        }));
       },
       () => {
         setJobs((prev) => prev.map((j) => {
@@ -281,7 +282,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({
       }
     );
     setJobs((prev) => prev.map((j) =>
-      j.id === localJobId ? { ...j, unsubscribe } : j
+      j.id === localJobId ? { ...j, unsubscribe: closeStream } : j
     ));
   }, []);
 
@@ -359,12 +360,13 @@ export const UploadTab: React.FC<UploadTabProps> = ({
   const handleUpload = useCallback(async (): Promise<void> => {
     if (!file || uploading) return;
 
-    const localJobId = `local-${++jobCounter}`;
+    const localJobId = crypto.randomUUID();
     const fileName = file.name;
     const newJob: UploadJob = {
       id: localJobId,
       fileName,
       phase: { kind: 'uploading' },
+      createdAt: Date.now(),
     };
     setJobs((prev) => [newJob, ...prev]);
 
@@ -411,7 +413,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({
   // ── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: compact ? 2 : 3, position: 'relative' }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', gap: compact ? 2 : 3, position: 'relative', minHeight: 0, flex: 1 }}>
 
       {/* Drag & Drop Zone */}
       <Box
@@ -583,7 +585,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({
 
       {/* Upload job cards */}
       {jobs.length > 0 && (
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, flex: 1, minHeight: 0 }}>
           <Typography
             sx={{
               fontSize: '11px',
@@ -591,13 +593,18 @@ export const UploadTab: React.FC<UploadTabProps> = ({
               letterSpacing: '0.12em',
               color: 'rgba(255,255,255,0.3)',
               textTransform: 'uppercase',
+              flexShrink: 0,
             }}
           >
             МОИ ЗАГРУЗКИ
           </Typography>
-          {jobs.map((job) => (
-            <JobCard key={job.id} job={job} onDismiss={dismissJob} onPlay={onPlay} />
-          ))}
+          <Box sx={{ flex: 1, overflowY: 'auto', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+            {[...jobs]
+              .sort((a, b) => b.createdAt - a.createdAt)
+              .map((job) => (
+                <JobCard key={job.id} job={job} onDismiss={dismissJob} onPlay={onPlay} />
+              ))}
+          </Box>
         </Box>
       )}
     </Box>

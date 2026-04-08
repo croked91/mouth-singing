@@ -37,12 +37,14 @@ class GeniusProvider(TextSearchProvider):
     async def search_by_text(self, text_fragment: str) -> list[LyricsCandidate]:
         headers = {"Authorization": f"Bearer {self._token}"}
         async with httpx.AsyncClient(
-            timeout=self._timeout, headers=headers,
+            timeout=self._timeout,
+            headers=headers,
         ) as client:
             # Step 1: search
             try:
                 resp = await client.get(
-                    _SEARCH_URL, params={"q": text_fragment},
+                    _SEARCH_URL,
+                    params={"q": text_fragment},
                 )
                 resp.raise_for_status()
             except httpx.HTTPError as exc:
@@ -66,17 +68,21 @@ class GeniusProvider(TextSearchProvider):
                 if not lyrics or len(lyrics) < 20:
                     continue
 
-                candidates.append(LyricsCandidate(
-                    artist=song.get("primary_artist", {}).get("name", ""),
-                    title=song.get("title", ""),
-                    lyrics=lyrics,
-                    source=self.name,
-                ))
+                candidates.append(
+                    LyricsCandidate(
+                        artist=song.get("primary_artist", {}).get("name", ""),
+                        title=song.get("title", ""),
+                        lyrics=lyrics,
+                        source=self.name,
+                    )
+                )
 
             return candidates
 
     async def _scrape_lyrics(
-        self, client: httpx.AsyncClient, url: str,
+        self,
+        client: httpx.AsyncClient,
+        url: str,
     ) -> str:
         try:
             resp = await client.get(
@@ -107,11 +113,11 @@ class GeniusProvider(TextSearchProvider):
                 # Strip everything before and including the "Lyrics" marker
                 idx = text.find("Lyrics\n")
                 if idx != -1:
-                    text = text[idx + len("Lyrics\n"):]
+                    text = text[idx + len("Lyrics\n") :]
                 # Remove "Read More" description block
                 read_more_idx = text.find("Read More")
                 if read_more_idx != -1:
-                    text = text[read_more_idx + len("Read More"):]
+                    text = text[read_more_idx + len("Read More") :]
                 text = text.strip()
                 if not text:
                     continue
