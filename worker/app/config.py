@@ -40,6 +40,7 @@ class WorkerSettings(BaseSettings):
 
     deepseek_api_key: str = ""
     deepseek_model: str = "deepseek-chat"
+    searxng_url: str = "http://searxng:8080"
     yandex_search_api_key: str = ""
     yandex_search_folder_id: str = ""
     lyrics_agent_max_iterations: int = 15

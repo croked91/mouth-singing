@@ -122,7 +122,7 @@ class LyricsProviderChain:
             logger.info("lyrics_verification_rejected_all")
 
         # ------------------------------------------------------------------
-        # Stage 3: Fallback — DeepSeek agent + Yandex Search
+        # Stage 3: Fallback — DeepSeek agent + web search
         # ------------------------------------------------------------------
         if self._fallback_agent:
             logger.info("lyrics_fallback_to_agent")

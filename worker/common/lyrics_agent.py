@@ -1,8 +1,9 @@
-"""Lyrics search agent using DeepSeek LLM with Yandex web search.
+"""Lyrics search agent using DeepSeek LLM with web search.
 
-Uses an agentic tool-calling loop: the LLM can invoke web_search (Yandex)
-and fetch_webpage (httpx + BeautifulSoup) to find original lyrics online,
-then returns a structured JSON with artist, title, and lyrics.
+Uses an agentic tool-calling loop: the LLM can invoke web_search
+(SearXNG primary, Yandex fallback) and fetch_webpage (httpx + BeautifulSoup)
+to find original lyrics online, then returns a structured JSON with
+artist, title, and lyrics.
 """
 
 from __future__ import annotations
@@ -127,13 +128,47 @@ _BROWSER_UA = (
 # ======================================================================
 
 
-def _web_search(
+def _searxng_search(
+    query: str,
+    base_url: str,
+    timeout: float,
+) -> list[dict] | None:
+    """Search via self-hosted SearXNG. Returns list of results or None on error."""
+    try:
+        response = httpx.get(
+            f"{base_url}/search",
+            params={
+                "q": query,
+                "format": "json",
+                "categories": "general",
+                "language": "ru",
+            },
+            timeout=timeout,
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        results = []
+        for item in data.get("results", [])[:10]:
+            results.append({
+                "title": item.get("title", ""),
+                "href": item.get("url", ""),
+                "body": item.get("content", ""),
+            })
+
+        return results
+    except Exception as exc:
+        logger.warning("searxng_search_failed", error=str(exc))
+        return None
+
+
+def _yandex_search(
     query: str,
     api_key: str,
     folder_id: str,
     timeout: float,
-) -> str:
-    """Search via Yandex Search API."""
+) -> list[dict] | None:
+    """Search via Yandex Search API. Returns list of results or None on error."""
     try:
         response = httpx.post(
             _YANDEX_SEARCH_URL,
@@ -185,11 +220,35 @@ def _web_search(
                     ),
                 })
 
-        if not results:
-            return json.dumps({"error": "Ничего не найдено"}, ensure_ascii=False)
-        return json.dumps(results, ensure_ascii=False)
-    except Exception as e:
-        return json.dumps({"error": str(e)}, ensure_ascii=False)
+        return results if results else None
+    except Exception as exc:
+        logger.warning("yandex_search_failed", error=str(exc))
+        return None
+
+
+def _web_search(
+    query: str,
+    api_key: str,
+    folder_id: str,
+    timeout: float,
+    searxng_url: str | None = None,
+) -> str:
+    """Search the web: try SearXNG first, fall back to Yandex."""
+    # 1. Try SearXNG (self-hosted, free)
+    if searxng_url:
+        results = _searxng_search(query, searxng_url, timeout)
+        if results:
+            logger.debug("web_search_via", backend="searxng", count=len(results))
+            return json.dumps(results, ensure_ascii=False)
+
+    # 2. Fallback to Yandex Search API
+    if api_key and folder_id:
+        results = _yandex_search(query, api_key, folder_id, timeout)
+        if results:
+            logger.debug("web_search_via", backend="yandex", count=len(results))
+            return json.dumps(results, ensure_ascii=False)
+
+    return json.dumps({"error": "Ничего не найдено"}, ensure_ascii=False)
 
 
 def _fetch_webpage(url: str, timeout: float) -> str:
@@ -234,11 +293,12 @@ class LyricsAgent:
     def __init__(
         self,
         deepseek_api_key: str,
-        yandex_search_api_key: str,
-        yandex_search_folder_id: str,
+        yandex_search_api_key: str = "",
+        yandex_search_folder_id: str = "",
         model: str = "deepseek-chat",
         max_iterations: int = 15,
         timeout: float = 15.0,
+        searxng_url: str | None = None,
     ) -> None:
         self._deepseek_api_key = deepseek_api_key
         self._yandex_api_key = yandex_search_api_key
@@ -246,6 +306,7 @@ class LyricsAgent:
         self._model = model
         self._max_iterations = max_iterations
         self._timeout = timeout
+        self._searxng_url = searxng_url
 
     async def search(
         self,
@@ -324,7 +385,7 @@ class LyricsAgent:
             lyrics=lyrics,
             language=detected_language,
             confidence="medium",
-            source_note="deepseek+yandex",
+            source_note="deepseek+websearch",
         )
 
     # ------------------------------------------------------------------
@@ -347,6 +408,7 @@ class LyricsAgent:
         tool_functions = {
             "web_search": lambda query: _web_search(
                 query, self._yandex_api_key, self._yandex_folder_id, self._timeout,
+                searxng_url=self._searxng_url,
             ),
             "fetch_webpage": lambda url: _fetch_webpage(url, self._timeout),
         }

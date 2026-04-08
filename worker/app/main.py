@@ -91,15 +91,16 @@ def _build_gpu_pipeline(
     )
 
     fallback_agent = None
-    if (
-        settings.deepseek_api_key
-        and settings.yandex_search_api_key
-        and settings.yandex_search_folder_id
-    ):
+    has_search_backend = (
+        settings.searxng_url
+        or (settings.yandex_search_api_key and settings.yandex_search_folder_id)
+    )
+    if settings.deepseek_api_key and has_search_backend:
         fallback_agent = LyricsAgent(
             deepseek_api_key=settings.deepseek_api_key,
             yandex_search_api_key=settings.yandex_search_api_key,
             yandex_search_folder_id=settings.yandex_search_folder_id,
+            searxng_url=settings.searxng_url or None,
             model=settings.deepseek_model,
             max_iterations=settings.lyrics_agent_max_iterations,
             timeout=settings.lyrics_agent_timeout,

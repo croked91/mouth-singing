@@ -14,6 +14,8 @@ services:
         condition: service_healthy
       backend:
         condition: service_healthy
+      searxng:
+        condition: service_healthy
     environment:
       WORKER_MODE: gpu
       PG_DSN: postgresql://karaoke:${PG_PASSWORD:-karaoke}@postgres:5432/karaoke
@@ -39,7 +41,8 @@ services:
       VAD_TOP_DB: ${VAD_TOP_DB:-16}
       # OpenAI (Whisper API / embedder in API mode)
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      # Lyrics agent (DeepSeek + Yandex Search)
+      # Lyrics agent (SearXNG + DeepSeek + Yandex Search fallback)
+      SEARXNG_URL: http://searxng:8080
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
       YANDEX_SEARCH_API_KEY: ${YANDEX_SEARCH_API_KEY:-}
