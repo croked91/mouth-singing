@@ -75,8 +75,12 @@ class RecClient:
         query_text: str,
         limit: int = 50,
     ) -> dict | None:
-        """Call POST /search/mood. Returns {items: [...]} or None."""
-        return await self._post("/search/mood", {"query_text": query_text, "limit": limit})
+        """Call POST /search/mood. Returns {items: [...]} or None.
+
+        Uses a longer timeout because the first call may trigger lazy
+        model loading in the rec-service (~10-30s).
+        """
+        return await self._post("/search/mood", {"query_text": query_text, "limit": limit}, timeout=30.0)
 
     async def health(self) -> bool:
         """Check rec-service health."""
@@ -86,9 +90,9 @@ class RecClient:
         except Exception:
             return False
 
-    async def _post(self, path: str, body: dict) -> dict | list | None:
+    async def _post(self, path: str, body: dict, timeout: float | None = None) -> dict | list | None:
         try:
-            resp = await self._client.post(path, json=body)
+            resp = await self._client.post(path, json=body, **({"timeout": timeout} if timeout else {}))
             if resp.status_code == 200:
                 return resp.json()
             logger.warning("rec_client.non_200", path=path, status=resp.status_code)
