@@ -162,6 +162,7 @@ services:
       CATALOG_DATA_PATH: /data/models/catalog_data.json
       HTTP_PORT: "8001"
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      HF_HUB_OFFLINE: "1"
     volumes:
       - models_data:/data/models
     expose:

@@ -19,7 +19,8 @@ RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/wh
 
 # Rec-service deps (cached while pyproject.toml unchanged)
 COPY rec-service/pyproject.toml /app/pyproject.toml
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir . \
+    && python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')"
 
 # Source code (changes here don't rebuild deps)
 COPY shared/karaoke_shared/ /shared/karaoke_shared/

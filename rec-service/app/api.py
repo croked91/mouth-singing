@@ -63,8 +63,8 @@ def create_app() -> FastAPI:
         app.state.catalog_data = catalog_data
         app.state.engine = RecommendationEngine(app.state.qdrant_repo, catalog_data)
 
-        # Lyric embedder for mood/semantic search (lazy — loads model on first call).
-        app.state.lyric_embedder = LyricEmbedder(lazy=True)
+        # Lyric embedder for mood/semantic search (eager — ready before first request).
+        app.state.lyric_embedder = LyricEmbedder(lazy=False)
 
         logger.info("rec_api.started")
 
