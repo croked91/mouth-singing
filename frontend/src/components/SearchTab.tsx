@@ -216,6 +216,7 @@ const SkeletonCard: React.FC = () => (
 // ─── SearchTab ────────────────────────────────────────────────────────────────
 
 export const SearchTab: React.FC<SearchTabProps> = ({
+  sessionId,
   onTrackSelected,
   onSearchStateChange,
 }) => {
@@ -307,7 +308,8 @@ export const SearchTab: React.FC<SearchTabProps> = ({
     searchModeRef.current = searchMode;
 
     try {
-      const data = await api.searchTracks(trimmed, PAGE_SIZE, 0, searchMode);
+      const moodMode = searchMode === 'mood';
+      const data = await api.searchTracks(trimmed, moodMode ? 10 : PAGE_SIZE, 0, searchMode, moodMode ? sessionId : undefined);
       setResults(data.items);
       setResultsTotal(data.total);
       setHasMore(data.items.length < data.total);
@@ -330,7 +332,8 @@ export const SearchTab: React.FC<SearchTabProps> = ({
     setLoadingMore(true);
 
     try {
-      const data = await api.searchTracks(currentQuery, PAGE_SIZE, newOffset, searchModeRef.current);
+      const moodM = searchModeRef.current === 'mood';
+      const data = await api.searchTracks(currentQuery, moodM ? 10 : PAGE_SIZE, newOffset, searchModeRef.current, moodM ? sessionId : undefined);
       if (searchQueryRef.current !== currentQuery) return;
 
       setResults((prev) => (prev ? [...prev, ...data.items] : data.items));

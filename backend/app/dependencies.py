@@ -15,7 +15,7 @@ Usage in a route::
 """
 
 from fastapi import Request
-from karaoke_shared import PgRepository, QDrantRepository
+from karaoke_shared import PgRepository
 from karaoke_shared.storage import S3Storage
 
 from app.services.queue_service import QueueService
@@ -35,19 +35,6 @@ def get_queue_service(request: Request) -> QueueService:
 def get_storage(request: Request) -> S3Storage:
     """Return the shared S3Storage instance from application state."""
     return request.app.state.storage
-
-
-def get_qdrant_repo(request: Request) -> QDrantRepository | None:
-    """Return QDrantRepository if QDrant is configured (used by search only)."""
-    qdrant = getattr(request.app.state, "qdrant", None)
-    if qdrant is None:
-        return None
-    return QDrantRepository(qdrant)
-
-
-def get_embedder(request: Request):
-    """Return the sentence-transformers Embedder, or ``None`` if not loaded."""
-    return getattr(request.app.state, "embedder", None)
 
 
 def get_mood_expander(request: Request):

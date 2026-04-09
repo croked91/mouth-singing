@@ -17,11 +17,10 @@ from fastapi import APIRouter, Depends, Form, HTTPException, Request, UploadFile
 from fastapi import File as FastAPIFile
 from karaoke_shared.models.track import Track
 from karaoke_shared.repositories.pg_repository import PgRepository
-from karaoke_shared.repositories.qdrant_repository import QDrantRepository
 from karaoke_shared.storage import S3Storage
 from pydantic import BaseModel
 
-from app.dependencies import get_embedder, get_mood_expander, get_qdrant_repo, get_repo, get_storage
+from app.dependencies import get_mood_expander, get_repo, get_storage
 from app.services.search_service import SearchResult, SearchService
 from app.services.track_service import MAX_UPLOAD_BYTES, TrackService
 
@@ -95,23 +94,26 @@ async def search_tracks(
     mode: str = "title",
     limit: int = 20,
     offset: int = 0,
+    session_id: str | None = None,
     repo: PgRepository = Depends(get_repo),
-    qdrant_repo: QDrantRepository = Depends(get_qdrant_repo),
 ) -> SearchResult:
     """Search the track catalog.
 
-    mode=title (default): hybrid tsvector FTS + semantic fallback.
-    mode=mood: LLM query expansion via DeepSeek + pure semantic search.
+    mode=title (default): tsvector FTS.
+    mode=mood: LLM query expansion → rec-service semantic search,
+        re-ranked by hit priority and session history affinity.
     """
     if not q:
         return SearchResult(total=0, items=[])
 
-    embedder = get_embedder(request)
-    service = SearchService(repo, qdrant_repo, embedder)
+    rec_client = getattr(request.app.state, "rec_client", None)
+    service = SearchService(repo, rec_client)
 
     if mode == "mood":
         mood_expander = get_mood_expander(request)
-        return await service.mood_search(q, mood_expander, limit=limit, offset=offset)
+        return await service.mood_search(
+            q, mood_expander, limit=limit, offset=offset, session_id=session_id,
+        )
 
     return await service.search(q, limit=limit, offset=offset)
 

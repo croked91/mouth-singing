@@ -70,6 +70,14 @@ class RecClient:
         body = {"played_track_ids": played_track_ids, "limit": limit}
         return await self._post("/tags", body)
 
+    async def mood_search(
+        self,
+        query_text: str,
+        limit: int = 50,
+    ) -> dict | None:
+        """Call POST /search/mood. Returns {items: [...]} or None."""
+        return await self._post("/search/mood", {"query_text": query_text, "limit": limit})
+
     async def health(self) -> bool:
         """Check rec-service health."""
         try:

@@ -6,9 +6,7 @@ Startup sequence (managed by the lifespan context manager):
 3. Connect to S3 storage.
 4. Connect to RabbitMQ and start rec.indexed consumer.
 5. Create rec-service HTTP client.
-6. Load sentence-transformer embedder (optional).
-7. Connect to QDrant (optional, for semantic/mood search).
-8. Initialize MoodQueryExpander via DeepSeek (optional).
+6. Initialize MoodQueryExpander via DeepSeek (optional).
 """
 
 import asyncio
@@ -107,31 +105,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     )
     app.state.rec_client = rec_client
 
-    # 5. Sentence-transformer embedder for semantic search (optional).
-    embedder = None
-    try:
-        from app.services.embedder import Embedder
-        embedder = Embedder()
-        logger.info("embedder_loaded", model="paraphrase-multilingual-MiniLM-L12-v2")
-    except Exception as exc:
-        logger.warning("embedder_not_available", error=str(exc))
-    app.state.embedder = embedder
-
-    # 6. QDrant client — used by SearchService for semantic/mood search.
-    from qdrant_client import QdrantClient
-    try:
-        qdrant = QdrantClient(
-            host=settings.qdrant_host,
-            port=settings.qdrant_port,
-            timeout=10,
-        )
-        app.state.qdrant = qdrant
-        logger.info("qdrant_connected", host=settings.qdrant_host, port=settings.qdrant_port)
-    except Exception as exc:
-        logger.warning("qdrant_init_failed", error=str(exc))
-        app.state.qdrant = None
-
-    # 7. MoodQueryExpander for mood/theme search (optional, requires DEEPSEEK_API_KEY).
+    # 5. MoodQueryExpander for mood/theme search (optional, requires DEEPSEEK_API_KEY).
     mood_expander = None
     if settings.deepseek_api_key:
         try:

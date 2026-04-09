@@ -18,8 +18,6 @@ class Settings(BaseSettings):
     """
 
     pg_dsn: str = "postgresql://karaoke:karaoke@localhost:5432/karaoke"
-    qdrant_host: str = "localhost"
-    qdrant_port: int = 6333
     admin_secret: str = "changeme"
     log_level: str = "INFO"
 

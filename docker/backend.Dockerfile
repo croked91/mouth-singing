@@ -13,9 +13,7 @@ RUN mkdir -p /shared/karaoke_shared && touch /shared/karaoke_shared/__init__.py 
 
 # Backend deps (cached while pyproject.toml unchanged)
 COPY backend/pyproject.toml /app/pyproject.toml
-RUN pip install --no-cache-dir "sentence-transformers>=3.0" \
-    && pip install --no-cache-dir . \
-    && python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')"
+RUN pip install --no-cache-dir .
 
 # Source code (changes here don't rebuild deps)
 COPY shared/karaoke_shared/ /shared/karaoke_shared/

@@ -35,3 +35,22 @@ class RecTrackItem(BaseModel):
 class RecommendationResponse(BaseModel):
     strategy: str  # "cluster"
     tracks: list[RecTrackItem]
+
+
+class MoodSearchRequest(BaseModel):
+    query_text: str
+    limit: int = 50
+
+
+class MoodSearchItem(BaseModel):
+    id: str
+    artist: str
+    title: str
+    duration_sec: int | None = None
+    similarity_score: float
+    popularity_category: str = "regular"
+    rec_cluster_id: int | None = None
+
+
+class MoodSearchResponse(BaseModel):
+    items: list[MoodSearchItem]
