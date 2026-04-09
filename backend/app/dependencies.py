@@ -48,3 +48,8 @@ def get_qdrant_repo(request: Request) -> QDrantRepository | None:
 def get_embedder(request: Request):
     """Return the sentence-transformers Embedder, or ``None`` if not loaded."""
     return getattr(request.app.state, "embedder", None)
+
+
+def get_mood_expander(request: Request):
+    """Return MoodQueryExpander, or ``None`` if DeepSeek is not configured."""
+    return getattr(request.app.state, "mood_expander", None)

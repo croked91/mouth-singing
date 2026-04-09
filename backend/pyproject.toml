@@ -15,6 +15,7 @@ dependencies = [
     "qdrant-client>=1.8",
     "structlog>=24.0",
     "httpx",
+    "openai>=1.0",
     "python-multipart>=0.0.9",
     "karaoke-shared",
 ]

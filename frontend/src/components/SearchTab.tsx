@@ -12,6 +12,8 @@ import {
   Paper,
   Popper,
   ClickAwayListener,
+  ToggleButton,
+  ToggleButtonGroup,
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import CloseIcon from '@mui/icons-material/Close';
@@ -217,6 +219,8 @@ export const SearchTab: React.FC<SearchTabProps> = ({
   onTrackSelected,
   onSearchStateChange,
 }) => {
+  const [searchMode, setSearchMode] = useState<'title' | 'mood'>('title');
+  const searchModeRef = useRef<'title' | 'mood'>('title');
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -261,7 +265,7 @@ export const SearchTab: React.FC<SearchTabProps> = ({
 
     const trimmed = query.trim();
 
-    if (!trimmed) {
+    if (!trimmed || searchMode === 'mood') {
       setSuggestions([]);
       setShowSuggestions(false);
       return;
@@ -286,7 +290,7 @@ export const SearchTab: React.FC<SearchTabProps> = ({
         clearTimeout(debounceTimerRef.current);
       }
     };
-  }, [query]);
+  }, [query, searchMode]);
 
   // ── Search ───────────────────────────────────────────────────────────────
 
@@ -300,9 +304,10 @@ export const SearchTab: React.FC<SearchTabProps> = ({
     onSearchStateChange?.(true);
     setOffset(0);
     searchQueryRef.current = trimmed;
+    searchModeRef.current = searchMode;
 
     try {
-      const data = await api.searchTracks(trimmed, PAGE_SIZE, 0);
+      const data = await api.searchTracks(trimmed, PAGE_SIZE, 0, searchMode);
       setResults(data.items);
       setResultsTotal(data.total);
       setHasMore(data.items.length < data.total);
@@ -313,7 +318,7 @@ export const SearchTab: React.FC<SearchTabProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [dismissSuggestions]);
+  }, [dismissSuggestions, searchMode]);
 
   // ── Load more (infinite scroll) ─────────────────────────────────────────
 
@@ -325,7 +330,7 @@ export const SearchTab: React.FC<SearchTabProps> = ({
     setLoadingMore(true);
 
     try {
-      const data = await api.searchTracks(currentQuery, PAGE_SIZE, newOffset);
+      const data = await api.searchTracks(currentQuery, PAGE_SIZE, newOffset, searchModeRef.current);
       if (searchQueryRef.current !== currentQuery) return;
 
       setResults((prev) => (prev ? [...prev, ...data.items] : data.items));
@@ -420,6 +425,42 @@ export const SearchTab: React.FC<SearchTabProps> = ({
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+      {/* Mode toggle */}
+      <ToggleButtonGroup
+        value={searchMode}
+        exclusive
+        onChange={(_e, val) => {
+          if (val === null) return;
+          setSearchMode(val);
+          setResults(null);
+          setSearched(false);
+          setHasMore(false);
+          setOffset(0);
+        }}
+        size="small"
+        sx={{
+          alignSelf: 'flex-start',
+          '& .MuiToggleButton-root': {
+            color: 'rgba(255,255,255,0.4)',
+            borderColor: 'rgba(255,255,255,0.12)',
+            fontSize: '12px',
+            fontWeight: 600,
+            textTransform: 'none',
+            px: 1.75,
+            py: 0.6,
+            '&.Mui-selected': {
+              color: '#06B6D4',
+              background: 'rgba(6,182,212,0.12)',
+              borderColor: 'rgba(6,182,212,0.4)',
+              '&:hover': { background: 'rgba(6,182,212,0.18)' },
+            },
+          },
+        }}
+      >
+        <ToggleButton value="title">По названию</ToggleButton>
+        <ToggleButton value="mood">По настроению</ToggleButton>
+      </ToggleButtonGroup>
+
       {/* Search input + suggestions */}
       <ClickAwayListener onClickAway={handleClickAway}>
         <Box>
@@ -451,7 +492,7 @@ export const SearchTab: React.FC<SearchTabProps> = ({
               onFocus={() => {
                 if (suggestions.length > 0 && !searched) setShowSuggestions(true);
               }}
-              placeholder="Исполнитель, название, текст..."
+              placeholder={searchMode === 'mood' ? 'Например: что-нибудь весёлое про лето...' : 'Исполнитель, название, текст...'}
               fullWidth
               sx={{
                 color: '#FFFFFF',

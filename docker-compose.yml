@@ -108,6 +108,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      qdrant:
+        condition: service_healthy
     environment:
       PG_DSN: postgresql://karaoke:${PG_PASSWORD:-karaoke}@postgres:5432/karaoke
       S3_BUCKET: karaoke
@@ -120,6 +122,11 @@ services:
       REC_SERVICE_TIMEOUT: "5.0"
       ADMIN_SECRET: ${ADMIN_SECRET:-changeme}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: "6333"
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
+      HF_HUB_OFFLINE: "1"
     volumes:
       - media_data:/data/media
     networks:
@@ -132,7 +139,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 2G
 
   rec-service:
     build:

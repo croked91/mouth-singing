@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     rec_service_url: str = "http://rec-service:8001"
     rec_service_timeout: float = 5.0
 
+    # DeepSeek LLM for mood/theme query expansion (optional)
+    deepseek_api_key: str = ""
+    deepseek_model: str = "deepseek-chat"
+
     model_config = {"env_prefix": ""}
 
 

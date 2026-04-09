@@ -119,6 +119,45 @@ class SearchService:
 
         return SearchResult(total=total, items=items)
 
+    async def mood_search(
+        self,
+        query: str,
+        mood_expander: object | None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> SearchResult:
+        """Pure semantic search with optional LLM query expansion.
+
+        Bypasses FTS entirely — expands the query into lyrics-like text
+        via DeepSeek, then searches QDrant directly.  Falls back to
+        embedding the raw query if the expander is unavailable.
+        """
+        if self.embedder is None:
+            return SearchResult(total=0, items=[])
+
+        if mood_expander is not None:
+            expanded = await mood_expander.expand(query)
+        else:
+            expanded = query
+
+        logger.info("mood_search", query=query, expanded=expanded[:120])
+
+        tracks = await self._semantic_search(expanded, limit=limit + offset)
+        paged = tracks[offset: offset + limit]
+
+        artist_names = list({t.artist for t in paged})
+        artists_map = await self.sqlite_repo.get_artists_by_names(artist_names)
+        artist_images: dict[str, str | None] = {}
+        for name in artist_names:
+            artist = artists_map.get(name)
+            artist_images[name] = (
+                f"/api/v1/media/artists/{artist['image_path']}"
+                if artist and artist.get("image_path") else None
+            )
+
+        items = [self._track_to_search_item(t, artist_images.get(t.artist)) for t in paged]
+        return SearchResult(total=len(tracks), items=items)
+
     async def suggest(self, query: str, limit: int = 10) -> list[str]:
         """Return autocomplete suggestions as "artist — title" strings.
 
