@@ -148,9 +148,14 @@ export const api = {
     return response.data;
   },
 
-  searchTracks: async (query: string, limit?: number, offset?: number): Promise<SearchResult> => {
+  searchTracks: async (query: string, limit?: number, offset?: number, mode?: 'title' | 'mood', sessionId?: string): Promise<SearchResult> => {
     const response = await apiClient.get<SearchResult>('/tracks/search', {
-      params: { q: query, limit: limit ?? 20, offset: offset ?? 0 },
+      params: {
+        q: query,
+        limit: limit ?? 20,
+        offset: offset ?? 0,
+        ...(mode === 'mood' ? { mode, session_id: sessionId } : {}),
+      },
     });
     return response.data;
   },

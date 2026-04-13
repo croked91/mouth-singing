@@ -18,8 +18,6 @@ class Settings(BaseSettings):
     """
 
     pg_dsn: str = "postgresql://karaoke:karaoke@localhost:5432/karaoke"
-    qdrant_host: str = "localhost"
-    qdrant_port: int = 6333
     admin_secret: str = "changeme"
     log_level: str = "INFO"
 
@@ -37,6 +35,10 @@ class Settings(BaseSettings):
     # Rec-service (recommendation microservice)
     rec_service_url: str = "http://rec-service:8001"
     rec_service_timeout: float = 5.0
+
+    # DeepSeek LLM for mood/theme query expansion (optional)
+    deepseek_api_key: str = ""
+    deepseek_model: str = "deepseek-chat"
 
     model_config = {"env_prefix": ""}
 

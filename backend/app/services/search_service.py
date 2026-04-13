@@ -1,9 +1,8 @@
-"""Search service — hybrid FTS5 + semantic search over the track catalog.
+"""Search service — FTS search + mood search (proxied to rec-service).
 
-The service tries FTS5 first. If the result set is smaller than a threshold
-(fewer than 5 matches) and a sentence-transformers Embedder is available, it
-falls back to a semantic search in QDrant and merges the two result sets.
-FTS results are always preferred over semantic results during deduplication.
+Title search uses PostgreSQL tsvector FTS.
+Mood search calls rec-service for semantic vector search, then re-ranks
+results by hit priority and session cluster affinity.
 """
 
 from __future__ import annotations
@@ -11,17 +10,15 @@ from __future__ import annotations
 import asyncio
 
 import structlog
-from karaoke_shared.constants import COLLECTION_LYRICS_EMBEDDINGS, TrackStatus
+from karaoke_shared.constants import TrackStatus
 from karaoke_shared.models.track import Track
-from karaoke_shared.repositories.qdrant_repository import QDrantRepository
 from karaoke_shared.repositories.pg_repository import PgRepository
 from pydantic import BaseModel
 
 logger = structlog.get_logger(__name__)
 
-_SEMANTIC_FALLBACK_THRESHOLD = 5
-
-_LYRICS_COLLECTION = COLLECTION_LYRICS_EMBEDDINGS
+_MOOD_OVERSAMPLE = 50
+_HIT_CATEGORIES = frozenset({"eternal_hit", "current_hit", "artist_best"})
 
 
 # ---------------------------------------------------------------------------
@@ -55,142 +52,152 @@ class SearchResult(BaseModel):
 
 
 class SearchService:
-    """Hybrid search combining FTS5 and optional semantic vector search.
+    """FTS search + mood search (via rec-service).
 
     Args:
-        sqlite_repo: Open repository for FTS and autocomplete queries.
-        qdrant_repo: Repository for vector similarity queries.
-        embedder: Optional Embedder for semantic search. ``None`` means
-            the service operates in FTS-only mode.
+        pg_repo: PostgreSQL repository for FTS and track lookups.
+        rec_client: HTTP client to rec-service (for mood/semantic search).
     """
 
     def __init__(
         self,
-        sqlite_repo: PgRepository,
-        qdrant_repo: QDrantRepository,
-        embedder: object | None,
+        pg_repo: PgRepository,
+        rec_client: object | None,
     ) -> None:
-        self.sqlite_repo = sqlite_repo
-        self.qdrant_repo = qdrant_repo
-        self.embedder = embedder
+        self.pg_repo = pg_repo
+        self.rec_client = rec_client
 
     async def search(
         self, query: str, limit: int = 20, offset: int = 0,
     ) -> SearchResult:
-        """Run a hybrid search and return a combined, deduplicated result set.
-
-        Args:
-            query: The user's search string.
-            limit: Maximum number of results to return.
-            offset: Number of results to skip (for pagination).
-        """
-        # Run FTS and count in parallel for accurate pagination total.
+        """Full-text search via PostgreSQL tsvector."""
         fts_tracks, fts_total = await asyncio.gather(
-            self.sqlite_repo.search_fts(query, limit=limit + offset, offset=0),
-            self.sqlite_repo.search_fts_count(query),
+            self.pg_repo.search_fts(query, limit=limit + offset, offset=0),
+            self.pg_repo.search_fts_count(query),
         )
 
-        semantic_tracks: list[Track] = []
-        should_do_semantic = (
-            len(fts_tracks) < _SEMANTIC_FALLBACK_THRESHOLD
-            and self.embedder is not None
-        )
+        paged = fts_tracks[offset: offset + limit]
 
-        if should_do_semantic:
-            semantic_tracks = await self._semantic_search(query, limit=limit)
-
-        merged = self._merge_results(fts_tracks, semantic_tracks)
-
-        total = max(fts_total, len(merged))
-        paged = merged[offset : offset + limit]
-
-        # Batch-fetch artist images.
         artist_names = list({t.artist for t in paged})
-        artists_map = await self.sqlite_repo.get_artists_by_names(artist_names)
-        artist_images: dict[str, str | None] = {}
-        for name in artist_names:
-            artist = artists_map.get(name)
-            if artist and artist.get("image_path"):
-                artist_images[name] = f"/api/v1/media/artists/{artist['image_path']}"
-            else:
-                artist_images[name] = None
+        artists_map = await self.pg_repo.get_artists_by_names(artist_names)
+        artist_images = self._build_artist_images(artist_names, artists_map)
 
         items = [self._track_to_search_item(t, artist_images.get(t.artist)) for t in paged]
+        return SearchResult(total=fts_total, items=items)
 
-        return SearchResult(total=total, items=items)
+    async def mood_search(
+        self,
+        query: str,
+        mood_expander: object | None,
+        limit: int = 10,
+        offset: int = 0,
+        session_id: str | None = None,
+    ) -> SearchResult:
+        """Mood/theme search: LLM expansion → rec-service → re-rank.
+
+        Oversamples _MOOD_OVERSAMPLE results from rec-service, then re-ranks:
+        tier 1 — hits (eternal_hit, current_hit, artist_best),
+        tier 2 — tracks whose cluster matches session play history,
+        tier 3 — everything else.
+        Within each tier, sorted by mood similarity score.
+        """
+        if self.rec_client is None:
+            return SearchResult(total=0, items=[])
+
+        expanded = await mood_expander.expand(query) if mood_expander else query
+        logger.info("mood_search", query=query, expanded=expanded[:120])
+
+        result = await self.rec_client.mood_search(expanded, limit=_MOOD_OVERSAMPLE)
+        if not result or not result.get("items"):
+            return SearchResult(total=0, items=[])
+
+        scored = [(item, item["similarity_score"]) for item in result["items"]]
+
+        # Session history for warm-session boost.
+        played_cluster_ids: set[int] = set()
+        if session_id:
+            history = await self.pg_repo.get_history_by_session(session_id)
+            if history:
+                played_ids = [entry.track_id for entry in history]
+                played_tracks = await self.pg_repo.get_tracks_by_ids(played_ids)
+                played_cluster_ids = {
+                    t.rec_cluster_id for t in played_tracks.values()
+                    if t.rec_cluster_id is not None
+                }
+
+        ranked = self._rerank_mood(scored, played_cluster_ids, limit + offset)
+        paged = ranked[offset: offset + limit]
+
+        # Fetch full Track objects from PG for the final page.
+        track_ids = [item["id"] for item, _ in paged]
+        tracks_map = await self.pg_repo.get_tracks_by_ids(track_ids)
+
+        artist_names = list({t.artist for t in tracks_map.values()})
+        artists_map = await self.pg_repo.get_artists_by_names(artist_names)
+        artist_images = self._build_artist_images(artist_names, artists_map)
+
+        # Preserve ranked order.
+        items: list[TrackSearchItem] = []
+        for item, _ in paged:
+            track = tracks_map.get(item["id"])
+            if track:
+                items.append(self._track_to_search_item(track, artist_images.get(track.artist)))
+
+        return SearchResult(total=len(ranked), items=items)
 
     async def suggest(self, query: str, limit: int = 10) -> list[str]:
-        """Return autocomplete suggestions as "artist — title" strings.
-
-        Runs a LIKE prefix search on artist and title for tracks that have
-        status='ready'.
-
-        Args:
-            query: The prefix string typed by the user.
-            limit: Maximum number of suggestions.
-
-        Returns:
-            A list of formatted "artist — title" strings.
-        """
+        """Return autocomplete suggestions as "artist — title" strings."""
         if not query:
             return []
-
-        rows = await self.sqlite_repo.suggest_tracks(query, limit)
+        rows = await self.pg_repo.suggest_tracks(query, limit)
         return [f"{row['artist']} — {row['title']}" for row in rows]
 
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
 
-    async def _semantic_search(self, query: str, limit: int) -> list[Track]:
-        """Embed the query and search the lyrics_embeddings QDrant collection.
+    @staticmethod
+    def _rerank_mood(
+        results: list[tuple[dict, float]],
+        played_cluster_ids: set[int],
+        limit: int,
+    ) -> list[tuple[dict, float]]:
+        """Re-rank mood results: hits → cluster matches → rest, each by score."""
+        hits: list[tuple[dict, float]] = []
+        cluster_match: list[tuple[dict, float]] = []
+        rest: list[tuple[dict, float]] = []
 
-        Returns a list of Track records for the matching point IDs. Any
-        point whose track cannot be found in SQLite is silently dropped.
-        """
-        try:
-            vector = await asyncio.to_thread(self.embedder.embed, query)
-            hits = await asyncio.to_thread(
-                self.qdrant_repo.search,
-                _LYRICS_COLLECTION,
-                vector,
-                limit,
+        for item, score in results:
+            pop = item.get("popularity_category", "regular")
+            cid = item.get("rec_cluster_id")
+            if pop in _HIT_CATEGORIES:
+                hits.append((item, score))
+            elif played_cluster_ids and cid in played_cluster_ids:
+                cluster_match.append((item, score))
+            else:
+                rest.append((item, score))
+
+        hits.sort(key=lambda x: x[1], reverse=True)
+        cluster_match.sort(key=lambda x: x[1], reverse=True)
+        rest.sort(key=lambda x: x[1], reverse=True)
+
+        return (hits + cluster_match + rest)[:limit]
+
+    @staticmethod
+    def _build_artist_images(
+        artist_names: list[str], artists_map: dict,
+    ) -> dict[str, str | None]:
+        images: dict[str, str | None] = {}
+        for name in artist_names:
+            artist = artists_map.get(name)
+            images[name] = (
+                f"/api/v1/media/artists/{artist['image_path']}"
+                if artist and artist.get("image_path") else None
             )
-        except Exception as exc:
-            logger.warning("semantic_search_failed", error=str(exc))
-            return []
+        return images
 
-        # hits is list[tuple[str, float, dict]] — id, score, payload
-        point_ids = [point_id for point_id, _score, _payload in hits]
-        tracks_map = await self.sqlite_repo.get_tracks_by_ids(point_ids)
-        # Preserve QDrant relevance ordering.
-        return [tracks_map[pid] for pid in point_ids if pid in tracks_map]
-
-    def _merge_results(
-        self, fts_tracks: list[Track], semantic_tracks: list[Track]
-    ) -> list[Track]:
-        """Merge two track lists, deduplicating by ID.
-
-        FTS results come first; semantic results are appended only when their
-        track ID is not already in the FTS list.
-        """
-        seen_ids: set[str] = set()
-        merged: list[Track] = []
-
-        for track in fts_tracks:
-            if track.id not in seen_ids:
-                seen_ids.add(track.id)
-                merged.append(track)
-
-        for track in semantic_tracks:
-            if track.id not in seen_ids:
-                seen_ids.add(track.id)
-                merged.append(track)
-
-        return merged
-
-    def _track_to_search_item(self, track: Track, artist_image_url: str | None = None) -> TrackSearchItem:
-        """Convert a full Track record to the condensed TrackSearchItem."""
+    @staticmethod
+    def _track_to_search_item(track: Track, artist_image_url: str | None = None) -> TrackSearchItem:
         return TrackSearchItem(
             id=track.id,
             artist=track.artist,

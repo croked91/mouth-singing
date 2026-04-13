@@ -3,11 +3,10 @@
 Startup sequence (managed by the lifespan context manager):
 1. Configure structlog JSON logging.
 2. Connect to PostgreSQL and apply the schema.
-3. Connect to RabbitMQ and start rec.indexed consumer.
-4. Create rec-service HTTP client.
-
-QDrant is NOT used by the backend — all vector search is handled
-by the rec-service microservice.
+3. Connect to S3 storage.
+4. Connect to RabbitMQ and start rec.indexed consumer.
+5. Create rec-service HTTP client.
+6. Initialize MoodQueryExpander via DeepSeek (optional).
 """
 
 import asyncio
@@ -106,15 +105,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     )
     app.state.rec_client = rec_client
 
-    # 5. Sentence-transformer embedder for semantic search (optional).
-    embedder = None
-    try:
-        from app.services.embedder import Embedder
-        embedder = Embedder()
-        logger.info("embedder_loaded", model="paraphrase-multilingual-MiniLM-L12-v2")
-    except Exception as exc:
-        logger.warning("embedder_not_available", error=str(exc))
-    app.state.embedder = embedder
+    # 5. MoodQueryExpander for mood/theme search (optional, requires DEEPSEEK_API_KEY).
+    mood_expander = None
+    if settings.deepseek_api_key:
+        try:
+            from app.services.mood_expander import MoodQueryExpander
+            mood_expander = MoodQueryExpander(
+                api_key=settings.deepseek_api_key,
+                model=settings.deepseek_model,
+            )
+            logger.info("mood_expander_loaded", model=settings.deepseek_model)
+        except Exception as exc:
+            logger.warning("mood_expander_not_available", error=str(exc))
+    app.state.mood_expander = mood_expander
 
     logger.info("karaoke_backend_ready")
 

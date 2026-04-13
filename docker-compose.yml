@@ -120,6 +120,8 @@ services:
       REC_SERVICE_TIMEOUT: "5.0"
       ADMIN_SECRET: ${ADMIN_SECRET:-changeme}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-chat}
     volumes:
       - media_data:/data/media
     networks:
@@ -160,6 +162,7 @@ services:
       CATALOG_DATA_PATH: /data/models/catalog_data.json
       HTTP_PORT: "8001"
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      HF_HUB_OFFLINE: "1"
     volumes:
       - models_data:/data/models
     expose:

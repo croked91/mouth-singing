@@ -19,13 +19,17 @@ from qdrant_client import QdrantClient
 from app.config import settings
 from app.recommendation_engine import RecommendationEngine
 from app.schemas import (
+    MoodSearchRequest,
+    MoodSearchItem,
+    MoodSearchResponse,
     RecommendationRequest,
     RecommendationResponse,
     RecTrackItem,
     TagRecommendationRequest,
     TagsRequest,
 )
-from karaoke_shared.constants import COLLECTION_AUDIO_FEATURES
+from karaoke_shared.constants import COLLECTION_AUDIO_FEATURES, COLLECTION_LYRICS_EMBEDDINGS
+from karaoke_shared.ml.lyric_embedder import LyricEmbedder
 from karaoke_shared.repositories.qdrant_repository import QDrantRepository
 
 logger = structlog.get_logger(__name__)
@@ -58,6 +62,10 @@ def create_app() -> FastAPI:
 
         app.state.catalog_data = catalog_data
         app.state.engine = RecommendationEngine(app.state.qdrant_repo, catalog_data)
+
+        # Lyric embedder for mood/semantic search (eager — ready before first request).
+        app.state.lyric_embedder = LyricEmbedder(lazy=False)
+
         logger.info("rec_api.started")
 
     @app.on_event("shutdown")
@@ -139,5 +147,33 @@ def create_app() -> FastAPI:
 
         result = engine.get_tags(payloads, req.limit)
         return [{"id": t["id"], "name": t["name"]} for t in result]
+
+    @app.post("/search/mood", response_model=MoodSearchResponse)
+    async def search_mood(req: MoodSearchRequest, request: Request) -> MoodSearchResponse:
+        """Embed text and search QDrant lyrics_embeddings collection."""
+        embedder: LyricEmbedder = request.app.state.lyric_embedder
+        qdrant_repo: QDrantRepository = request.app.state.qdrant_repo
+
+        vector = await asyncio.to_thread(embedder.embed, req.query_text)
+        hits = await asyncio.to_thread(
+            qdrant_repo.search,
+            COLLECTION_LYRICS_EMBEDDINGS,
+            vector,
+            req.limit,
+        )
+
+        items = [
+            MoodSearchItem(
+                id=pid,
+                artist=payload.get("artist", ""),
+                title=payload.get("title", ""),
+                duration_sec=payload.get("duration_sec"),
+                similarity_score=score,
+                popularity_category=payload.get("popularity_category", "regular"),
+                rec_cluster_id=payload.get("rec_cluster_id"),
+            )
+            for pid, score, payload in hits
+        ]
+        return MoodSearchResponse(items=items)
 
     return app

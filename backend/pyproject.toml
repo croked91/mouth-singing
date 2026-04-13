@@ -12,9 +12,9 @@ dependencies = [
     "uvicorn[standard]",
     "pydantic-settings>=2.0",
     "asyncpg>=0.29",
-    "qdrant-client>=1.8",
     "structlog>=24.0",
     "httpx",
+    "openai>=1.0",
     "python-multipart>=0.0.9",
     "karaoke-shared",
 ]
@@ -24,9 +24,6 @@ dev = [
     "pytest",
     "pytest-asyncio",
     "ruff",
-]
-semantic = [
-    "sentence-transformers>=3.0",
 ]
 
 [tool.setuptools.packages.find]
