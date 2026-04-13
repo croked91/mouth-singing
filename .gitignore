@@ -19,3 +19,6 @@ bootstrap_test/
 bootstrap_work/
 bootstrap_tracks.csv
 m3_test/variant3/.env
+tools
+conda-env
+a-b-alignment

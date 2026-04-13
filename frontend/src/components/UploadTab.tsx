@@ -12,6 +12,7 @@ import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import CloseIcon from '@mui/icons-material/Close';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 
+import { nanoid } from 'nanoid';
 import { api } from '../services/api';
 import { subscribeToJobStatus } from '../services/sseService';
 import type { JobStatusEvent } from '../types';
@@ -360,7 +361,7 @@ export const UploadTab: React.FC<UploadTabProps> = ({
   const handleUpload = useCallback(async (): Promise<void> => {
     if (!file || uploading) return;
 
-    const localJobId = crypto.randomUUID();
+    const localJobId = nanoid();
     const fileName = file.name;
     const newJob: UploadJob = {
       id: localJobId,

@@ -18,6 +18,7 @@ Usage::
 from __future__ import annotations
 
 import asyncio
+import mimetypes
 from typing import BinaryIO
 
 import boto3
@@ -90,11 +91,17 @@ class S3Storage:
         Returns:
             The object key.
         """
+        extra: dict[str, str] = {}
+        content_type, _ = mimetypes.guess_type(key)
+        if content_type:
+            extra["ContentType"] = content_type
+
         await asyncio.to_thread(
             self._client.put_object,
             Bucket=self.bucket,
             Key=key,
             Body=data,
+            **extra,
         )
         logger.info("s3_object_uploaded", key=key)
         return key
