@@ -86,13 +86,6 @@ class WorkerSettings(BaseSettings):
     # legitimate vocal sustains are preserved.
     mms_word_end_drift_adjust: bool = True
 
-    # Word-end sustain extension: opposite failure mode of drift. MMS
-    # emission fires once per phoneme at attack, so a sustained final
-    # vowel (common at line-end) closes the word at its attack frame.
-    # Forward RMS walk extends the word end to the natural silence
-    # boundary, capped by the next word's onset.
-    mms_word_end_sustain_extend: bool = True
-
     # ------------------------------------------------------------------
     # Common: VAD
     # ------------------------------------------------------------------

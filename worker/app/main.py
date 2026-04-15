@@ -144,7 +144,6 @@ def _build_gpu_pipeline(
         pre_trim_lead_in_ms=settings.mms_pre_trim_lead_in_ms,
         line_start_rms_adjust=settings.mms_line_start_rms_adjust,
         word_end_drift_adjust=settings.mms_word_end_drift_adjust,
-        word_end_sustain_extend=settings.mms_word_end_sustain_extend,
     )
 
     return GpuPipeline(
