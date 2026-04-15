@@ -54,6 +54,7 @@ class TorchCTCAligner:
         pre_trim_lead_in_ms: int = 100,
         line_start_rms_adjust: bool = True,
         word_end_drift_adjust: bool = True,
+        word_end_sustain_extend: bool = True,
     ) -> None:
         self._device = device
         self._cache_dir = model_cache_dir
@@ -83,12 +84,19 @@ class TorchCTCAligner:
         # identifies candidates; RMS validation cuts only when audio is
         # truly silent, preserving legitimate sustained vocal notes.
         self._word_end_drift_adjust = word_end_drift_adjust
+        # Word-end sustain extend: MMS emission fires once per phoneme at
+        # attack; a sustained final vowel (common at line-end) gets its
+        # word closed at the attack frame. Forward RMS walk from orig_end
+        # extends the word to the natural silence boundary, capped by the
+        # next word's onset.
+        self._word_end_sustain_extend = word_end_sustain_extend
         logger.info(
             "torch_ctc_aligner_created",
             device=device,
             pre_trim_enabled=pre_trim_enabled,
             line_start_rms_adjust=line_start_rms_adjust,
             word_end_drift_adjust=word_end_drift_adjust,
+            word_end_sustain_extend=word_end_sustain_extend,
         )
 
     # ------------------------------------------------------------------
@@ -208,6 +216,20 @@ class TorchCTCAligner:
                 words, word_spans, ratio, waveform, time_offset=trim_offset,
             )
 
+        end_extensions = {}
+        if self._word_end_sustain_extend:
+            end_extensions = self._compute_word_end_extensions(
+                words, word_spans, ratio, waveform,
+                time_offset=trim_offset,
+                end_adjustments=end_adjustments,
+            )
+
+        # Drift trims take priority over sustain extensions — a word with
+        # a drift adjustment is excluded from extensions by construction,
+        # so this merge just collects both independent sets.
+        combined_end_adjustments = dict(end_extensions)
+        combined_end_adjustments.update(end_adjustments)
+
         timings, stats = self._to_syllable_timings(
             words,
             word_spans,
@@ -216,7 +238,7 @@ class TorchCTCAligner:
             first_flags,
             time_offset=trim_offset,
             line_adjustments=line_adjustments,
-            end_adjustments=end_adjustments,
+            end_adjustments=combined_end_adjustments,
         )
 
         logger.info(
@@ -407,15 +429,26 @@ class TorchCTCAligner:
         waveform: torch.Tensor,
     ) -> dict[int, tuple[float, float]]:
         """Detect line-start words whose first phoneme was anchored into
-        preceding silence/ad-lib/backing leakage (v3 — gap_0 only).
+        preceding silence/backing leakage and trim to the real attack.
 
-        Compare gap_0 = spans[1].start - spans[0].end against the global
-        median of inter-phoneme gaps across the track (Tukey 2× outlier).
-        If gap_0 is an outlier, trim the excess from the word's start.
+        Step 1 (structural filter): gap_0 = spans[1].start - spans[0].end
+        > 2 × median_gap flags a candidate outlier.
+
+        Step 2 (forward RMS walk): walk [spans[0].start, spans[1].start]
+        looking for the first voiced frame that sits AFTER a drift-sized
+        silent run (≥ 2 × median_gap frames). That frame is the real
+        phoneme attack; shift the word's start there. Mirror of the
+        forward walk used by _compute_word_end_adjustments.
+
+        If no drift-sized silent run exists, gap_0 is a legitimate
+        sustained first phoneme (Э-то, О-на) and no adjustment is made.
 
         Returns ``{word_idx: (orig_start_sec, new_start_sec)}``.
         """
+        import math
         import statistics
+
+        import numpy as np
 
         # Global reference: median of ALL inter-phoneme gaps in the track,
         # EXCLUDING each word's gap_0 (which may be inflated and bias
@@ -427,6 +460,9 @@ class TorchCTCAligner:
         global_median_gap = (
             statistics.median(global_gaps) if global_gaps else None
         )
+
+        audio_np = waveform.squeeze(0).cpu().numpy()
+        frame_len_samples = int(0.02 * _SAMPLE_RATE)  # 20ms
 
         adjustments: dict[int, tuple[float, float]] = {}
         debug_entries: list[dict] = []
@@ -464,10 +500,147 @@ class TorchCTCAligner:
             if gap0 <= outlier_factor * global_median_gap:
                 continue
 
-            excess = gap0 - global_median_gap
-            new_start_frames = spans[0].start + excess
             orig_start_sec = spans[0].start * ratio
-            new_start_sec = new_start_frames * ratio
+
+            # Voiced reference: peak RMS over
+            # [spans[0].start, next_word_start - ratio]. This superset
+            # range captures the true peak wherever it lives:
+            #   * span0 area if MMS placed it correctly on loud vocal.
+            #   * post-spans[-1].end sustained vocal that lives beyond
+            #     MMS's last emission frame (important for 2-phoneme
+            #     words like «Я» where spans[-1].end is ~20 ms past
+            #     span1.start). Silence frames appended don't lower the
+            #     peak because we take max.
+            word_start_sample = max(
+                0, int(spans[0].start * ratio * _SAMPLE_RATE),
+            )
+            if i + 1 < len(word_spans) and word_spans[i + 1]:
+                next_word_start_sec = word_spans[i + 1][0].start * ratio
+                voiced_end_sec = next_word_start_sec - ratio
+            else:
+                voiced_end_sec = len(audio_np) / _SAMPLE_RATE
+            word_end_sample = min(
+                len(audio_np),
+                int(voiced_end_sec * _SAMPLE_RATE),
+            )
+            word_seg = audio_np[word_start_sample:word_end_sample]
+            word_n = len(word_seg) // frame_len_samples
+            if word_n == 0:
+                continue
+            word_frames = word_seg[: word_n * frame_len_samples].reshape(
+                word_n, frame_len_samples,
+            )
+            word_rms = np.sqrt((word_frames ** 2).mean(axis=1))
+            voiced_level = float(word_rms.max())
+            if voiced_level < 1e-6:
+                continue
+            # Single threshold at -14 dB (voiced_level/5): anything below
+            # this is NOT main vocal — be it true silence, backing/UVR
+            # leakage, inhale/breath, or reverb tail. Real main vocal sits
+            # within ~14 dB of the word's peak. A stricter floor than the
+            # -20 dB used in other places is warranted here because
+            # line-start needs to distinguish "main vocal ONSET" from any
+            # pre-attack artifact (continuous low-level content, not just
+            # audible silence). Sustained first phonemes keep RMS close
+            # to peak, so they stay above -14 dB and drift_seen never
+            # triggers → no false trim.
+            attack_floor = voiced_level / 5.0
+
+            # Forward RMS walk [spans[0].start, spans[1].start]: find the
+            # first frame at main-vocal level AFTER a "not-main-vocal"
+            # run (≥ 2 × median_gap frames below attack_floor). That
+            # frame is the real phoneme attack. If attack_floor holds
+            # throughout, gap_0 is a sustained first phoneme (Э-то,
+            # О-на) — leave orig_start.
+            ss = max(0, int(spans[0].start * ratio * _SAMPLE_RATE))
+            se = min(
+                len(audio_np),
+                int(spans[1].start * ratio * _SAMPLE_RATE),
+            )
+            scan_seg = audio_np[ss:se]
+            scan_n = len(scan_seg) // frame_len_samples
+            if scan_n < 2:
+                continue
+            scan_frames = scan_seg[: scan_n * frame_len_samples].reshape(
+                scan_n, frame_len_samples,
+            )
+            scan_rms = np.sqrt((scan_frames ** 2).mean(axis=1))
+
+            silent_run_threshold = max(2, int(round(outlier_factor * ref)))
+            silent_run = 0
+            drift_seen = False
+            new_start_frame_in_scan = None
+            for idx in range(scan_n):
+                above_attack = scan_rms[idx] >= attack_floor
+                if drift_seen:
+                    if above_attack:
+                        new_start_frame_in_scan = idx
+                        break
+                elif not above_attack:
+                    silent_run += 1
+                    if silent_run >= silent_run_threshold:
+                        drift_seen = True
+                else:
+                    silent_run = 0
+
+            if new_start_frame_in_scan is None:
+                # Walk failed: either fully voiced throughout (sustained
+                # first phoneme — Э-то, О-на, Знаешь) or uniform soft
+                # pre-attack content with no contrast (rap backing/
+                # leakage at ~peak level). Only fall back to span1.start
+                # for UNAMBIGUOUS misplacement: ratio ≥ 7 × median_gap.
+                # Empirically on test tracks, sustained first vowels sit
+                # in the 4-7× band while misplacement cases cluster at
+                # 8-14×. Using 7× as the gate keeps sustained cases
+                # untouched and fires only when the span0-span1 gap is
+                # an order of magnitude beyond typical inter-phoneme
+                # spacing — impossible to explain as legitimate phoneme
+                # duration.
+                extreme_factor = 7.0
+                if gap0 / ref >= extreme_factor:
+                    new_start_sec = spans[1].start * ratio
+                    if new_start_sec > orig_start_sec + ratio:
+                        adjustments[i] = (orig_start_sec, new_start_sec)
+                        debug_entries.append({
+                            "word_idx": i,
+                            "word": words[i][:30],
+                            "gap0_frames": round(gap0, 1),
+                            "median_gap_frames": round(global_median_gap, 1),
+                            "ratio_to_ref": round(gap0 / ref, 2),
+                            "orig_start_sec": round(orig_start_sec, 3),
+                            "new_start_sec": round(new_start_sec, 3),
+                            "shift_sec": round(new_start_sec - orig_start_sec, 3),
+                            "voiced_level_db": round(
+                                20.0 * math.log10(voiced_level + 1e-10), 2,
+                            ),
+                            "applied": True,
+                            "fallback": "span1_start",
+                        })
+                        continue
+
+                # Not extreme or fallback degenerate — leave orig_start.
+                debug_entries.append({
+                    "word_idx": i,
+                    "word": words[i][:30],
+                    "gap0_frames": round(gap0, 1),
+                    "median_gap_frames": round(global_median_gap, 1),
+                    "ratio_to_ref": round(gap0 / ref, 2),
+                    "orig_start_sec": round(orig_start_sec, 3),
+                    "new_start_sec": round(orig_start_sec, 3),
+                    "shift_sec": 0.0,
+                    "voiced_level_db": round(
+                        20.0 * math.log10(voiced_level + 1e-10), 2,
+                    ),
+                    "applied": False,
+                })
+                continue
+
+            new_start_sec = (
+                ss + new_start_frame_in_scan * frame_len_samples
+            ) / _SAMPLE_RATE  # pre-offset, per line-start convention
+
+            if new_start_sec <= orig_start_sec + ratio:
+                continue
 
             adjustments[i] = (orig_start_sec, new_start_sec)
             debug_entries.append({
@@ -479,18 +652,24 @@ class TorchCTCAligner:
                 "orig_start_sec": round(orig_start_sec, 3),
                 "new_start_sec": round(new_start_sec, 3),
                 "shift_sec": round(new_start_sec - orig_start_sec, 3),
+                "voiced_level_db": round(
+                    20.0 * math.log10(voiced_level + 1e-10), 2,
+                ),
+                "applied": True,
             })
 
+        applied_count = sum(1 for e in debug_entries if e.get("applied"))
         logger.info(
             "ctc_first_phoneme_trim",
-            adjusted_count=len(debug_entries),
+            applied_count=applied_count,
+            outlier_count=len(debug_entries),
             considered_count=len(considered),
             global_median_gap_frames=(
                 round(global_median_gap, 1)
                 if global_median_gap is not None else None
             ),
             global_gaps_n=len(global_gaps),
-            adjusted=debug_entries[:10],
+            outliers=debug_entries[:15],
             considered=considered[:20],
         )
         return adjustments
@@ -520,12 +699,15 @@ class TorchCTCAligner:
         the median of intra-word inter-phoneme gaps (same baseline the
         line-start algorithm uses).
 
-        Step 2 (RMS validation): the drift region is
-        [spans[-2].end, spans[-1].end]. Walk backwards from the end
-        through the RMS envelope; if audio drops below a silence floor
-        (20dB below the word's own voiced level) we trim to that boundary.
-        If audio stays voiced throughout — it's a legitimate vocal
-        sustain, no adjustment.
+        Step 2 (forward RMS walk): the drift region is
+        [spans[-2].end, spans[-1].end]. Walk forward from its start,
+        tracking the last voiced frame, until a silent run of
+        ``outlier_factor × median_gap`` frames (the same structural
+        threshold used by the outlier filter) is seen — that silent run
+        is the drift gap, and the trailing edge of the last voiced frame
+        before it is the real word end. Walking forward (not backward)
+        avoids stopping on the late MMS emission burst at ``orig_end``.
+        If no drift-sized silent run is found, the trim is a no-op.
 
         Returns ``{word_idx: (orig_end_sec, new_end_sec)}`` — absolute sec.
         """
@@ -574,61 +756,78 @@ class TorchCTCAligner:
                 "orig_end_sec": round(orig_end_sec, 3),
             })
 
-            # Excess-based trim (mirror of line-start):
-            #   excess = last_gap - median_gap
-            #   new_end_frames = spans[-1].end - excess
-            excess = last_gap - median_gap
-            new_end_frames = spans[-1].end - excess
-            new_end_sec = time_offset + new_end_frames * ratio
-
-            # RMS sanity check: the trimmed-off region [new_end_sec, orig_end_sec]
-            # should be MOSTLY silent. If most frames there are voiced, this is
-            # a sustained vocal note — skip the trim.
-            trim_rel_start = new_end_sec - time_offset
-            trim_rel_end = orig_end_sec - time_offset
-            ts_sample = max(0, int(trim_rel_start * _SAMPLE_RATE))
-            te_sample = min(len(audio_np), int(trim_rel_end * _SAMPLE_RATE))
-            if te_sample - ts_sample < frame_len_samples * 2:
-                continue
-            trim_segment = audio_np[ts_sample:te_sample]
-            trim_n = len(trim_segment) // frame_len_samples
-            if trim_n < 2:
-                continue
-            trim_frames = trim_segment[: trim_n * frame_len_samples].reshape(
-                trim_n, frame_len_samples,
-            )
-            trim_rms = np.sqrt((trim_frames ** 2).mean(axis=1))
-
-            # Voiced reference: peak RMS of word's head (first 200ms) — a more
-            # stable estimate of actual vocal energy than median, because
-            # peaks survive even with quiet plosives at word start.
+            # Voiced reference: peak RMS over the word's aligned region
+            # [spans[0].start, spans[-1].end] — known-voiced by construction.
             word_start_sec = time_offset + spans[0].start * ratio
-            head_rel = word_start_sec - time_offset
-            hs = max(0, int(head_rel * _SAMPLE_RATE))
-            he = min(len(audio_np), hs + int(0.2 * _SAMPLE_RATE))
-            head_seg = audio_np[hs:he]
-            head_n = len(head_seg) // frame_len_samples
-            if head_n == 0:
-                continue
-            head_frames_arr = head_seg[: head_n * frame_len_samples].reshape(
-                head_n, frame_len_samples,
+            ws = max(0, int((word_start_sec - time_offset) * _SAMPLE_RATE))
+            we = min(
+                len(audio_np),
+                int((orig_end_sec - time_offset) * _SAMPLE_RATE),
             )
-            head_rms = np.sqrt((head_frames_arr ** 2).mean(axis=1))
-            voiced_level = float(np.max(head_rms))
+            word_seg = audio_np[ws:we]
+            word_n = len(word_seg) // frame_len_samples
+            if word_n == 0:
+                continue
+            word_frames = word_seg[: word_n * frame_len_samples].reshape(
+                word_n, frame_len_samples,
+            )
+            word_rms = np.sqrt((word_frames ** 2).mean(axis=1))
+            voiced_level = float(word_rms.max())
             if voiced_level < 1e-6:
                 continue
-            silence_floor = voiced_level / 10.0  # 20 dB below peak voiced
+            silence_floor = voiced_level / 10.0  # -20 dB SNR
 
-            silent_frac = float((trim_rms < silence_floor).mean())
-            if silent_frac < 0.5:
-                # Majority of trimmed region is voiced → sustain, don't trim.
+            # Forward RMS walk across [prev_end_sec, orig_end_sec]. Track
+            # last voiced frame; break on the first silent run whose length
+            # matches the structural outlier threshold (drift). The late
+            # MMS emission burst sitting at orig_end is past this silent
+            # run and therefore ignored.
+            ss = max(0, int((prev_end_sec - time_offset) * _SAMPLE_RATE))
+            se = min(
+                len(audio_np),
+                int((orig_end_sec - time_offset) * _SAMPLE_RATE),
+            )
+            scan_seg = audio_np[ss:se]
+            scan_n = len(scan_seg) // frame_len_samples
+            if scan_n < 2:
+                continue
+            scan_frames = scan_seg[: scan_n * frame_len_samples].reshape(
+                scan_n, frame_len_samples,
+            )
+            scan_rms = np.sqrt((scan_frames ** 2).mean(axis=1))
+
+            # Drift-silence threshold tied to the same structural rule that
+            # flagged this word as an outlier: silent_run >= 2 × median_gap.
+            silent_run_threshold = max(
+                2, int(round(outlier_factor * ref_gap)),
+            )
+            silent_run = 0
+            last_voiced_idx = -1
+            for idx in range(scan_n):
+                if scan_rms[idx] >= silence_floor:
+                    last_voiced_idx = idx
+                    silent_run = 0
+                else:
+                    silent_run += 1
+                    if silent_run >= silent_run_threshold:
+                        break
+
+            if last_voiced_idx < 0:
+                # No voiced content at all in the window — leave orig_end.
                 continue
 
-            # Guard: don't cross into spans[-2] region.
-            min_allowed_sec = prev_end_sec + ratio
-            if new_end_sec < min_allowed_sec:
-                new_end_sec = min_allowed_sec
-            if new_end_sec >= orig_end_sec:
+            new_end_frame_in_scan = last_voiced_idx + 1
+
+            new_end_rel = (
+                ss + new_end_frame_in_scan * frame_len_samples
+            ) / _SAMPLE_RATE
+            new_end_sec = time_offset + new_end_rel
+
+            # Require at least one MMS frame of real trim, and don't cross
+            # into the previous phoneme span.
+            if new_end_sec >= orig_end_sec - ratio:
+                continue
+            if new_end_sec <= prev_end_sec + ratio:
                 continue
 
             adjustments[i] = (orig_end_sec, new_end_sec)
@@ -641,7 +840,6 @@ class TorchCTCAligner:
                 "orig_end_sec": round(orig_end_sec, 3),
                 "new_end_sec": round(new_end_sec, 3),
                 "shift_sec": round(new_end_sec - orig_end_sec, 3),
-                "silent_frac": round(silent_frac, 2),
                 "voiced_level_db": round(
                     20.0 * math.log10(voiced_level + 1e-10), 2,
                 ),
@@ -657,6 +855,148 @@ class TorchCTCAligner:
             considered=considered[:20],
         )
         return adjustments
+
+    # ------------------------------------------------------------------
+    # Internal: per-word forward sustain extension
+    # ------------------------------------------------------------------
+
+    def _compute_word_end_extensions(
+        self,
+        words: list[str],
+        word_spans: list,
+        ratio: float,
+        waveform: torch.Tensor,
+        time_offset: float,
+        end_adjustments: dict[int, tuple[float, float]],
+    ) -> dict[int, tuple[float, float]]:
+        """Extend word end forward while RMS stays voiced, capped by the
+        next word's onset (or track end for the last word).
+
+        MMS ``merge_tokens`` yields emission-only ~1-frame spans, so a
+        sustained final vowel (typical at line-end) closes at the
+        phoneme's attack frame. This routine walks the RMS envelope
+        forward from the original end until a silence floor transition,
+        with the next word's start as the natural upper bound.
+
+        Returns ``{word_idx: (orig_end_sec, new_end_sec)}`` (absolute sec).
+        """
+        import math
+
+        import numpy as np
+
+        audio_np = waveform.squeeze(0).cpu().numpy()
+        # Absolute time bound of available audio (waveform is already
+        # Silero-trimmed; its index 0 corresponds to ``time_offset``).
+        audio_end_sec = time_offset + len(audio_np) / _SAMPLE_RATE
+        frame_len_samples = int(0.02 * _SAMPLE_RATE)  # 20ms
+        frame_len_sec = frame_len_samples / _SAMPLE_RATE
+        required_silent = 2
+
+        extensions: dict[int, tuple[float, float]] = {}
+        debug_extended: list[dict] = []
+        considered_count = 0
+
+        n = min(len(words), len(word_spans))
+        for i in range(n):
+            spans = word_spans[i]
+            if not spans:
+                continue
+            # Mutual exclusion: if drift-trim fired, the last phoneme ends
+            # early (already trimmed). Extending would undo the trim.
+            if i in end_adjustments:
+                continue
+
+            orig_end_sec = time_offset + spans[-1].end * ratio
+
+            # Natural forward cap: next word's start (minus 1 alignment
+            # frame as margin) or audio end for the last word.
+            if i + 1 < n and word_spans[i + 1]:
+                next_start_sec = time_offset + word_spans[i + 1][0].start * ratio
+                forward_end_sec = next_start_sec - ratio
+            else:
+                forward_end_sec = audio_end_sec
+
+            if forward_end_sec - orig_end_sec < 2 * frame_len_sec:
+                continue
+
+            # Voiced reference: peak RMS across the word's own aligned
+            # region (known-voiced by construction).
+            word_start_sec = time_offset + spans[0].start * ratio
+            ws_sample = max(0, int((word_start_sec - time_offset) * _SAMPLE_RATE))
+            we_sample = min(len(audio_np), int((orig_end_sec - time_offset) * _SAMPLE_RATE))
+            word_seg = audio_np[ws_sample:we_sample]
+            word_frame_n = len(word_seg) // frame_len_samples
+            if word_frame_n == 0:
+                continue
+            word_frames = word_seg[: word_frame_n * frame_len_samples].reshape(
+                word_frame_n, frame_len_samples,
+            )
+            word_rms = np.sqrt((word_frames ** 2).mean(axis=1))
+            voiced_level = float(word_rms.max())
+            if voiced_level < 1e-6:
+                continue
+            silence_floor = voiced_level / 10.0  # -20 dB SNR
+
+            # Forward scan segment [orig_end_sec, forward_end_sec].
+            fs_sample = max(0, int((orig_end_sec - time_offset) * _SAMPLE_RATE))
+            fe_sample = min(len(audio_np), int((forward_end_sec - time_offset) * _SAMPLE_RATE))
+            scan_seg = audio_np[fs_sample:fe_sample]
+            scan_n = len(scan_seg) // frame_len_samples
+            if scan_n < 2:
+                continue
+            considered_count += 1
+            scan_frames = scan_seg[: scan_n * frame_len_samples].reshape(
+                scan_n, frame_len_samples,
+            )
+            scan_rms = np.sqrt((scan_frames ** 2).mean(axis=1))
+
+            last_voiced_idx = -1  # index within scan_rms
+            silent_run = 0
+            capped_by = "next_word"
+            for idx, energy in enumerate(scan_rms):
+                if energy >= silence_floor:
+                    last_voiced_idx = idx
+                    silent_run = 0
+                else:
+                    silent_run += 1
+                    if silent_run >= required_silent:
+                        capped_by = "silence"
+                        break
+
+            if last_voiced_idx < 0:
+                # Not a single voiced frame forward — MMS closed the word
+                # correctly at a silence boundary.
+                continue
+
+            # End of the last voiced frame (frame boundary in absolute sec).
+            new_end_rel = (
+                fs_sample + (last_voiced_idx + 1) * frame_len_samples
+            ) / _SAMPLE_RATE
+            new_end_sec = time_offset + new_end_rel
+
+            if new_end_sec <= orig_end_sec + ratio:
+                continue
+
+            extensions[i] = (orig_end_sec, new_end_sec)
+            debug_extended.append({
+                "word_idx": i,
+                "word": words[i][:30],
+                "orig_end_sec": round(orig_end_sec, 3),
+                "new_end_sec": round(new_end_sec, 3),
+                "shift_sec": round(new_end_sec - orig_end_sec, 3),
+                "capped_by": capped_by,
+                "voiced_level_db": round(
+                    20.0 * math.log10(voiced_level + 1e-10), 2,
+                ),
+            })
+
+        logger.info(
+            "ctc_word_end_extend",
+            extended_count=len(debug_extended),
+            considered_count=considered_count,
+            extended=debug_extended[:10],
+        )
+        return extensions
 
     # ------------------------------------------------------------------
     # Internal: audio loading
