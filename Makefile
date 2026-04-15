@@ -1,4 +1,4 @@
-.PHONY: help up-gpu down logs ps build-gpu test clean
+.PHONY: help up-gpu down logs ps build-gpu test test-alignment test-alignment-regen clean
 
 # Default compose files
 BASE   := docker-compose.yml
@@ -113,6 +113,14 @@ test: ## Run all unit tests
 
 test-quick: ## Run tests (fast, skip slow)
 	python -m pytest tests/ -x -q --ignore=tests/worker
+
+test-alignment: ## Run TorchCTCAligner adjustment regression tests (CPU, ~2s)
+	python -m pytest tests/worker/test_torch_ctc_aligner_adjustments.py \
+		--confcutdir=tests/worker -v
+
+test-alignment-regen: ## Regenerate alignment fixtures via worker container, then run tests (needs `make up-gpu`)
+	python -m pytest tests/worker/test_torch_ctc_aligner_adjustments.py \
+		--confcutdir=tests/worker --regen-fixtures -v
 
 # ---------------------------------------------------------------------------
 # Cleanup
