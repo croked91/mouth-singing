@@ -64,6 +64,28 @@ class WorkerSettings(BaseSettings):
     ctc_batch_size: int = 16
     """Batch size for generate_emissions (CPU has plenty of RAM)."""
 
+    # MMS (TorchCTCAligner) pre-trim via Silero VAD: skip intro ad-libs /
+    # inhales that would otherwise anchor the first word too early.
+    mms_pre_trim_enabled: bool = True
+    mms_pre_trim_threshold: float = 0.7
+    mms_pre_trim_min_speech_ms: int = 300
+    mms_pre_trim_lead_in_ms: int = 100
+    """Deprecated — no longer applied. Silero onset is refined via RMS
+    back-tracking (``_refine_silero_onset``) which adapts per-track
+    instead of using a fixed lead-in. Kept for .env backward compat."""
+
+    # Per-line RMS-dip adjustment: for every first-in-line word, search
+    # the natural window [prev_word_end, this_word_end] for a sandwich'ed
+    # RMS dip (local minimum bordered by louder peaks on both sides) and
+    # shift the word's start to the end of that dip. Fixes MMS anchoring
+    # to ad-libs/backing leakage.
+    mms_line_start_rms_adjust: bool = True
+
+    # Word-end drift adjustment: detect last phoneme spans that drift
+    # into silence (emission drift), validate via RMS back-track so
+    # legitimate vocal sustains are preserved.
+    mms_word_end_drift_adjust: bool = True
+
     # ------------------------------------------------------------------
     # Common: VAD
     # ------------------------------------------------------------------
@@ -71,7 +93,10 @@ class WorkerSettings(BaseSettings):
     vad_top_db: int = 16
 
     # ------------------------------------------------------------------
-    # GPU mode: UVR local separator
+    # GPU mode: UVR local separator (BS-Roformer ViperX ep_317 — vocals/instrumental)
+    # Revive 2 was evaluated but rejected: it cleans vocals too aggressively
+    # for Whisper (out-of-distribution) → transcription degrades and lyrics
+    # verifier picks the wrong song version.
     # ------------------------------------------------------------------
 
     uvr_model_name: str = "model_bs_roformer_ep_317_sdr_12.9755.ckpt"
@@ -79,6 +104,17 @@ class WorkerSettings(BaseSettings):
     uvr_chunk_batch_size: int = 2
     uvr_use_autocast: bool = True
     uvr_overlap: float = 8.0
+
+    # ------------------------------------------------------------------
+    # GPU mode: Back-vocal separator (Mel-Band RoFormer aufr33 — lead/backing)
+    # ------------------------------------------------------------------
+
+    back_vocal_enabled: bool = True
+    back_vocal_model_name: str = "mel_band_roformer_karaoke_aufr33_viperx_sdr_10.1956.ckpt"
+    back_vocal_torch_device: str = "cuda"
+    back_vocal_chunk_batch_size: int = 2
+    back_vocal_use_autocast: bool = True
+    back_vocal_overlap: float = 4.0
 
     # ------------------------------------------------------------------
     # GPU mode: faster-whisper local ASR

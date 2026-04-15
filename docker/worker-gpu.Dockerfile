@@ -45,6 +45,25 @@ RUN pip install --no-cache-dir \
     pyphen>=0.16 beautifulsoup4>=4.12 lxml>=5.0 pydantic-settings>=2.0 \
     "openai>=1.0"
 
+# Layer 6b: pre-download UVR + back-vocal checkpoints into image
+# Stored in /opt/models (read-only image layer); entrypoint symlinks them
+# into /data/models so the volume mount doesn't hide them.
+#   - UVR main (BS-Roformer ViperX ep_317): from TRvlvr GitHub release
+#   - Back-vocal (Mel-Band RoFormer aufr33 karaoke): from HuggingFace
+RUN mkdir -p /opt/models \
+    && wget -q -O /opt/models/model_bs_roformer_ep_317_sdr_12.9755.ckpt \
+        https://github.com/TRvlvr/model_repo/releases/download/all_public_uvr_models/model_bs_roformer_ep_317_sdr_12.9755.ckpt \
+    && python -c "\
+import shutil; \
+from huggingface_hub import hf_hub_download; \
+p = hf_hub_download(repo_id='jarredou/aufr33-viperx-karaoke-melroformer-model', filename='mel_band_roformer_karaoke_aufr33_viperx_sdr_10.1956.ckpt'); \
+shutil.copy(p, '/opt/models/mel_band_roformer_karaoke_aufr33_viperx_sdr_10.1956.ckpt'); \
+print('UVR + back-vocal checkpoints baked into image')"
+
+# Layer 6c: pre-cache Silero VAD (used by MMS pre-trim) so the first job
+# doesn't pay the torch.hub download on cold start.
+RUN python -c "import torch; torch.hub.load('snakers4/silero-vad', 'silero_vad', trust_repo=True)"
+
 # Layer 7: project code (changes here don't rebuild deps)
 COPY shared/karaoke_shared/ /shared/karaoke_shared/
 COPY worker/ /project/worker/

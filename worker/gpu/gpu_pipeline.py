@@ -1,12 +1,13 @@
 """GPU audio processing pipeline.
 
-Orchestrates the 7-step pipeline using local GPU hardware:
-  1. UVR separation (GPU, BS-Roformer)
-  2. VAD on vocals (CPU)
-  3. Whisper ASR (GPU, after VAD)
-  4. LLM lyrics search (API)
-  5+6. CTC alignment (GPU, torchaudio MMS_FA)
-  7. Line break detection (CPU)
+Orchestrates the 8-step pipeline using local GPU hardware:
+  1.  UVR separation (GPU, BS-Roformer — vocals/instrumental)
+  1b. Back-vocal separation (GPU, Mel-Band RoFormer aufr33 — lead/backing vocals)
+  2.  VAD on FULL vocals (CPU) — backing vocals help Whisper recognise the track
+  3.  Whisper ASR (GPU, on VAD-cleaned FULL vocals)
+  4.  LLM lyrics search (API)
+  5+6. CTC alignment (GPU, torchaudio MMS_FA on LEAD vocals — clean for forced alignment)
+  7.  Line break detection (CPU)
 
 Feature extraction, lyric embedding, and QDrant sync are handled by the
 separate Rec Service, triggered via a RabbitMQ message at finalization.
@@ -17,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import structlog
 
@@ -34,6 +36,9 @@ from worker.common.lyrics_searcher import LyricsSearchError
 from worker.common.vad_processor import VADProcessor
 from worker.gpu.uvr_separator import UVRSeparator
 from worker.gpu.whisper_transcriber import WhisperTranscriber
+
+if TYPE_CHECKING:
+    from worker.gpu.back_vocal_separator import BackVocalSeparator
 
 logger = structlog.get_logger(__name__)
 
@@ -66,9 +71,11 @@ class GpuPipeline(BasePipeline):
         storage: S3Storage,
         rmq: RabbitMQClient,
         settings: object | None = None,
+        back_vocal_separator: "BackVocalSeparator | None" = None,
     ) -> None:
         self.job_service = job_service
         self.uvr = uvr
+        self.back_vocal_separator = back_vocal_separator
         self.repo = repo
         self.whisper = whisper
         self.vad_processor = vad_processor
@@ -114,10 +121,39 @@ class GpuPipeline(BasePipeline):
                 )
             )
 
+            # ==============================================================
+            # STEP 1b: Back-vocal separation (lead vs backing vocals)
+            # ==============================================================
+            lead_vocals_path = vocals_path
+            if self.back_vocal_separator is not None:
+                try:
+                    lead_vocals_path, _backing_path = await asyncio.to_thread(
+                        self.back_vocal_separator.separate, vocals_path
+                    )
+                    logger.info(
+                        "back_vocal_separation_done",
+                        job_id=job.id,
+                        lead_vocals_path=lead_vocals_path,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception(
+                        "back_vocal_separation_failed_falling_back_to_full_vocals",
+                        job_id=job.id,
+                        error=str(exc),
+                    )
+                    lead_vocals_path = vocals_path
+                finally:
+                    await asyncio.to_thread(self.back_vocal_separator.cleanup)
+
             await self.job_service.mark_step(job.id, "separating", 100)
 
             # ==============================================================
             # STEPS 2+3: VAD + ASR (sequential, runs while upload proceeds)
+            # Runs on FULL vocals (not lead-only): Whisper benefits from
+            # backing vocals (repeated chorus lines, ad-libs) that help
+            # recognise the track. Lead-only was tried and produced a
+            # ~44% shorter transcript → lyrics verifier picked the wrong
+            # song version.
             # ==============================================================
             whisper_result, vad_segments = await self._vad_and_transcribe(
                 vocals_path,
@@ -176,7 +212,7 @@ class GpuPipeline(BasePipeline):
             # ==============================================================
             syllable_timings, align_stats = await asyncio.to_thread(
                 self.ctc_aligner.align,
-                vocals_path,
+                lead_vocals_path,
                 lyrics_result.lyrics,
                 lyrics_result.language,
             )
@@ -198,11 +234,18 @@ class GpuPipeline(BasePipeline):
             from karaoke_shared.utils.line_breaker import detect_line_breaks
 
             syllable_timings = await asyncio.to_thread(
-                detect_line_breaks, syllable_timings, vocals_path
+                detect_line_breaks, syllable_timings, lead_vocals_path
             )
 
             # Clean up vocal files after line break detection.
             Path(vocals_path).unlink(missing_ok=True)
+            if lead_vocals_path != vocals_path:
+                Path(lead_vocals_path).unlink(missing_ok=True)
+                # Backing vocal (separation residual) — safe to delete
+                backing_path = Path(lead_vocals_path).with_name(
+                    Path(lead_vocals_path).name.replace("_(Lead).wav", "_(Backing).wav")
+                )
+                backing_path.unlink(missing_ok=True)
             track_id_stem = Path(vocals_path).stem.split("_")[0]
             cleaned_path = (
                 Path(vocals_path).parent / f"cleaned_vocals_{track_id_stem}.wav"
@@ -282,8 +325,10 @@ class GpuPipeline(BasePipeline):
             await self.job_service.mark_permanently_failed(job.id, str(exc))
 
     def cleanup(self) -> None:
-        """Release GPU resources (UVR + Whisper + CTC models)."""
+        """Release GPU resources (UVR + BackVocal + Whisper + CTC models)."""
         self.uvr.cleanup()
+        if self.back_vocal_separator is not None:
+            self.back_vocal_separator.cleanup()
         self.whisper.cleanup()
         if hasattr(self.ctc_aligner, "cleanup"):
             self.ctc_aligner.cleanup()
@@ -369,9 +414,8 @@ class GpuPipeline(BasePipeline):
     ):
         """VAD + Whisper ASR (sequential).
 
-        Whisper runs on the ORIGINAL vocals (not VAD-cleaned) so that
-        word timestamps are in original audio time — no projection needed.
-        VAD-cleaned audio is no longer used for ASR.
+        VAD produces cleaned audio (silence removed).  Whisper runs on
+        the VAD-cleaned track so it only sees voiced segments.
 
         Returns:
             (WhisperResult, vad_segments) where vad_segments is a list of
