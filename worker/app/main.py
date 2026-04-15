@@ -39,6 +39,7 @@ def _build_gpu_pipeline(
     """Construct and return a GpuPipeline with all its components."""
     from worker.gpu.gpu_pipeline import GpuPipeline
     from worker.gpu.uvr_separator import UVRSeparator
+    from worker.gpu.back_vocal_separator import BackVocalSeparator
     from worker.gpu.whisper_transcriber import WhisperTranscriber
     from worker.common.vad_processor import VADProcessor
     from worker.gpu.torch_ctc_aligner import TorchCTCAligner
@@ -55,6 +56,19 @@ def _build_gpu_pipeline(
         chunk_batch_size=settings.uvr_chunk_batch_size,
         use_autocast=settings.uvr_use_autocast,
         overlap=settings.uvr_overlap,
+    )
+    back_vocal = (
+        BackVocalSeparator(
+            model_cache_dir=settings.model_cache_dir,
+            media_root=settings.media_root,
+            model_name=settings.back_vocal_model_name,
+            torch_device=settings.back_vocal_torch_device,
+            chunk_batch_size=settings.back_vocal_chunk_batch_size,
+            use_autocast=settings.back_vocal_use_autocast,
+            overlap=settings.back_vocal_overlap,
+        )
+        if settings.back_vocal_enabled
+        else None
     )
     whisper = WhisperTranscriber(
         model_size=settings.whisper_model_size,
@@ -124,11 +138,19 @@ def _build_gpu_pipeline(
     ctc_aligner = TorchCTCAligner(
         device="cuda",
         model_cache_dir=settings.model_cache_dir,
+        pre_trim_enabled=settings.mms_pre_trim_enabled,
+        pre_trim_threshold=settings.mms_pre_trim_threshold,
+        pre_trim_min_speech_ms=settings.mms_pre_trim_min_speech_ms,
+        pre_trim_lead_in_ms=settings.mms_pre_trim_lead_in_ms,
+        line_start_rms_adjust=settings.mms_line_start_rms_adjust,
+        word_end_drift_adjust=settings.mms_word_end_drift_adjust,
+        word_end_sustain_extend=settings.mms_word_end_sustain_extend,
     )
 
     return GpuPipeline(
         job_service=job_service,
         uvr=uvr,
+        back_vocal_separator=back_vocal,
         repo=repo,
         whisper=whisper,
         vad_processor=vad,
