@@ -32,6 +32,8 @@ const BASE_FONT_SIZE = 72;
 const MIN_FONT_SIZE = 28;
 const STYLE_TRANSITION = 'opacity 0.5s ease, filter 0.5s ease';
 const LINE_TRANSITION_MS = 600;
+const COUNTDOWN_BAR_WIDTH = 500;
+const MIN_GAP_FOR_COUNTDOWN_SEC = 5;
 
 
 // ─── Helper: group syllables into lines ───────────────────────────────────────
@@ -290,6 +292,136 @@ const ActiveLine: React.FC<ActiveLineProps> = ({ line, getCurrentTime, isPlaying
   );
 };
 
+// ─── GapCountdown — filling bar during intro & instrumental gaps ────────────
+
+interface GapInterval {
+  start: number;
+  end: number;
+}
+
+function buildGapIntervals(lines: LyricLine[]): GapInterval[] {
+  if (lines.length === 0) return [];
+  const gaps: GapInterval[] = [];
+
+  // Intro: from 0 to first syllable (any duration)
+  if (lines[0].startTime > 0.1) {
+    gaps.push({ start: 0, end: lines[0].startTime });
+  }
+
+  // Inter-line gaps ≥ MIN_GAP_FOR_COUNTDOWN_SEC
+  for (let i = 0; i < lines.length - 1; i++) {
+    const gapStart = lines[i].endTime;
+    const gapEnd = lines[i + 1].startTime;
+    if (gapEnd - gapStart >= MIN_GAP_FOR_COUNTDOWN_SEC) {
+      gaps.push({ start: gapStart, end: gapEnd });
+    }
+  }
+
+  return gaps;
+}
+
+interface GapCountdownProps {
+  gaps: GapInterval[];
+  getCurrentTime: () => number;
+  isPlaying: boolean;
+}
+
+const GapCountdown: React.FC<GapCountdownProps> = ({
+  gaps,
+  getCurrentTime,
+  isPlaying,
+}) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const barRef = useRef<HTMLDivElement>(null);
+  const rafRef = useRef<number | null>(null);
+
+  const update = useCallback(() => {
+    const t = getCurrentTime();
+
+    // Find active gap
+    let activeGap: GapInterval | null = null;
+    for (const gap of gaps) {
+      if (t >= gap.start && t < gap.end) {
+        activeGap = gap;
+        break;
+      }
+    }
+
+    if (containerRef.current) {
+      containerRef.current.style.opacity = activeGap ? '1' : '0';
+    }
+    if (barRef.current) {
+      if (activeGap) {
+        const duration = activeGap.end - activeGap.start;
+        const elapsed = t - activeGap.start;
+        const fillPct = Math.min(100, (elapsed / duration) * 100);
+        barRef.current.style.width = `${fillPct}%`;
+      }
+    }
+
+    if (isPlaying) {
+      rafRef.current = requestAnimationFrame(update);
+    }
+  }, [gaps, getCurrentTime, isPlaying]);
+
+  useEffect(() => {
+    update();
+    if (isPlaying) {
+      rafRef.current = requestAnimationFrame(update);
+    }
+    return () => {
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+    };
+  }, [update, isPlaying]);
+
+  useEffect(() => {
+    if (!isPlaying) {
+      update();
+    }
+  }, [isPlaying, update]);
+
+  return (
+    <Box
+      ref={containerRef}
+      sx={{
+        position: 'absolute',
+        left: '50%',
+        top: '15%',
+        transform: 'translateX(-50%)',
+        zIndex: 10,
+        opacity: 0,
+        transition: 'opacity 0.3s ease',
+        pointerEvents: 'none',
+      }}
+    >
+      <Box
+        sx={{
+          width: COUNTDOWN_BAR_WIDTH,
+          height: 4,
+          borderRadius: 2,
+          backgroundColor: 'rgba(255,255,255,0.2)',
+          overflow: 'hidden',
+        }}
+      >
+        <Box
+          ref={barRef}
+          sx={{
+            height: '100%',
+            width: '0%',
+            background: 'linear-gradient(90deg, #7C3AED, #06B6D4)',
+            boxShadow: '0 0 8px rgba(124,58,237,0.5)',
+            borderRadius: 2,
+            transition: 'none',
+          }}
+        />
+      </Box>
+    </Box>
+  );
+};
+
 // ─── StaticLine — non-active line ────────────────────────────────────────────
 
 interface StaticLineProps {
@@ -448,6 +580,8 @@ export const LyricHighlight: React.FC<LyricHighlightProps> = ({
     );
   }
 
+  const gapIntervals = useRef<GapInterval[]>(buildGapIntervals(lines)).current;
+
   const lineStyle = {
     fontSize: `${fittedFontSize}px`,
     lineHeight: 1.15,
@@ -470,6 +604,13 @@ export const LyricHighlight: React.FC<LyricHighlightProps> = ({
         position: 'relative',
       }}
     >
+      {gapIntervals.length > 0 && (
+        <GapCountdown
+          gaps={gapIntervals}
+          getCurrentTime={getCurrentTime}
+          isPlaying={isPlaying}
+        />
+      )}
       <Box
         ref={innerRef}
         sx={{
