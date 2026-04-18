@@ -27,6 +27,13 @@ dependencies = [
     "openai>=1.0",
     "beautifulsoup4>=4.12",
     "lxml>=5.0",
+
+    # Lyrics matching (algorithmic ASR↔candidate scoring)
+    "pymorphy3==2.0.4",
+    "pymorphy3-dicts-ru==2.4.417150.4580142",
+    "snowballstemmer==2.2.0",
+    "jellyfish==1.1.0",
+    "rapidfuzz==3.10.1",
 ]
 
 [project.optional-dependencies]

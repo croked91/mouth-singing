@@ -45,9 +45,10 @@ def _build_gpu_pipeline(
     from worker.gpu.torch_ctc_aligner import TorchCTCAligner
     from worker.common.lyrics_agent import LyricsAgent
     from worker.common.lyrics import LyricsProviderChain
+    from worker.common.lyrics.filename_parser import FilenameParser
+    from worker.common.lyrics.matching import LyricsExpander, LyricsMatcher
     from worker.common.lyrics.providers.lrclib import LRCLibProvider
     from worker.common.lyrics.providers.lyricsovh import LyricsOvhProvider
-    from worker.common.lyrics.verifier import LyricsVerifier
 
     uvr = UVRSeparator(
         model_cache_dir=settings.model_cache_dir,
@@ -95,13 +96,24 @@ def _build_gpu_pipeline(
         LyricsOvhProvider(timeout=provider_timeout),
     ]
 
-    verifier = (
-        LyricsVerifier(
+    filename_parser = (
+        FilenameParser(
             deepseek_api_key=settings.deepseek_api_key,
             model=settings.deepseek_model,
         )
         if settings.deepseek_api_key
         else None
+    )
+
+    expander = LyricsExpander(
+        deepseek_api_key=settings.deepseek_api_key or None,
+        model=settings.deepseek_model,
+    )
+
+    matcher = LyricsMatcher(
+        expander=expander,
+        deepseek_api_key=settings.deepseek_api_key or None,
+        model=settings.deepseek_model,
     )
 
     fallback_agent = None
@@ -123,7 +135,8 @@ def _build_gpu_pipeline(
     lyrics_searcher = LyricsProviderChain(
         text_providers=text_providers,
         metadata_providers=metadata_providers,
-        verifier=verifier,
+        matcher=matcher,
+        filename_parser=filename_parser,
         fallback_agent=fallback_agent,
         search_fragments=settings.lyrics_search_fragments,
     )
@@ -131,7 +144,8 @@ def _build_gpu_pipeline(
         "lyrics_chain_enabled",
         text_providers=[p.name for p in text_providers],
         metadata_providers=[p.name for p in metadata_providers],
-        has_verifier=verifier is not None,
+        has_matcher=matcher is not None,
+        has_filename_parser=filename_parser is not None,
         has_fallback=fallback_agent is not None,
     )
 

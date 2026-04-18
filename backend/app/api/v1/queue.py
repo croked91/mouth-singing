@@ -72,6 +72,7 @@ class StartPlayingResponse(BaseModel):
     duration_sec: int | None
     title: str | None = None
     artist: str | None = None
+    lyrics_source: str | None = None
 
 
 class FinishPlayingResponse(BaseModel):
@@ -242,6 +243,7 @@ async def start_playing(
         duration_sec=track.duration_sec if track else None,
         title=track.title if track else None,
         artist=track.artist if track else None,
+        lyrics_source=track.lyrics_source if track else None,
     )
 
 
@@ -328,6 +330,7 @@ async def direct_play(
         duration_sec=track.duration_sec if track else None,
         title=track.title if track else None,
         artist=track.artist if track else None,
+        lyrics_source=track.lyrics_source if track else None,
     )
 
 

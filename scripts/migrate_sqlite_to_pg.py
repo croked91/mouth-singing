@@ -27,8 +27,25 @@ import asyncio
 import json
 import sqlite3
 import sys
+from datetime import datetime, timezone
 
 import asyncpg
+
+
+def _parse_ts(val: str | None) -> datetime | None:
+    """Parse ISO timestamp string from SQLite into datetime."""
+    if not val:
+        return None
+    # Handle various ISO formats from SQLite
+    val = val.strip()
+    try:
+        return datetime.fromisoformat(val)
+    except ValueError:
+        pass
+    # Fallback: strip trailing Z
+    if val.endswith("Z"):
+        return datetime.fromisoformat(val[:-1]).replace(tzinfo=timezone.utc)
+    return None
 
 
 _BATCH_SIZE = 500
@@ -79,10 +96,15 @@ async def _migrate(conn: sqlite3.Connection, pool: asyncpg.Pool, dry_run: bool) 
                         instr_path = rd.get("instrumental_path")
                         instrumental_key = None
                         if instr_path:
-                            # /data/media/instrumental/UUID_..._model.mp3 → instrumentals/UUID.mp3
+                            # /data/media/instrumental/UUID_(Instrumental)_model.mp3 → instrumentals/UUID.mp3
                             fname = instr_path.rsplit("/", 1)[-1]
-                            track_uuid = fname.split("_")[0] if "_" in fname else fname.replace(".mp3", "")
+                            track_uuid = fname.split("_(")[0] if "_(" in fname else fname.replace(".mp3", "")
                             instrumental_key = f"instrumentals/{track_uuid}.mp3"
+
+                        # Strip null bytes (PostgreSQL rejects \x00 in text)
+                        for k in ("lyrics_text", "artist", "title", "error_message"):
+                            if rd.get(k) and "\x00" in rd[k]:
+                                rd[k] = rd[k].replace("\x00", "")
 
                         # Parse syllable_timings from JSON text → dict for JSONB
                         timings = rd.get("syllable_timings")
@@ -107,11 +129,11 @@ async def _migrate(conn: sqlite3.Connection, pool: asyncpg.Pool, dry_run: bool) 
                             rd.get("qdrant_synced", 0),
                             rd.get("popularity_category", "regular"),
                             rd.get("chart_count", 0),
-                            rd.get("chart_last_seen"),
+                            _parse_ts(rd.get("chart_last_seen")),
                             rd.get("catalog_cluster_id"),
                             rd.get("rec_cluster_id"),
-                            rd["created_at"],
-                            rd["updated_at"],
+                            _parse_ts(rd["created_at"]),
+                            _parse_ts(rd["updated_at"]),
                         ))
 
                     await pg.executemany(
@@ -127,8 +149,7 @@ async def _migrate(conn: sqlite3.Connection, pool: asyncpg.Pool, dry_run: bool) 
                             $6, $7::jsonb, $8, $9, $10,
                             $11, $12, $13, $14,
                             $15, $16::timestamptz, $17, $18,
-                            $19::timestamptz, $20::timestamptz
-                        )
+                            $19::timestamptz, $20                        )
                         """,
                         records,
                     )
@@ -160,8 +181,8 @@ async def _migrate(conn: sqlite3.Connection, pool: asyncpg.Pool, dry_run: bool) 
                 print(f"  WARNING: already has {existing} rows, skipping.")
             else:
                 records = [
-                    (r["name"], r.get("image_path"), r.get("source"),
-                     r["created_at"], r["updated_at"])
+                    (r["name"], r["image_path"], r["source"],
+                     _parse_ts(r["created_at"]), _parse_ts(r["updated_at"]))
                     for r in rows
                 ]
                 await pg.executemany(
@@ -194,8 +215,8 @@ async def _migrate(conn: sqlite3.Connection, pool: asyncpg.Pool, dry_run: bool) 
                         r["centroid_audio"],  # already JSON string
                         r["centroid_lyrics"],
                         r["track_count"],
-                        r["created_at"],
-                        r["updated_at"],
+                        _parse_ts(r["created_at"]),
+                        _parse_ts(r["updated_at"]),
                     )
                 # Reset sequence to max id + 1
                 await pg.execute(
@@ -219,7 +240,7 @@ async def _migrate(conn: sqlite3.Connection, pool: asyncpg.Pool, dry_run: bool) 
                         INSERT INTO mood_tags (id, name, cluster_id, created_at)
                         VALUES ($1, $2, $3, $4::timestamptz)
                         """,
-                        r["id"], r["name"], r["cluster_id"], r["created_at"],
+                        r["id"], r["name"], r["cluster_id"], _parse_ts(r["created_at"]),
                     )
                 await pg.execute(
                     "SELECT setval('mood_tags_id_seq', (SELECT COALESCE(MAX(id), 0) FROM mood_tags))"
@@ -238,7 +259,7 @@ async def _migrate(conn: sqlite3.Connection, pool: asyncpg.Pool, dry_run: bool) 
             else:
                 records = [
                     (r["id"], r["session_id"], r["participant_id"],
-                     r["track_id"], r["played_at"], r.get("completed", 0))
+                     r["track_id"], _parse_ts(r["played_at"]), r["completed"] if "completed" in r.keys() else 0)
                     for r in rows
                 ]
                 await pg.executemany(

@@ -35,7 +35,7 @@ class WorkerSettings(BaseSettings):
     log_level: str = "INFO"
 
     # ------------------------------------------------------------------
-    # Common: lyrics search (providers + DeepSeek verifier + agent fallback)
+    # Common: lyrics search (providers + algorithmic matcher + agent fallback)
     # ------------------------------------------------------------------
 
     deepseek_api_key: str = ""
@@ -103,7 +103,7 @@ class WorkerSettings(BaseSettings):
     # GPU mode: UVR local separator (BS-Roformer ViperX ep_317 — vocals/instrumental)
     # Revive 2 was evaluated but rejected: it cleans vocals too aggressively
     # for Whisper (out-of-distribution) → transcription degrades and lyrics
-    # verifier picks the wrong song version.
+    # matcher picks the wrong song version.
     # ------------------------------------------------------------------
 
     uvr_model_name: str = "model_bs_roformer_ep_317_sdr_12.9755.ckpt"

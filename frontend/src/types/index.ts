@@ -140,6 +140,7 @@ export interface StartPlayingResponse {
   duration_sec: number | null;
   title: string | null;
   artist: string | null;
+  lyrics_source: string | null;
 }
 
 export interface FinishPlayingResponse {

@@ -2,7 +2,7 @@
 
 Schema reference:
 - tracks: id, artist, title, duration_sec, instrumental_key,
-  lyrics_text, syllable_timings (JSONB), language, source,
+  lyrics_text, lyrics_source, syllable_timings (JSONB), language, source,
   status, error_message, play_count, qdrant_synced, created_at, updated_at
 """
 
@@ -13,7 +13,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
-from karaoke_shared.constants import PopularityCategory, TrackSource, TrackStatus
+from karaoke_shared.constants import PopularityCategory, TrackStatus
 
 
 class SyllableTiming(BaseModel):
@@ -33,6 +33,7 @@ class Track(BaseModel):
     duration_sec: int | None = None
     instrumental_key: str | None = None
     lyrics_text: str | None = None
+    lyrics_source: str | None = None
     syllable_timings: list[SyllableTiming] | None = None
     language: str | None = None
     source: str
@@ -58,6 +59,7 @@ class TrackCreate(BaseModel):
     duration_sec: int | None = None
     instrumental_key: str | None = None
     lyrics_text: str | None = None
+    lyrics_source: str | None = None
     syllable_timings: list[SyllableTiming] | None = None
     language: str | None = None
     id: str = Field(default_factory=lambda: str(uuid4()))
@@ -88,6 +90,7 @@ class TrackUpdate(BaseModel):
     duration_sec: int | None = None
     instrumental_key: str | None = None
     lyrics_text: str | None = None
+    lyrics_source: str | None = None
     syllable_timings: list[SyllableTiming] | None = None
     language: str | None = None
     source: str | None = None

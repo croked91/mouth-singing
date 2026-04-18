@@ -1,9 +1,9 @@
-"""Lyrics search agent using DeepSeek LLM with web search.
+"""Lyrics search agent — collects 1-3 raw lyrics candidates from the web.
 
-Uses an agentic tool-calling loop: the LLM can invoke web_search
-(SearXNG primary, Yandex fallback) and fetch_webpage (httpx + BeautifulSoup)
-to find original lyrics online, then returns a structured JSON with
-artist, title, and lyrics.
+Uses an agentic tool-calling loop: the LLM can invoke ``web_search`` (SearXNG
+primary, Yandex fallback) and ``fetch_webpage`` (httpx + BeautifulSoup) to
+find pages that look like the song's lyrics. It returns a JSON array of
+candidates — selection between them is the matcher's job, not the agent's.
 """
 
 from __future__ import annotations
@@ -20,12 +20,10 @@ import structlog
 from bs4 import BeautifulSoup
 from openai import OpenAI
 
+from worker.common.lyrics.base_provider import LyricsCandidate
 from worker.common.lyrics_searcher import (
     LyricsAPIError,
-    LyricsNotFoundError,
-    LyricsResult,
     LyricsSearchError,
-    clean_lyrics,
 )
 
 logger = structlog.get_logger(__name__)
@@ -33,54 +31,50 @@ logger = structlog.get_logger(__name__)
 _YANDEX_SEARCH_URL = "https://searchapi.api.cloud.yandex.net/v2/web/search"
 
 _SYSTEM_PROMPT = """\
-Ты — бот для поиска текстов песен. На вход приходит приблизительная расшифровка \
-от Whisper (с ошибками). Найди оригинал в интернете через web_search и \
-fetch_webpage.
+Ты — бот для поиска текстов песен. На вход — приблизительная расшифровка \
+от Whisper (с ошибками) и опциональные подсказки artist/title.
 
-Правила поиска:
-- Whisper искажает слова. ИСПРАВЬ очевидные ошибки перед поиском.
-- Начинай с ПРОСТОГО запроса: 2-3 ключевых слова + "текст песни" (или "lyrics" \
-  для английских песен).
-- НЕ ставь больше одной фразы в кавычках. Длинные фразы в кавычках НЕ работают.
-- Загружай 2-3 страницы с текстами, сравни с входным — выбери ту, где \
-  совпадают фразы.
-- Если текст на странице не совпадает — пробуй другие ссылки.
-- Если после 3-4 попыток ничего не нашёл — ответь ровно: текст не найден
+Твоя задача — найти в интернете 1-3 страницы с предполагаемым текстом этой \
+песни и вернуть сырое содержимое. ВЫБИРАТЬ лучший вариант — НЕ твоя задача, \
+это сделают позже.
 
-Формат ответа:
-Верни JSON-объект с тремя полями:
-{"artist": "каноническое имя исполнителя", "title": "каноническое название \
-песни", "lyrics": "полный текст песни"}
+ОБЯЗАТЕЛЬНЫЙ АЛГОРИТМ (нарушение → tool вернёт ошибку):
+1. web_search с КОРОТКИМ запросом (2-4 слова: артист + название + "текст").
+2. fetch_webpage самой релевантной ссылки из результатов поиска.
+3. Анализ текста на странице.
+4. Если страница содержит подходящий текст — добавь её в финальный JSON.
+5. Если нет — повтори с шага 1 с другой формулировкой.
 
-Правила для текста:
-- Полный текст от первой до последней строки.
-- Куплеты разделяй пустой строкой.
-- Без аккордов и пометок [Куплет]/[Припев]/[Verse]/[Chorus].
-- Без комментариев, заголовков или пояснений ВНЕ JSON.
+ЗАПРЕЩЕНО:
+- Делать 2 web_search подряд без fetch_webpage между ними.
+- Оборачивать в кавычки фразы длиннее 3 слов. Whisper искажает слова, \
+exact match по длинной фразе почти никогда не сработает. Кавычки используй \
+ТОЛЬКО для anchor'ов: имя артиста, название песни, отдельное редкое слово.
 
-## Пример
+ПОДСКАЗКИ ПО ЗАПРОСАМ:
+- Если в подсказках имя артиста выглядит транслитерированным или необычным, \
+попробуй и оригинальное написание (как может быть в имени файла), и каноническое.
+- Начинай с самого простого: `<artist> <title> текст песни` (для русских) \
+или `<artist> <title> lyrics` (для английских).
 
-ВХОД:
-белые розы белые розы беззащитный шипы сердца колючие что с ними \
-сделаешь дни пролетая словно стрелой поп отчего так бывает
+Формат ответа — строго JSON-массив (НЕ объект):
+[
+  {"artist": "имя артиста", "title": "название", "lyrics": "сырой текст со страницы"},
+  {"artist": "...", "title": "...", "lyrics": "..."}
+]
 
-ВЫХОД:
-{"artist": "Ласковый май", "title": "Белые розы", "lyrics": "Белые розы, \
-белые розы\\nБеззащитны шипы\\nЧто с ними сделаешь\\nЧто с ними сделаешь\\n\\n\
-Дни пролетали, словно стрелой\\nНо отчего так бывает\\nПадает вниз белый, \
-белый цветок\\nИ на землю тихо ложатся\\nЛепестки увядших цветов"}
+Правила для каждого кандидата:
+- "lyrics" — основной текст со страницы (можно с маркерами [Куплет] / [Chorus]).
+- НЕ нужно чистить аккорды или маркеры — это сделают далее.
+- Если ничего не нашёл — верни пустой массив [].
 """
-
-_METADATA_PROMPT = """\
-Определи исполнителя и название песни по тексту. \
-Верни ТОЛЬКО JSON: {"artist": "...", "title": "..."}"""
 
 _TOOLS = [
     {
         "type": "function",
         "function": {
             "name": "web_search",
-            "description": "Поиск в интернете. Используй для поиска текстов песен.",
+            "description": "Поиск в интернете. Возвращает релевантные ссылки.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -98,8 +92,7 @@ _TOOLS = [
         "function": {
             "name": "fetch_webpage",
             "description": (
-                "Загрузить веб-страницу и извлечь текстовое содержимое. "
-                "Используй после web_search, чтобы получить полный текст со страницы."
+                "Загрузить веб-страницу и извлечь текстовое содержимое."
             ),
             "parameters": {
                 "type": "object",
@@ -115,12 +108,27 @@ _TOOLS = [
     },
 ]
 
-_NOT_FOUND_MARKERS = ("текст не найден", "lyrics not found", "not found")
-
 _BROWSER_UA = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
+
+# Max words allowed inside any "..." quoted fragment in a search query.
+# Whisper-distorted long phrases almost never match in exact mode; short
+# anchors (artist, title, rare keyword) is what works.
+_MAX_WORDS_PER_QUOTED_PHRASE = 3
+
+# Max consecutive web_search calls before agent is forced to fetch_webpage.
+_MAX_CONSECUTIVE_SEARCHES = 2
+
+
+def _quoted_phrase_too_long(query: str) -> str | None:
+    """Return offending phrase if any "..." in query has > N words, else None."""
+    for match in re.finditer(r'"([^"]*)"', query):
+        phrase = match.group(1).strip()
+        if len(phrase.split()) > _MAX_WORDS_PER_QUOTED_PHRASE:
+            return phrase
+    return None
 
 
 # ======================================================================
@@ -133,7 +141,6 @@ def _searxng_search(
     base_url: str,
     timeout: float,
 ) -> list[dict] | None:
-    """Search via self-hosted SearXNG. Returns list of results or None on error."""
     try:
         response = httpx.get(
             f"{base_url}/search",
@@ -147,7 +154,6 @@ def _searxng_search(
         )
         response.raise_for_status()
         data = response.json()
-
         results = []
         for item in data.get("results", [])[:10]:
             results.append({
@@ -155,7 +161,6 @@ def _searxng_search(
                 "href": item.get("url", ""),
                 "body": item.get("content", ""),
             })
-
         return results
     except Exception as exc:
         logger.warning("searxng_search_failed", error=str(exc))
@@ -168,7 +173,6 @@ def _yandex_search(
     folder_id: str,
     timeout: float,
 ) -> list[dict] | None:
-    """Search via Yandex Search API. Returns list of results or None on error."""
     try:
         response = httpx.post(
             _YANDEX_SEARCH_URL,
@@ -196,10 +200,8 @@ def _yandex_search(
             timeout=timeout,
         )
         response.raise_for_status()
-
         raw_xml = base64.b64decode(response.json()["rawData"]).decode("utf-8")
         root = ET.fromstring(raw_xml)
-
         results = []
         for doc in root.findall(".//{*}doc"):
             url_el = doc.find("{*}url")
@@ -219,7 +221,6 @@ def _yandex_search(
                         else ""
                     ),
                 })
-
         return results if results else None
     except Exception as exc:
         logger.warning("yandex_search_failed", error=str(exc))
@@ -228,31 +229,58 @@ def _yandex_search(
 
 def _web_search(
     query: str,
-    api_key: str,
-    folder_id: str,
-    timeout: float,
+    backend: str,
+    api_key: str = "",
+    folder_id: str = "",
+    timeout: float = 15.0,
     searxng_url: str | None = None,
 ) -> str:
-    """Search the web: try SearXNG first, fall back to Yandex."""
-    # 1. Try SearXNG (self-hosted, free)
-    if searxng_url:
+    """Query exactly one backend.
+
+    The orchestrator (:class:`LyricsAgent.search`) drives backend choice
+    sequentially: first pass uses SearXNG only; if the agent returns no
+    candidates, a second pass is launched against Yandex.
+    """
+    bad_phrase = _quoted_phrase_too_long(query)
+    if bad_phrase is not None:
+        logger.info("web_search_rejected_long_quote", phrase=bad_phrase[:80])
+        return json.dumps(
+            {
+                "error": (
+                    f"Кавычная фраза \"{bad_phrase}\" слишком длинная "
+                    f"(max {_MAX_WORDS_PER_QUOTED_PHRASE} слова). "
+                    "Используй короткие quotes из 1-3 ключевых слов "
+                    "(имя артиста, название, отдельное редкое слово)."
+                )
+            },
+            ensure_ascii=False,
+        )
+
+    if backend == "searxng":
+        if not searxng_url:
+            return json.dumps(
+                {"error": "SearXNG backend not configured"}, ensure_ascii=False,
+            )
         results = _searxng_search(query, searxng_url, timeout)
-        if results:
-            logger.debug("web_search_via", backend="searxng", count=len(results))
-            return json.dumps(results, ensure_ascii=False)
-
-    # 2. Fallback to Yandex Search API
-    if api_key and folder_id:
+    elif backend == "yandex":
+        if not (api_key and folder_id):
+            return json.dumps(
+                {"error": "Yandex Search backend not configured"}, ensure_ascii=False,
+            )
         results = _yandex_search(query, api_key, folder_id, timeout)
-        if results:
-            logger.debug("web_search_via", backend="yandex", count=len(results))
-            return json.dumps(results, ensure_ascii=False)
+    else:
+        return json.dumps(
+            {"error": f"Unknown backend: {backend}"}, ensure_ascii=False,
+        )
 
-    return json.dumps({"error": "Ничего не найдено"}, ensure_ascii=False)
+    if not results:
+        return json.dumps({"error": "Ничего не найдено"}, ensure_ascii=False)
+
+    logger.debug("web_search_via", backend=backend, count=len(results))
+    return json.dumps(results, ensure_ascii=False)
 
 
 def _fetch_webpage(url: str, timeout: float) -> str:
-    """Fetch a web page and extract text content."""
     try:
         response = httpx.get(
             url,
@@ -262,17 +290,13 @@ def _fetch_webpage(url: str, timeout: float) -> str:
         )
         response.raise_for_status()
         soup = BeautifulSoup(response.text, "html.parser")
-
         for tag in soup(
             ["script", "style", "nav", "header", "footer", "aside", "iframe", "noscript"]
         ):
             tag.decompose()
-
         text = soup.get_text(separator="\n", strip=True)
-
         if len(text) > 12000:
             text = text[:12000] + "\n...[обрезано]"
-
         return text
     except Exception as e:
         return json.dumps({"error": str(e)}, ensure_ascii=False)
@@ -284,10 +308,9 @@ def _fetch_webpage(url: str, timeout: float) -> str:
 
 
 class LyricsAgent:
-    """Agent-based lyrics searcher using DeepSeek LLM + Yandex Search.
+    """Web-search agent that returns candidate lyrics for the matcher.
 
-    Drop-in replacement for LyricsSearcher — same async ``search()``
-    interface returning ``LyricsResult``.
+    Selection between candidates is delegated to ``LyricsMatcher``.
     """
 
     def __init__(
@@ -296,7 +319,7 @@ class LyricsAgent:
         yandex_search_api_key: str = "",
         yandex_search_folder_id: str = "",
         model: str = "deepseek-chat",
-        max_iterations: int = 15,
+        max_iterations: int = 20,
         timeout: float = 15.0,
         searxng_url: str | None = None,
     ) -> None:
@@ -314,86 +337,99 @@ class LyricsAgent:
         detected_language: str,
         artist_hint: str | None = None,
         title_hint: str | None = None,
-    ) -> LyricsResult:
-        """Search for song lyrics using an agentic tool-calling loop.
+        artist_alts: list[str] | None = None,
+        title_alts: list[str] | None = None,
+    ) -> list[LyricsCandidate]:
+        """Return up to ~3 raw candidate lyrics from web search.
 
-        Raises:
-            LyricsNotFoundError: If the agent could not find lyrics.
-            LyricsAPIError: If API requests fail.
+        ``artist_alts`` / ``title_alts`` provide alternative spellings (e.g.
+        Latin transliteration alongside canonical Cyrillic) which help the
+        agent retry with a different form when the primary hint doesn't
+        find the song.
+
+        Raises ``LyricsAPIError`` on API failures. Returns an empty list (not
+        raises) if the agent finished but found nothing.
         """
         user_parts = [f"Расшифровка Whisper (с ошибками):\n{asr_text}"]
         if detected_language:
             user_parts.append(f"Язык: {detected_language}")
         if artist_hint:
             user_parts.append(f"Подсказка исполнителя: {artist_hint}")
+        if artist_alts:
+            user_parts.append(
+                "Альтернативные написания исполнителя (пробуй ОБА варианта "
+                f"в разных запросах): {', '.join(artist_alts)}"
+            )
         if title_hint:
             user_parts.append(f"Подсказка названия: {title_hint}")
-
+        if title_alts:
+            user_parts.append(
+                "Альтернативные написания названия (пробуй ОБА варианта в "
+                f"разных запросах): {', '.join(title_alts)}"
+            )
         user_message = "\n".join(user_parts)
 
-        logger.info("lyrics_search_starting")
+        # Sequential two-pass: SearXNG first (free, broad), then Yandex
+        # (paid, Russian-content advantage) only if the first pass returned
+        # nothing usable. This conserves Yandex API quota.
+        backends_to_try: list[str] = []
+        if self._searxng_url:
+            backends_to_try.append("searxng")
+        if self._yandex_api_key and self._yandex_folder_id:
+            backends_to_try.append("yandex")
+        if not backends_to_try:
+            logger.warning("lyrics_agent_no_backends_configured")
+            return []
+
+        logger.info("lyrics_agent_starting", backends=backends_to_try)
         t0 = time.monotonic()
 
-        try:
-            raw_response = await asyncio.to_thread(
-                self._run_agent, user_message,
-            )
-        except LyricsSearchError:
-            raise
-        except Exception as exc:
-            raise LyricsAPIError(f"Lyrics agent error: {exc}") from exc
-
-        if not raw_response or raw_response.strip().lower() in _NOT_FOUND_MARKERS:
-            raise LyricsNotFoundError("Agent could not find lyrics")
-
-        # Try parsing structured JSON response
-        artist, title, lyrics = self._parse_agent_response(
-            raw_response, artist_hint, title_hint,
-        )
-
-        if not lyrics or len(lyrics) < 20:
-            raise LyricsNotFoundError("Agent returned empty or very short lyrics")
-
-        # Fallback metadata extraction if agent didn't return artist/title
-        if not artist or not title:
-            try:
-                artist, title = await asyncio.to_thread(
-                    self._extract_metadata,
-                    lyrics,
-                    asr_text,
-                    artist_hint,
-                    title_hint,
+        candidates: list[LyricsCandidate] = []
+        for i, backend in enumerate(backends_to_try):
+            pass_message = user_message
+            if i > 0:
+                prior = backends_to_try[i - 1]
+                pass_message += (
+                    f"\n\n[Системная подсказка: предыдущая попытка через "
+                    f"{prior} НЕ нашла подходящего текста. Сейчас активен "
+                    f"{backend} — попробуй другие формулировки запросов "
+                    "(возможно, изменив транслитерацию или ключевые слова).]"
                 )
-            except Exception:
-                logger.warning("metadata_extraction_failed")
-                artist = artist or artist_hint or "Unknown"
-                title = title or title_hint or "Unknown"
 
-        lyrics = clean_lyrics(lyrics)
+            logger.info("lyrics_agent_pass_starting", backend=backend, pass_idx=i + 1)
+            t_pass = time.monotonic()
+
+            try:
+                raw_response = await asyncio.to_thread(
+                    self._run_agent, pass_message, backend,
+                )
+            except LyricsSearchError:
+                raise
+            except Exception as exc:
+                raise LyricsAPIError(f"Lyrics agent error: {exc}") from exc
+
+            candidates = self._parse_candidates(raw_response, backend)
+            logger.info(
+                "lyrics_agent_pass_completed",
+                backend=backend,
+                candidate_count=len(candidates),
+                duration_sec=round(time.monotonic() - t_pass, 2),
+            )
+            if candidates:
+                break
 
         logger.info(
-            "lyrics_search_completed",
-            artist=artist,
-            title=title,
-            lyrics_length=len(lyrics),
+            "lyrics_agent_completed",
+            candidate_count=len(candidates),
             duration_sec=round(time.monotonic() - t0, 2),
         )
-
-        return LyricsResult(
-            artist=artist,
-            title=title,
-            lyrics=lyrics,
-            language=detected_language,
-            confidence="medium",
-            source_note="deepseek+websearch",
-        )
+        return candidates
 
     # ------------------------------------------------------------------
     # Agent loop (synchronous — called via asyncio.to_thread)
     # ------------------------------------------------------------------
 
-    def _run_agent(self, user_message: str) -> str:
-        """Run the tool-calling agent loop. Returns the final text response."""
+    def _run_agent(self, user_message: str, backend: str) -> str:
         client = OpenAI(
             api_key=self._deepseek_api_key,
             base_url="https://api.deepseek.com",
@@ -407,11 +443,20 @@ class LyricsAgent:
 
         tool_functions = {
             "web_search": lambda query: _web_search(
-                query, self._yandex_api_key, self._yandex_folder_id, self._timeout,
+                query=query,
+                backend=backend,
+                api_key=self._yandex_api_key,
+                folder_id=self._yandex_folder_id,
+                timeout=self._timeout,
                 searxng_url=self._searxng_url,
             ),
             "fetch_webpage": lambda url: _fetch_webpage(url, self._timeout),
         }
+
+        # Track consecutive web_search calls so we can force the agent to
+        # fetch_webpage instead of looping in search-only mode (the failure
+        # pattern observed for "Dzetta - Кометы.mp3").
+        consecutive_searches = 0
 
         for _ in range(self._max_iterations):
             response = client.chat.completions.create(
@@ -420,7 +465,6 @@ class LyricsAgent:
                 tools=_TOOLS,
                 max_tokens=8192,
             )
-
             message = response.choices[0].message
             messages.append(message)
 
@@ -430,18 +474,43 @@ class LyricsAgent:
             for tool_call in message.tool_calls:
                 fn_name = tool_call.function.name
                 fn_args = json.loads(tool_call.function.arguments)
-
                 logger.debug(
-                    "agent_tool_call",
-                    tool=fn_name,
-                    args=fn_args,
+                    "agent_tool_call", tool=fn_name, args=fn_args,
                 )
 
-                fn = tool_functions.get(fn_name)
-                if fn:
-                    result = fn(**fn_args)
+                if (
+                    fn_name == "web_search"
+                    and consecutive_searches >= _MAX_CONSECUTIVE_SEARCHES
+                ):
+                    logger.info(
+                        "agent_search_blocked_force_fetch",
+                        consecutive_searches=consecutive_searches,
+                    )
+                    result = json.dumps(
+                        {
+                            "error": (
+                                f"Ты уже сделал {consecutive_searches} "
+                                "web_search подряд. Сейчас ОБЯЗАТЕЛЬНО загрузи "
+                                "самую релевантную ссылку из предыдущих "
+                                "результатов через fetch_webpage. Только "
+                                "после fetch_webpage можно будет снова искать."
+                            )
+                        },
+                        ensure_ascii=False,
+                    )
                 else:
-                    result = json.dumps({"error": f"Unknown tool: {fn_name}"})
+                    fn = tool_functions.get(fn_name)
+                    if fn:
+                        result = fn(**fn_args)
+                    else:
+                        result = json.dumps(
+                            {"error": f"Unknown tool: {fn_name}"},
+                            ensure_ascii=False,
+                        )
+                    if fn_name == "web_search":
+                        consecutive_searches += 1
+                    elif fn_name == "fetch_webpage":
+                        consecutive_searches = 0
 
                 messages.append({
                     "role": "tool",
@@ -449,114 +518,58 @@ class LyricsAgent:
                     "content": result,
                 })
 
-        raise LyricsNotFoundError(
-            "Agent exhausted max iterations without returning lyrics"
+        logger.warning(
+            "agent_iterations_exhausted",
+            iterations=self._max_iterations,
         )
+        return "[]"
 
     # ------------------------------------------------------------------
-    # Response parsing
+    # Response parsing — JSON array of {artist, title, lyrics}
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _parse_agent_response(
-        raw: str,
-        artist_hint: str | None,
-        title_hint: str | None,
-    ) -> tuple[str, str, str]:
-        """Parse agent response. Returns (artist, title, lyrics).
-
-        Tries JSON first, falls back to treating the whole response as lyrics.
+    def _parse_candidates(self, raw: str, backend: str) -> list[LyricsCandidate]:
+        """Parse the agent's JSON-array response, tagging each candidate
+        with the backend (``searxng`` / ``yandex``) used in this pass.
         """
-        # Try full JSON parse
-        try:
-            data = json.loads(raw)
-            if isinstance(data, dict) and "lyrics" in data:
-                return (
-                    data.get("artist", "") or "",
-                    data.get("title", "") or "",
-                    data["lyrics"],
-                )
-        except json.JSONDecodeError:
-            pass
+        if not raw:
+            return []
 
-        # Try extracting JSON from within text
-        match = re.search(r"\{[^{}]*\"lyrics\"\s*:", raw, re.DOTALL)
-        if match:
-            # Find the matching closing brace
-            start = match.start()
-            brace_count = 0
-            for i, ch in enumerate(raw[start:], start=start):
-                if ch == "{":
-                    brace_count += 1
-                elif ch == "}":
-                    brace_count -= 1
-                    if brace_count == 0:
-                        try:
-                            data = json.loads(raw[start : i + 1])
-                            return (
-                                data.get("artist", "") or "",
-                                data.get("title", "") or "",
-                                data.get("lyrics", ""),
-                            )
-                        except json.JSONDecodeError:
-                            break
-
-        # Plain text — treat entire response as lyrics
-        return ("", "", raw.strip())
-
-    # ------------------------------------------------------------------
-    # Metadata extraction fallback
-    # ------------------------------------------------------------------
-
-    def _extract_metadata(
-        self,
-        lyrics: str,
-        asr_text: str,
-        artist_hint: str | None,
-        title_hint: str | None,
-    ) -> tuple[str, str]:
-        """Extract artist and title from lyrics via a separate LLM call."""
-        client = OpenAI(
-            api_key=self._deepseek_api_key,
-            base_url="https://api.deepseek.com",
-            timeout=60.0,
-        )
-
-        user_parts = [f"Текст песни:\n{lyrics[:2000]}"]
-        if artist_hint:
-            user_parts.append(f"Подсказка исполнителя: {artist_hint}")
-        if title_hint:
-            user_parts.append(f"Подсказка названия: {title_hint}")
-        user_parts.append(f"Расшифровка Whisper: {asr_text[:500]}")
-
-        response = client.chat.completions.create(
-            model=self._model,
-            messages=[
-                {"role": "system", "content": _METADATA_PROMPT},
-                {"role": "user", "content": "\n".join(user_parts)},
-            ],
-            temperature=0.0,
-            max_tokens=256,
-        )
-
-        text = response.choices[0].message.content or ""
-
-        try:
-            data = json.loads(text)
-            return (
-                data.get("artist", "") or artist_hint or "Unknown",
-                data.get("title", "") or title_hint or "Unknown",
-            )
-        except json.JSONDecodeError:
-            match = re.search(r"\{.*\}", text, re.DOTALL)
+        # Try direct parse.
+        items = _try_parse_json_array(raw)
+        if items is None:
+            # Try to find a JSON array anywhere in the response.
+            match = re.search(r"\[\s*\{.*?\}\s*\]", raw, re.DOTALL)
             if match:
-                try:
-                    data = json.loads(match.group())
-                    return (
-                        data.get("artist", "") or artist_hint or "Unknown",
-                        data.get("title", "") or title_hint or "Unknown",
-                    )
-                except json.JSONDecodeError:
-                    pass
+                items = _try_parse_json_array(match.group())
 
-        return (artist_hint or "Unknown", title_hint or "Unknown")
+        if not isinstance(items, list):
+            logger.warning("agent_response_not_array", raw=raw[:200])
+            return []
+
+        candidates: list[LyricsCandidate] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            lyrics = (item.get("lyrics") or "").strip()
+            if len(lyrics) < 20:
+                continue
+            artist = (item.get("artist") or "").strip() or "Unknown"
+            title = (item.get("title") or "").strip() or "Unknown"
+            candidates.append(
+                LyricsCandidate(
+                    artist=artist,
+                    title=title,
+                    lyrics=lyrics,
+                    source=backend,
+                )
+            )
+        return candidates
+
+
+def _try_parse_json_array(text: str) -> list | None:
+    try:
+        data = json.loads(text)
+        return data if isinstance(data, list) else None
+    except json.JSONDecodeError:
+        return None

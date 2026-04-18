@@ -95,21 +95,22 @@ class PgRepository:
             """
             INSERT INTO tracks (
                 id, artist, title, duration_sec, instrumental_key,
-                lyrics_text, syllable_timings, language, source,
+                lyrics_text, lyrics_source, syllable_timings, language, source,
                 status, error_message, play_count, qdrant_synced,
                 popularity_category, chart_count, chart_last_seen,
                 catalog_cluster_id, rec_cluster_id, created_at, updated_at
             ) VALUES (
                 $1, $2, $3, $4, $5,
-                $6, $7, $8, $9,
-                $10, $11, $12, $13,
-                $14, $15, $16,
-                $17, $18, $19, $20
+                $6, $7, $8, $9, $10,
+                $11, $12, $13, $14,
+                $15, $16, $17,
+                $18, $19, $20, $21
             )
             """,
             data.id, data.artist, data.title, data.duration_sec,
             data.instrumental_key,
-            data.lyrics_text, syllable_timings_json, data.language, data.source,
+            data.lyrics_text, data.lyrics_source, syllable_timings_json,
+            data.language, data.source,
             data.status, None, data.play_count, data.qdrant_synced,
             data.popularity_category, data.chart_count, _to_dt(data.chart_last_seen),
             data.catalog_cluster_id, data.rec_cluster_id,
@@ -136,7 +137,8 @@ class PgRepository:
 
         for field in (
             "artist", "title", "duration_sec", "instrumental_key",
-            "lyrics_text", "language", "source", "status", "error_message",
+            "lyrics_text", "lyrics_source", "language", "source",
+            "status", "error_message",
             "play_count", "qdrant_synced", "popularity_category",
             "chart_count", "chart_last_seen", "catalog_cluster_id",
             "rec_cluster_id",
@@ -373,6 +375,7 @@ class PgRepository:
             duration_sec=row.get("duration_sec"),
             instrumental_key=row.get("instrumental_key"),
             lyrics_text=row.get("lyrics_text"),
+            lyrics_source=row.get("lyrics_source"),
             syllable_timings=syllable_timings,
             language=row.get("language"),
             source=row["source"],

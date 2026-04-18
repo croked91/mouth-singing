@@ -1,4 +1,4 @@
-"""Lyrics search via multi-provider chain with DeepSeek verification."""
+"""Lyrics search via multi-provider chain + algorithmic matcher."""
 
 from worker.common.lyrics.base_provider import (
     ArtistTitleProvider,

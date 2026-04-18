@@ -35,6 +35,14 @@ CREATE INDEX IF NOT EXISTS idx_tracks_cluster ON tracks(catalog_cluster_id);
 CREATE INDEX IF NOT EXISTS idx_tracks_rec_cluster ON tracks(rec_cluster_id);
 CREATE INDEX IF NOT EXISTS idx_tracks_popularity ON tracks(popularity_category) WHERE status = 'ready';
 
+-- Lyrics provenance: where the final lyrics text came from.
+-- Values: provider name ("lrclib", "genius", "lyricsovh", "agent", ...) for
+-- candidates that passed the algorithmic matcher; "asr_fallback" when no
+-- candidate qualified and we used the raw Whisper transcription instead
+-- (text may contain ASR errors, candidates for re-processing).
+ALTER TABLE tracks ADD COLUMN IF NOT EXISTS lyrics_source text;
+CREATE INDEX IF NOT EXISTS idx_tracks_lyrics_source ON tracks(lyrics_source);
+
 -- Full-text search via tsvector
 ALTER TABLE tracks ADD COLUMN IF NOT EXISTS search_vector tsvector;
 

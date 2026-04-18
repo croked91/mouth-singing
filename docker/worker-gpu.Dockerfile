@@ -45,6 +45,16 @@ RUN pip install --no-cache-dir \
     pyphen>=0.16 beautifulsoup4>=4.12 lxml>=5.0 pydantic-settings>=2.0 \
     "openai>=1.0"
 
+# Layer 6a: lyrics matching deps — algorithmic ASR↔candidate scoring
+# (pymorphy3: RU lemmas; snowball: EN stems; jellyfish: metaphone;
+#  rapidfuzz: fast Levenshtein)
+RUN pip install --no-cache-dir \
+    pymorphy3==2.0.4 \
+    pymorphy3-dicts-ru==2.4.417150.4580142 \
+    snowballstemmer==2.2.0 \
+    jellyfish==1.1.0 \
+    rapidfuzz==3.10.1
+
 # Layer 6b: pre-download UVR + back-vocal checkpoints into image
 # Stored in /opt/models (read-only image layer); entrypoint symlinks them
 # into /data/models so the volume mount doesn't hide them.

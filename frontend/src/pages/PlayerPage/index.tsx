@@ -23,6 +23,7 @@ import VolumeDownIcon from '@mui/icons-material/VolumeDown';
 
 import { api } from '../../services/api';
 import { LyricHighlight } from '../../components/LyricHighlight';
+import LyricsAccuracyBadge from '../../components/LyricsAccuracyBadge';
 import type { StartPlayingResponse } from '../../types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -403,35 +404,42 @@ export const PlayerPage: React.FC = () => {
         }}
       >
         {/* Left: track info */}
-        <Box>
-          <Typography
-            sx={{
-              fontWeight: 700,
-              fontSize: '20px',
-              color: '#FFFFFF',
-              lineHeight: 1.2,
-              maxWidth: '600px',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {startData?.title ?? '—'}
-          </Typography>
-          <Typography
-            sx={{
-              fontWeight: 400,
-              fontSize: '18px',
-              color: 'rgba(255,255,255,0.55)',
-              lineHeight: 1.2,
-              maxWidth: '600px',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {startData?.artist ?? ''}
-          </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: '30px' }}>
+          <Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: '30px' }}>
+              <Typography
+                sx={{
+                  fontWeight: 700,
+                  fontSize: '20px',
+                  color: '#FFFFFF',
+                  lineHeight: 1.2,
+                  maxWidth: '600px',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {startData?.title ?? '—'}
+              </Typography>
+            </Box>
+            <Typography
+              sx={{
+                fontWeight: 400,
+                fontSize: '18px',
+                color: 'rgba(255,255,255,0.55)',
+                lineHeight: 1.2,
+                maxWidth: '600px',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {startData?.artist ?? ''}
+            </Typography>
+          </Box>
+          <Box>
+            <LyricsAccuracyBadge lyricsSource={startData?.lyrics_source} />
+          </Box>
         </Box>
 
         {/* Right: ЗАВЕРШИТЬ button */}

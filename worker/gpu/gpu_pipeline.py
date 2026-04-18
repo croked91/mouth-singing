@@ -152,7 +152,7 @@ class GpuPipeline(BasePipeline):
             # Runs on FULL vocals (not lead-only): Whisper benefits from
             # backing vocals (repeated chorus lines, ad-libs) that help
             # recognise the track. Lead-only was tried and produced a
-            # ~44% shorter transcript → lyrics verifier picked the wrong
+            # ~44% shorter transcript → lyrics matcher picked the wrong
             # song version.
             # ==============================================================
             whisper_result, vad_segments = await self._vad_and_transcribe(
@@ -270,6 +270,7 @@ class GpuPipeline(BasePipeline):
                     source="user_upload",
                     instrumental_key=job_data.get("instrumental_key", instrumental_key),
                     lyrics_text=lyrics_result.lyrics,
+                    lyrics_source=lyrics_result.source_note,
                     syllable_timings=syllable_timings,
                     language=lyrics_result.language,
                     status="ready",
