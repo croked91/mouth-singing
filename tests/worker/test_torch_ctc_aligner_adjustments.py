@@ -329,6 +329,84 @@ class TestST1MLineStart:
 
 
 # ---------------------------------------------------------------------------
+# Line-start — «Слава КПСС — Культура G (Rework 2023)»
+#
+# Regression track for the backward-walk branch. Candidate lyrics from
+# Genius miss the spoken line «Саундрекордс» between «Лукошко
+# глубокомыслия,» and «Ебать того всё», so MMS is forced to place the
+# first phoneme of «Ебать» somewhere in the ~2.4 s window that actually
+# contains «Саундрекордс…». The forward walk used to latch onto reverb
+# tail / leakage at the start of that window (shift ~0.16 s, attack at
+# 200.37 s) — real attack is ~202.4 s per listening.
+# ---------------------------------------------------------------------------
+
+
+class TestSlavaLineStart:
+    """Extreme gap_0 outlier (ratio 59×) where candidate lyrics omit a
+    whole sung line. Backward RMS walk anchored at ``spans[1].start``
+    finds the voiced onset of the vowel, ~2 s later than MMS's span_0."""
+
+    def test_ebat_trimmed_via_backward_walk(self):
+        """«Ебать» (word_idx=448): MMS places span_0 at 192.05 (rel,
+        pre-offset 8.16 s → absolute 200.21 s). span_1 of phoneme «б»
+        at 194.43 (rel, 202.59 absolute). Real vowel «Е» onset is in
+        the ~200-ms window immediately before the consonant at span_1.
+        Backward walk lands at ~194.22 (rel, 202.38 absolute) — shift
+        ≥ 2 s relative to orig_start."""
+        aligner, ctx = _load("slava")
+        adj = _line_start(aligner, ctx)
+        assert 448 in adj, "«Ебать» (extreme outlier) must be adjusted"
+        orig, new = adj[448]
+        assert orig == pytest.approx(192.048, abs=0.05)
+        # Backward walk target: within one emission frame of span1.start
+        # (phoneme-2 «б» attack) or slightly earlier by the vowel «Е»
+        # sustain. span1.start * ratio ≈ 194.43.
+        abs_new = new + ctx["trim_offset"]
+        assert abs_new == pytest.approx(202.38, abs=0.15), (
+            f"expected absolute new_start near 202.38 s (real vowel "
+            f"onset ~202.4 s), got {abs_new:.3f}"
+        )
+        assert new - orig > 2.0, (
+            f"expected shift > 2 s (big gap closed by backward walk), "
+            f"got {new - orig:.3f} s"
+        )
+
+    def test_ebat_uses_backward_walk_path(self):
+        """Regression guard: the extreme-outlier branch must be the one
+        that produced the «Ебать» adjustment (not the forward-walk
+        non-extreme path). gap_0 ratio is 59× — solidly in extreme
+        territory. If the branch gating regresses, forward walk will
+        latch onto the spurious early attack and test_ebat_* breaks."""
+        aligner, ctx = _load("slava")
+        spans = ctx["word_spans"][448]
+        gap0 = spans[1].start - spans[0].end
+        global_gaps = []
+        for w in ctx["word_spans"]:
+            for j in range(1, len(w) - 1):
+                global_gaps.append(w[j + 1].start - w[j].end)
+        import statistics
+        median_gap = statistics.median(global_gaps)
+        ratio = gap0 / max(median_gap, 1.0)
+        assert ratio >= 7.0, (
+            f"fixture drift: «Ебать» ratio={ratio:.1f}× must stay ≥ 7 "
+            f"for the extreme branch to fire"
+        )
+
+    def test_fixture_structure(self):
+        """Basic shape guard for the slava fixture."""
+        _, ctx = _load("slava")
+        assert len(ctx["words"]) == 451
+        assert len(ctx["word_spans"]) == 451
+        assert len(ctx["first_flags"]) == 451
+        assert ctx["ratio"] == pytest.approx(0.020, abs=0.001)
+        assert ctx["trim_offset"] == pytest.approx(8.16, abs=0.05)
+        # «Ебать» should still be flagged as line-start (after «Лукошко
+        # глубокомыслия,»).
+        assert ctx["first_flags"][448] is True
+        assert ctx["words"][448] == "Ебать"
+
+
+# ---------------------------------------------------------------------------
 # Word-end drift trim — «Г.Лепс — Она не твоя»
 # ---------------------------------------------------------------------------
 

@@ -226,8 +226,17 @@ def _rare_anchor_scores(
     candidates: list[NormalizedText],
     n: int,
 ) -> list[float]:
-    """For each candidate, IDF-weighted count of n-word phrases shared with
-    ASR but rare across the candidate pool. Normalized to [0..1] by the max."""
+    """For each candidate, IDF-weighted density of n-word phrases shared
+    with ASR but rare across the candidate pool, normalized by the number
+    of n-grams in the candidate itself. Post-normalized to [0..1] by the
+    max density across candidates.
+
+    The per-candidate division by ``len(grams)`` removes a structural bias
+    toward longer candidates: a remix / long-mix version has more 5-grams
+    available to match simply because it contains more words, which made
+    the un-normalized sum win against shorter but equally-relevant versions.
+    Density (matched-IDF per gram) is length-neutral.
+    """
     if not candidates:
         return []
     asr_grams = _lemma_ngrams(asr.words, n)
@@ -238,18 +247,21 @@ def _rare_anchor_scores(
         for g in grams:
             df[g] += 1
 
-    raw: list[float] = []
+    densities: list[float] = []
     for grams in cand_grams_list:
+        if not grams:
+            densities.append(0.0)
+            continue
         s = 0.0
         for g in grams:
             if g in asr_grams and df[g] > 0:
                 s += 1.0 / df[g]
-        raw.append(s)
+        densities.append(s / len(grams))
 
-    max_raw = max(raw) if raw else 0.0
-    if max_raw <= 0:
+    max_density = max(densities) if densities else 0.0
+    if max_density <= 0:
         return [0.0] * len(candidates)
-    return [s / max_raw for s in raw]
+    return [d / max_density for d in densities]
 
 
 def _lemma_ngrams(

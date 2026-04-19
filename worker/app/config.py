@@ -51,6 +51,19 @@ class WorkerSettings(BaseSettings):
     lyrics_provider_timeout: float = 10.0
     lyrics_search_fragments: int = 2
 
+    # ASR-driven junk filter applied to candidate lyrics after matcher picks
+    # a winner. Drops lines whose words aren't present in the Whisper ASR
+    # (they can't be aligned anyway since CTC reads the same vocals stem)
+    # and trims inline metadata prefixes like "Припев 2:" glued to real lines.
+    asr_filter_enabled: bool = True
+    asr_filter_high_thresh: float = 0.70
+    asr_filter_low_thresh: float = 0.15
+    asr_filter_min_line_words: int = 3
+    asr_filter_min_prefix_trim: int = 1
+    asr_filter_max_prefix_trim: int = 6
+    asr_filter_safety_bypass_ratio: float = 0.40
+    asr_filter_use_llm_grey: bool = True
+
     # ------------------------------------------------------------------
     # Common: CTC aligner
     # ------------------------------------------------------------------

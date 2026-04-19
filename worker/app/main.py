@@ -46,7 +46,11 @@ def _build_gpu_pipeline(
     from worker.common.lyrics_agent import LyricsAgent
     from worker.common.lyrics import LyricsProviderChain
     from worker.common.lyrics.filename_parser import FilenameParser
-    from worker.common.lyrics.matching import LyricsExpander, LyricsMatcher
+    from worker.common.lyrics.matching import (
+        ASRLyricsFilter,
+        LyricsExpander,
+        LyricsMatcher,
+    )
     from worker.common.lyrics.providers.lrclib import LRCLibProvider
     from worker.common.lyrics.providers.lyricsovh import LyricsOvhProvider
 
@@ -110,8 +114,25 @@ def _build_gpu_pipeline(
         model=settings.deepseek_model,
     )
 
+    asr_filter = (
+        ASRLyricsFilter(
+            high_thresh=settings.asr_filter_high_thresh,
+            low_thresh=settings.asr_filter_low_thresh,
+            min_line_words=settings.asr_filter_min_line_words,
+            min_prefix_trim=settings.asr_filter_min_prefix_trim,
+            max_prefix_trim=settings.asr_filter_max_prefix_trim,
+            safety_bypass_ratio=settings.asr_filter_safety_bypass_ratio,
+            use_llm_grey=settings.asr_filter_use_llm_grey,
+            deepseek_api_key=settings.deepseek_api_key or None,
+            model=settings.deepseek_model,
+        )
+        if settings.asr_filter_enabled
+        else None
+    )
+
     matcher = LyricsMatcher(
         expander=expander,
+        asr_filter=asr_filter,
         deepseek_api_key=settings.deepseek_api_key or None,
         model=settings.deepseek_model,
     )

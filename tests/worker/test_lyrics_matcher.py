@@ -189,6 +189,38 @@ class TestScorer:
         feats = score_all(asr, [cand_a, cand_b])
         assert feats[0].composite > feats[1].composite
 
+    def test_rare_anchor_is_length_neutral(self):
+        """Regression: a longer candidate must not dominate rare_anchor_score
+        simply by containing more 5-grams. Previously a 'Rework' version
+        twice the length of the correct one could take rare_anchor=1.0 just
+        because it had more matchable anchors, overriding a more accurate
+        short version. Fix normalizes by candidate length (density).
+        """
+        shared_prefix = (
+            "тёплое место но улицы ждут отпечатков наших ног "
+            "звёздная пыль на сапогах мягкое кресло над пропастью ждёт"
+        )
+        asr = normalize_text(shared_prefix, "ru")
+        # Correct candidate == ASR.
+        correct = normalize_text(shared_prefix, "ru")
+        # Long remix: same matched content, plus ~20 extra unique verses
+        # that are also matched against a LONGER ASR. But here ASR is the
+        # short one, so extras don't match — they just dilute density.
+        remix = normalize_text(
+            shared_prefix + " "
+            + "экстра строка ремикса с дополнительными словами которые "
+            "никогда не появятся в оригинальной расшифровке песни потому "
+            "что они добавлены только в этой версии и не имеют отношения "
+            "к оригинальной записи вокалиста и инструментальному "
+            "сопровождению которое использовалось при записи в студии",
+            "ru",
+        )
+        feats = score_all(asr, [correct, remix])
+        # Density-normalized: correct has all its 5-grams matched; remix
+        # only matches the shared prefix portion → lower density.
+        assert feats[0].rare_anchor_score >= feats[1].rare_anchor_score
+        assert feats[0].composite > feats[1].composite
+
 
 # ======================================================================
 # expander.py — algorithmic pass
@@ -369,3 +401,101 @@ class TestMatcher:
         cands = [self._make_cand("A", "B", "some lyrics text", "src")]
         result = await matcher.match("", cands, "ru")
         assert result is None
+
+    async def test_weak_win_invokes_tiebreaker_when_api_key_present(self):
+        """Weak wins (composite ≥0.45 but <0.65) call the LLM tiebreaker on
+        every runner-up. This catches cases like Slava KPSS 'Культура G' vs
+        'Культура G (Rework 2023)' where the Rework can edge out the
+        original on rare_anchor but is actually the wrong version.
+        """
+        from worker.common.lyrics.matching.scorer import MatchFeatures
+
+        matcher = LyricsMatcher(
+            expander=LyricsExpander(deepseek_api_key=None),
+            deepseek_api_key="fake-key",
+        )
+        asr = "some asr text that does not matter because scorer is mocked"
+        original = self._make_cand(
+            "Artist", "Песня", "lyrics text 1", "lrclib",
+        )
+        rework = self._make_cand(
+            "Artist", "Песня (Rework)", "lyrics text 2", "genius",
+        )
+
+        # Force scores into the weak-win band (top ≥0.45, gap ≥0.10, both <0.65).
+        fake_features = [
+            MatchFeatures(0.5, 0.5, 0.5, 0.5, 0.5, 0.0, 0.40),  # original
+            MatchFeatures(0.5, 0.5, 0.5, 0.5, 0.5, 0.0, 0.52),  # rework (top)
+        ]
+        with patch(
+            "worker.common.lyrics.matching.matcher.score_all",
+            return_value=fake_features,
+        ), patch.object(
+            matcher, "_tiebreak", return_value=None,
+        ) as mock_tb:
+            await matcher.match(asr, [original, rework], "ru")
+        mock_tb.assert_called_once()
+
+    async def test_weak_small_gap_not_rejected(self):
+        """Two near-identical candidates in the weak range (gap < 2*margin)
+        must not be rejected outright. Covers the case where SearxNG
+        returns the same song twice with slightly different artist spelling
+        — historically the matcher rejected both and fell back to raw ASR.
+        """
+        from worker.common.lyrics.matching.scorer import MatchFeatures
+
+        matcher = LyricsMatcher(
+            expander=LyricsExpander(deepseek_api_key=None),
+            deepseek_api_key=None,  # no LLM — must still pick top
+        )
+        asr = "some asr text"
+        a = self._make_cand("Artist One", "Song", "lyrics v1", "searxng")
+        b = self._make_cand("Artist Two", "Song", "lyrics v2", "searxng")
+        fake_features = [
+            MatchFeatures(0.5, 0.5, 0.5, 0.5, 0.5, 0.0, 0.54),
+            MatchFeatures(0.5, 0.5, 0.5, 0.5, 0.5, 0.0, 0.52),
+        ]
+        with patch(
+            "worker.common.lyrics.matching.matcher.score_all",
+            return_value=fake_features,
+        ):
+            result = await matcher.match(asr, [a, b], "ru")
+        assert result is not None
+        # Top is the first one (0.54 > 0.52) — the matcher must accept it.
+        assert result.artist == "Artist One"
+
+    async def test_weak_tiebreaker_returns_picked_candidate(self):
+        """When the weak tiebreaker picks the runner-up, that's what we
+        return — not the raw top."""
+        from worker.common.lyrics.matching.matcher import _Ranked
+        from worker.common.lyrics.matching.scorer import MatchFeatures
+
+        matcher = LyricsMatcher(
+            expander=LyricsExpander(deepseek_api_key=None),
+            deepseek_api_key="fake-key",
+        )
+        asr = "some asr text"
+        original = self._make_cand(
+            "Artist", "Песня", "original lyrics", "lrclib",
+        )
+        rework = self._make_cand(
+            "Artist", "Песня (Rework)", "rework lyrics", "genius",
+        )
+
+        fake_features = [
+            MatchFeatures(0.5, 0.5, 0.5, 0.5, 0.5, 0.0, 0.40),  # original
+            MatchFeatures(0.5, 0.5, 0.5, 0.5, 0.5, 0.0, 0.52),  # rework (top)
+        ]
+
+        async def pick_runner_up(asr_text, a: _Ranked, b: _Ranked, language):
+            # Return whichever candidate is NOT the Rework, regardless
+            # of which side it landed on after ranking.
+            return a if "Rework" not in a.candidate.title else b
+
+        with patch(
+            "worker.common.lyrics.matching.matcher.score_all",
+            return_value=fake_features,
+        ), patch.object(matcher, "_tiebreak", side_effect=pick_runner_up):
+            result = await matcher.match(asr, [original, rework], "ru")
+        assert result is not None
+        assert "Rework" not in result.title

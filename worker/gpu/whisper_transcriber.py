@@ -229,6 +229,7 @@ class WhisperTranscriber:
             language=language,
             confidence=round(confidence, 3),
             text_length=len(text),
+            text=text,
             duration_sec=elapsed,
         )
 

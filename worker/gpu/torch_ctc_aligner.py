@@ -431,17 +431,28 @@ class TorchCTCAligner:
         """Detect line-start words whose first phoneme was anchored into
         preceding silence/backing leakage and trim to the real attack.
 
-        Step 1 (structural filter): gap_0 = spans[1].start - spans[0].end
-        > 2 × median_gap flags a candidate outlier.
+        Two algorithms, gated on ``gap0 / median_gap``:
 
-        Step 2 (forward RMS walk): walk [spans[0].start, spans[1].start]
-        looking for the first voiced frame that sits AFTER a drift-sized
-        silent run (≥ 2 × median_gap frames). That frame is the real
-        phoneme attack; shift the word's start there. Mirror of the
-        forward walk used by _compute_word_end_adjustments.
+        * **Non-extreme (2× ≤ ratio < 7×)** — forward RMS walk over
+          [spans[0].start, spans[1].start]: find the first frame above
+          ``attack_floor`` after a drift-sized silent run. Sustained first
+          phonemes (Э-то, О-на) stay above ``attack_floor`` throughout and
+          yield no adjustment.
 
-        If no drift-sized silent run exists, gap_0 is a legitimate
-        sustained first phoneme (Э-то, О-на) and no adjustment is made.
+        * **Extreme (ratio ≥ 7×)** — backward RMS walk from
+          ``spans[1].start``: walk through the contiguous voiced region
+          anchored at MMS's reliably-placed phoneme-2 until a silent run
+          is found. The first voiced frame before that silent run is the
+          real phoneme-1 attack. This path exists because MMS forward-walk
+          can latch onto spurious reverb/leakage spikes early in the huge
+          window when gap_0 is an order of magnitude above median, giving
+          a new_start that's hundreds of ms too early. Backward walk
+          inverts the lookup direction: instead of "first voicedness after
+          silence" it asks "where did the most recent voicedness before
+          span1 actually start", which is the correct attack. Falls back
+          to ``spans[1].start`` when the scan region is uniformly voiced
+          (genuine sustained first phoneme — very rare at ratios ≥ 7×) or
+          uniform low-level leakage below ``attack_floor``.
 
         Returns ``{word_idx: (orig_start_sec, new_start_sec)}``.
         """
@@ -546,12 +557,86 @@ class TorchCTCAligner:
             # triggers → no false trim.
             attack_floor = voiced_level / 5.0
 
-            # Forward RMS walk [spans[0].start, spans[1].start]: find the
-            # first frame at main-vocal level AFTER a "not-main-vocal"
-            # run (≥ 2 × median_gap frames below attack_floor). That
-            # frame is the real phoneme attack. If attack_floor holds
-            # throughout, gap_0 is a sustained first phoneme (Э-то,
-            # О-на) — leave orig_start.
+            silent_run_threshold = max(2, int(round(outlier_factor * ref)))
+            extreme_factor = 7.0
+
+            # ----------------------------------------------------------
+            # Extreme-outlier branch (ratio ≥ 7×): backward RMS walk from
+            # ``spans[1].start`` — the phoneme-2 anchor MMS placed
+            # reliably. Find the start of the contiguous voiced region
+            # anchored there (the real phoneme-1 attack). Forward walk
+            # from ``spans[0].start`` is skipped for extreme ratios
+            # because its "first above_attack after silent run" rule can
+            # latch onto reverb/leakage spikes hundreds of ms before the
+            # real attack when the window is large.
+            # ----------------------------------------------------------
+            if gap0 / ref >= extreme_factor:
+                span1_start_sample = int(spans[1].start * ratio * _SAMPLE_RATE)
+                span0_start_sample = int(spans[0].start * ratio * _SAMPLE_RATE)
+                bw_new_start_sec = self._backward_walk_voiced_onset(
+                    audio_np=audio_np,
+                    frame_len_samples=frame_len_samples,
+                    start_sample=span1_start_sample,
+                    limit_sample=max(0, span0_start_sample),
+                    attack_floor=attack_floor,
+                    silent_run_threshold=silent_run_threshold,
+                )
+                # Fall back to ``spans[1].start`` when backward walk can't
+                # find a boundary (uniform above_attack = sustained
+                # phoneme, or uniform below = leakage dominant). Current
+                # behaviour: anchor at MMS's phoneme-2 frame.
+                if bw_new_start_sec is None:
+                    new_start_sec = spans[1].start * ratio
+                    fallback = "span1_start"
+                else:
+                    new_start_sec = bw_new_start_sec
+                    fallback = "backward_walk"
+
+                if new_start_sec > orig_start_sec + ratio:
+                    adjustments[i] = (orig_start_sec, new_start_sec)
+                    debug_entries.append({
+                        "word_idx": i,
+                        "word": words[i][:30],
+                        "gap0_frames": round(gap0, 1),
+                        "median_gap_frames": round(global_median_gap, 1),
+                        "ratio_to_ref": round(gap0 / ref, 2),
+                        "orig_start_sec": round(orig_start_sec, 3),
+                        "new_start_sec": round(new_start_sec, 3),
+                        "shift_sec": round(new_start_sec - orig_start_sec, 3),
+                        "voiced_level_db": round(
+                            20.0 * math.log10(voiced_level + 1e-10), 2,
+                        ),
+                        "applied": True,
+                        "fallback": fallback,
+                    })
+                    continue
+
+                debug_entries.append({
+                    "word_idx": i,
+                    "word": words[i][:30],
+                    "gap0_frames": round(gap0, 1),
+                    "median_gap_frames": round(global_median_gap, 1),
+                    "ratio_to_ref": round(gap0 / ref, 2),
+                    "orig_start_sec": round(orig_start_sec, 3),
+                    "new_start_sec": round(orig_start_sec, 3),
+                    "shift_sec": 0.0,
+                    "voiced_level_db": round(
+                        20.0 * math.log10(voiced_level + 1e-10), 2,
+                    ),
+                    "applied": False,
+                    "fallback": fallback,
+                })
+                continue
+
+            # ----------------------------------------------------------
+            # Non-extreme branch (2× ≤ ratio < 7×): forward RMS walk
+            # [spans[0].start, spans[1].start]. First frame above
+            # attack_floor AFTER a drift-sized silent run (≥ 2 ×
+            # median_gap frames below attack_floor) is the real attack.
+            # Sustained first phonemes (Э-то, О-на, Знаешь) keep RMS
+            # above attack_floor throughout, so drift_seen never fires
+            # and orig_start is preserved.
+            # ----------------------------------------------------------
             ss = max(0, int(spans[0].start * ratio * _SAMPLE_RATE))
             se = min(
                 len(audio_np),
@@ -566,7 +651,6 @@ class TorchCTCAligner:
             )
             scan_rms = np.sqrt((scan_frames ** 2).mean(axis=1))
 
-            silent_run_threshold = max(2, int(round(outlier_factor * ref)))
             silent_run = 0
             drift_seen = False
             new_start_frame_in_scan = None
@@ -584,41 +668,10 @@ class TorchCTCAligner:
                     silent_run = 0
 
             if new_start_frame_in_scan is None:
-                # Walk failed: either fully voiced throughout (sustained
-                # first phoneme — Э-то, О-на, Знаешь) or uniform soft
-                # pre-attack content with no contrast (rap backing/
-                # leakage at ~peak level). Only fall back to span1.start
-                # for UNAMBIGUOUS misplacement: ratio ≥ 7 × median_gap.
-                # Empirically on test tracks, sustained first vowels sit
-                # in the 4-7× band while misplacement cases cluster at
-                # 8-14×. Using 7× as the gate keeps sustained cases
-                # untouched and fires only when the span0-span1 gap is
-                # an order of magnitude beyond typical inter-phoneme
-                # spacing — impossible to explain as legitimate phoneme
-                # duration.
-                extreme_factor = 7.0
-                if gap0 / ref >= extreme_factor:
-                    new_start_sec = spans[1].start * ratio
-                    if new_start_sec > orig_start_sec + ratio:
-                        adjustments[i] = (orig_start_sec, new_start_sec)
-                        debug_entries.append({
-                            "word_idx": i,
-                            "word": words[i][:30],
-                            "gap0_frames": round(gap0, 1),
-                            "median_gap_frames": round(global_median_gap, 1),
-                            "ratio_to_ref": round(gap0 / ref, 2),
-                            "orig_start_sec": round(orig_start_sec, 3),
-                            "new_start_sec": round(new_start_sec, 3),
-                            "shift_sec": round(new_start_sec - orig_start_sec, 3),
-                            "voiced_level_db": round(
-                                20.0 * math.log10(voiced_level + 1e-10), 2,
-                            ),
-                            "applied": True,
-                            "fallback": "span1_start",
-                        })
-                        continue
-
-                # Not extreme or fallback degenerate — leave orig_start.
+                # Walk failed (forward direction): moderate-ratio outlier
+                # with no detectable silent-run transition — typically a
+                # sustained first phoneme below the extreme gate. Leave
+                # orig_start alone.
                 debug_entries.append({
                     "word_idx": i,
                     "word": words[i][:30],
@@ -673,6 +726,81 @@ class TorchCTCAligner:
             considered=considered[:20],
         )
         return adjustments
+
+    # ------------------------------------------------------------------
+    # Internal: backward RMS walk for extreme line-start outliers
+    # ------------------------------------------------------------------
+
+    def _backward_walk_voiced_onset(
+        self,
+        audio_np,
+        frame_len_samples: int,
+        start_sample: int,
+        limit_sample: int,
+        attack_floor: float,
+        silent_run_threshold: int,
+    ) -> float | None:
+        """Walk backward from ``start_sample`` until a ``silent_run_threshold``
+        long run of below-``attack_floor`` frames is found, and return the
+        seconds-timestamp of the earliest contiguous above-``attack_floor``
+        frame anchored at the start (pre-offset, per line-start convention).
+
+        Returns ``None`` when the scan region is uniform (either all above
+        attack_floor — sustained phoneme, or all below — leakage dominant)
+        and no boundary can be located.
+
+        Args:
+            audio_np: 1-D numpy float array of the post-trim waveform.
+            frame_len_samples: Samples per RMS frame (20ms window).
+            start_sample: Sample index known to be voiced (span1.start in
+                the line-start caller; anchor of the backward walk).
+            limit_sample: Oldest sample to consider (span0.start);
+                cannot walk back past this.
+            attack_floor: RMS threshold distinguishing main vocal from
+                quieter content (same threshold the forward walk uses).
+            silent_run_threshold: Number of consecutive below-floor
+                frames required to confirm a voicedness boundary.
+        """
+        import numpy as np
+
+        region_start_frame = max(0, limit_sample) // frame_len_samples
+        start_frame = start_sample // frame_len_samples
+        n_frames = start_frame - region_start_frame
+        if n_frames < silent_run_threshold + 1:
+            return None
+
+        seg_start = region_start_frame * frame_len_samples
+        seg_end = seg_start + n_frames * frame_len_samples
+        if seg_end > len(audio_np):
+            return None
+        audio_seg = audio_np[seg_start:seg_end]
+        frames = audio_seg.reshape(n_frames, frame_len_samples)
+        rms = np.sqrt((frames ** 2).mean(axis=1))
+
+        # Walk backward. Track the most recent above-floor frame we've
+        # seen; on a confirmed silent run, that frame is the earliest
+        # extent of the contiguous voicedness anchored at ``start_frame``.
+        silent_run = 0
+        last_voiced_local_idx: int | None = None
+        # Seed: the anchor frame itself must be above floor to be useful.
+        if rms[n_frames - 1] >= attack_floor:
+            last_voiced_local_idx = n_frames - 1
+        for local_idx in range(n_frames - 2, -1, -1):
+            if rms[local_idx] >= attack_floor:
+                silent_run = 0
+                last_voiced_local_idx = local_idx
+            else:
+                silent_run += 1
+                if (
+                    silent_run >= silent_run_threshold
+                    and last_voiced_local_idx is not None
+                ):
+                    onset_sample = (
+                        (region_start_frame + last_voiced_local_idx)
+                        * frame_len_samples
+                    )
+                    return onset_sample / _SAMPLE_RATE
+        return None
 
     # ------------------------------------------------------------------
     # Internal: per-word end adjustment (end drift)

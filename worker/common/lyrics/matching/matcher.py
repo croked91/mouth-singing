@@ -22,6 +22,7 @@ import structlog
 from openai import OpenAI
 
 from worker.common.lyrics.base_provider import LyricsCandidate
+from worker.common.lyrics.matching.asr_filter import ASRLyricsFilter
 from worker.common.lyrics.matching.expander import LyricsExpander
 from worker.common.lyrics.matching.normalizer import normalize_text
 from worker.common.lyrics.matching.scorer import MatchFeatures, score_all
@@ -41,6 +42,7 @@ class LyricsMatcher:
     def __init__(
         self,
         expander: LyricsExpander | None = None,
+        asr_filter: ASRLyricsFilter | None = None,
         deepseek_api_key: str | None = None,
         model: str = "deepseek-chat",
         thresh_strong: float = 0.65,
@@ -48,6 +50,7 @@ class LyricsMatcher:
         margin: float = 0.05,
     ) -> None:
         self._expander = expander
+        self._asr_filter = asr_filter
         self._api_key = deepseek_api_key
         self._model = model
         self._thresh_strong = thresh_strong
@@ -75,6 +78,7 @@ class LyricsMatcher:
                 title=cand.title,
                 source=cand.source,
                 cand_words=len(exp_text.split()),
+                cand_lyrics=exp_text,
                 **feats.as_dict(),
             )
 
@@ -102,7 +106,9 @@ class LyricsMatcher:
         if top.features.composite >= self._thresh_strong:
             if gap >= self._margin or second is None:
                 logger.info("matcher_decision", outcome="strong_win", **log)
-                return self._build_result(top, language, confidence="high")
+                return await self._build_result(
+                    top, asr_text, language, confidence="high",
+                )
             picked = await self._tiebreak(asr_text, top, second, language)
             if picked is not None:
                 logger.info(
@@ -111,16 +117,39 @@ class LyricsMatcher:
                     picked=picked.candidate.source,
                     **log,
                 )
-                return self._build_result(picked, language, confidence="high")
+                return await self._build_result(
+                    picked, asr_text, language, confidence="high",
+                )
             logger.info("matcher_decision", outcome="strong_close_no_tb", **log)
-            return self._build_result(top, language, confidence="medium")
+            return await self._build_result(
+                top, asr_text, language, confidence="medium",
+            )
 
-        if (
-            top.features.composite >= self._thresh_weak
-            and gap >= 2 * self._margin
-        ):
+        if top.features.composite >= self._thresh_weak:
+            # In the weak band we always attempt an LLM tiebreak when a
+            # runner-up exists — including the case where the two top
+            # candidates are very close (small gap). A small gap between
+            # two candidates that both clear ``thresh_weak`` usually means
+            # they are the same song from different providers (e.g. two
+            # SearxNG hits for "Slava KPSS - Культура G" with slightly
+            # different artist spelling). Rejecting both and falling back
+            # to raw ASR loses correct text for no good reason.
+            if second is not None:
+                picked = await self._tiebreak(asr_text, top, second, language)
+                if picked is not None:
+                    logger.info(
+                        "matcher_decision",
+                        outcome="weak_tiebreaker",
+                        picked=picked.candidate.source,
+                        **log,
+                    )
+                    return await self._build_result(
+                        picked, asr_text, language, confidence="medium",
+                    )
             logger.info("matcher_decision", outcome="weak_win", **log)
-            return self._build_result(top, language, confidence="medium")
+            return await self._build_result(
+                top, asr_text, language, confidence="medium",
+            )
 
         logger.info("matcher_decision", outcome="reject", **log)
         return None
@@ -134,12 +163,26 @@ class LyricsMatcher:
             *(self._expander.expand(c.lyrics) for c in candidates)
         )
 
-    def _build_result(
-        self, ranked: _Ranked, language: str, confidence: str,
+    async def _build_result(
+        self,
+        ranked: _Ranked,
+        asr_text: str,
+        language: str,
+        confidence: str,
     ) -> LyricsResult:
-        # Use the EXPANDED lyrics (those reflect what's actually sung) and
-        # run them through clean_lyrics() to drop any residual markers.
-        lyrics = clean_lyrics(ranked.expanded_lyrics).strip()
+        # Start from the EXPANDED lyrics (those reflect what's actually sung).
+        # Run them through the ASR-driven filter (drops non-sung metadata that
+        # would otherwise confuse the CTC aligner) before the final cleanup
+        # of residual bracketed markers.
+        lyrics = ranked.expanded_lyrics
+        if self._asr_filter is not None and asr_text.strip():
+            filtered = await self._asr_filter.filter(
+                asr_text=asr_text,
+                candidate_lyrics=lyrics,
+                language=language,
+            )
+            lyrics = filtered.lyrics_clean
+        lyrics = clean_lyrics(lyrics).strip()
         return LyricsResult(
             artist=ranked.candidate.artist,
             title=ranked.candidate.title,
