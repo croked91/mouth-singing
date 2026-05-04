@@ -20,6 +20,7 @@ from dataclasses import dataclass
 
 import structlog
 from openai import OpenAI
+from rapidfuzz import fuzz
 
 from worker.common.lyrics.base_provider import LyricsCandidate
 from worker.common.lyrics.matching.asr_filter import ASRLyricsFilter
@@ -62,6 +63,8 @@ class LyricsMatcher:
         asr_text: str,
         candidates: list[LyricsCandidate],
         language: str,
+        artist_hints: list[str] | None = None,
+        title_hints: list[str] | None = None,
     ) -> LyricsResult | None:
         if not candidates or not asr_text.strip():
             return None
@@ -69,7 +72,13 @@ class LyricsMatcher:
         expanded = await self._expand_all(candidates)
         asr_norm = normalize_text(asr_text, language)
         cand_norms = [normalize_text(exp, language) for exp in expanded]
-        feature_list = score_all(asr_norm, cand_norms)
+        hint_scores = [
+            _hint_match_score(
+                c.artist, c.title, artist_hints or [], title_hints or [],
+            )
+            for c in candidates
+        ]
+        feature_list = score_all(asr_norm, cand_norms, hint_scores=hint_scores)
 
         for cand, feats, exp_text in zip(candidates, feature_list, expanded):
             logger.info(
@@ -109,7 +118,10 @@ class LyricsMatcher:
                 return await self._build_result(
                     top, asr_text, language, confidence="high",
                 )
-            picked = await self._tiebreak(asr_text, top, second, language)
+            picked = await self._tiebreak(
+                asr_text, top, second, language,
+                artist_hints=artist_hints, title_hints=title_hints,
+            )
             if picked is not None:
                 logger.info(
                     "matcher_decision",
@@ -135,7 +147,10 @@ class LyricsMatcher:
             # different artist spelling). Rejecting both and falling back
             # to raw ASR loses correct text for no good reason.
             if second is not None:
-                picked = await self._tiebreak(asr_text, top, second, language)
+                picked = await self._tiebreak(
+                    asr_text, top, second, language,
+                    artist_hints=artist_hints, title_hints=title_hints,
+                )
                 if picked is not None:
                     logger.info(
                         "matcher_decision",
@@ -203,6 +218,8 @@ class LyricsMatcher:
         a: _Ranked,
         b: _Ranked,
         language: str,
+        artist_hints: list[str] | None = None,
+        title_hints: list[str] | None = None,
     ) -> _Ranked | None:
         if not self._api_key:
             return None
@@ -210,9 +227,10 @@ class LyricsMatcher:
             answer = await asyncio.to_thread(
                 self._call_llm_tiebreak,
                 asr_text,
-                a.expanded_lyrics,
-                b.expanded_lyrics,
+                a, b,
                 language,
+                artist_hints or [],
+                title_hints or [],
             )
         except Exception as exc:
             logger.warning("matcher_tiebreak_failed", error=str(exc))
@@ -228,9 +246,11 @@ class LyricsMatcher:
     def _call_llm_tiebreak(
         self,
         asr_text: str,
-        cand_a: str,
-        cand_b: str,
+        a: _Ranked,
+        b: _Ranked,
         language: str,
+        artist_hints: list[str],
+        title_hints: list[str],
     ) -> str:
         client = OpenAI(
             api_key=self._api_key,
@@ -241,12 +261,31 @@ class LyricsMatcher:
             "Ты выбираешь, какой из двух текстов песни ТОЧНЕЕ соответствует "
             "приблизительной расшифровке от Whisper (с ошибками). Учитывай "
             "что Whisper мог исказить слова — ищи смысловое совпадение. "
-            "Ответь строго одной цифрой: 1 или 2. Никаких пояснений."
+            "Если присутствует <filename_hint> — это артист/название из "
+            "имени загруженного файла, СИЛЬНЫЙ приоритетный сигнал, "
+            "особенно когда ASR содержит мало распознаваемых слов "
+            "(инструменталки, скэт, повторы la-la / a-a). У каждого "
+            "кандидата проверь его artist/title против hint и совпадение "
+            "lyrics с ASR. Ответь строго одной цифрой: 1 или 2. Никаких "
+            "пояснений."
         )
+        hint_block = ""
+        if artist_hints or title_hints:
+            artist_str = " / ".join(h for h in artist_hints if h) or "—"
+            title_str = " / ".join(h for h in title_hints if h) or "—"
+            hint_block = (
+                f"<filename_hint>\n"
+                f"  artist: {artist_str}\n"
+                f"  title: {title_str}\n"
+                f"</filename_hint>\n\n"
+            )
         user = (
             f'<asr language="{language}">\n{asr_text}\n</asr>\n\n'
-            f'<candidate id="1">\n{cand_a}\n</candidate>\n\n'
-            f'<candidate id="2">\n{cand_b}\n</candidate>'
+            f"{hint_block}"
+            f'<candidate id="1" artist="{a.candidate.artist}" '
+            f'title="{a.candidate.title}">\n{a.expanded_lyrics}\n</candidate>'
+            f'\n\n<candidate id="2" artist="{b.candidate.artist}" '
+            f'title="{b.candidate.title}">\n{b.expanded_lyrics}\n</candidate>'
         )
         resp = client.chat.completions.create(
             model=self._model,
@@ -258,3 +297,57 @@ class LyricsMatcher:
             max_tokens=4,
         )
         return resp.choices[0].message.content or ""
+
+
+# Below this raw partial_ratio the match is noise (a 10-char query against
+# any 30-char haystack averages ~0.5 just from coincidental letter overlap).
+# Above it, scale linearly to [0..1] so that a 0.65 raw match contributes
+# nothing while a perfect 1.0 match contributes the full bonus.
+_HINT_NOISE_FLOOR = 0.65
+
+
+def _hint_match_score(
+    cand_artist: str,
+    cand_title: str,
+    artist_hints: list[str],
+    title_hints: list[str],
+) -> float:
+    """Fuzzy-match candidate identity against filename-derived hints.
+
+    Returns a value in [0..1]. Combines candidate ``artist + title`` into a
+    single haystack so providers like Genius — where the canonical artist
+    sometimes lives inside the title field (``artist="Genius English
+    Translations"``, ``title="Eduard Khil — Я очень рад…"``) — still match.
+    Each hint variant is checked with ``partial_ratio`` (substring-tolerant)
+    so transliterations and embedded canonical names both score well.
+
+    Below ``_HINT_NOISE_FLOOR`` the raw partial_ratio is treated as noise
+    and the side score is 0. Above the floor, it is rescaled to [0..1]. The
+    final score averages artist and title sides when both hint sets exist.
+    """
+    if not artist_hints and not title_hints:
+        return 0.0
+
+    haystack = f"{cand_artist} {cand_title}".casefold()
+    if not haystack.strip():
+        return 0.0
+
+    def best(hints: list[str]) -> float | None:
+        best_ratio = -1.0
+        for h in hints:
+            h = (h or "").strip().casefold()
+            if not h:
+                continue
+            r = fuzz.partial_ratio(h, haystack) / 100.0
+            if r > best_ratio:
+                best_ratio = r
+        if best_ratio < 0:
+            return None
+        if best_ratio < _HINT_NOISE_FLOOR:
+            return 0.0
+        return (best_ratio - _HINT_NOISE_FLOOR) / (1.0 - _HINT_NOISE_FLOOR)
+
+    a = best(artist_hints) if artist_hints else None
+    t = best(title_hints) if title_hints else None
+    parts = [s for s in (a, t) if s is not None]
+    return sum(parts) / len(parts) if parts else 0.0

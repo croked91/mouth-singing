@@ -109,12 +109,17 @@ class LyricsProviderChain:
             elapsed=round(time.monotonic() - t0, 2),
         )
 
+        artist_variants = _variants(artist_hint, artist_alts)
+        title_variants = _variants(title_hint, title_alts)
+
         # ------------------------------------------------------------------
         # Stage 2: matcher
         # ------------------------------------------------------------------
         if candidates and self._matcher:
             result = await self._matcher.match(
                 asr_text, candidates, detected_language,
+                artist_hints=artist_variants,
+                title_hints=title_variants,
             )
             if result:
                 logger.info(
@@ -145,6 +150,8 @@ class LyricsProviderChain:
             if agent_candidates and self._matcher:
                 result = await self._matcher.match(
                     asr_text, agent_candidates, detected_language,
+                    artist_hints=artist_variants,
+                    title_hints=title_variants,
                 )
                 if result:
                     logger.info(
