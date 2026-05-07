@@ -23,7 +23,6 @@ from openai import OpenAI
 from rapidfuzz import fuzz
 
 from worker.common.lyrics.base_provider import LyricsCandidate
-from worker.common.lyrics.matching.asr_filter import ASRLyricsFilter
 from worker.common.lyrics.matching.expander import LyricsExpander
 from worker.common.lyrics.matching.normalizer import normalize_text
 from worker.common.lyrics.matching.scorer import MatchFeatures, score_all
@@ -43,7 +42,6 @@ class LyricsMatcher:
     def __init__(
         self,
         expander: LyricsExpander | None = None,
-        asr_filter: ASRLyricsFilter | None = None,
         deepseek_api_key: str | None = None,
         model: str = "deepseek-chat",
         thresh_strong: float = 0.65,
@@ -51,7 +49,6 @@ class LyricsMatcher:
         margin: float = 0.05,
     ) -> None:
         self._expander = expander
-        self._asr_filter = asr_filter
         self._api_key = deepseek_api_key
         self._model = model
         self._thresh_strong = thresh_strong
@@ -115,9 +112,7 @@ class LyricsMatcher:
         if top.features.composite >= self._thresh_strong:
             if gap >= self._margin or second is None:
                 logger.info("matcher_decision", outcome="strong_win", **log)
-                return await self._build_result(
-                    top, asr_text, language, confidence="high",
-                )
+                return self._build_result(top, language, confidence="high")
             picked = await self._tiebreak(
                 asr_text, top, second, language,
                 artist_hints=artist_hints, title_hints=title_hints,
@@ -129,13 +124,9 @@ class LyricsMatcher:
                     picked=picked.candidate.source,
                     **log,
                 )
-                return await self._build_result(
-                    picked, asr_text, language, confidence="high",
-                )
+                return self._build_result(picked, language, confidence="high")
             logger.info("matcher_decision", outcome="strong_close_no_tb", **log)
-            return await self._build_result(
-                top, asr_text, language, confidence="medium",
-            )
+            return self._build_result(top, language, confidence="medium")
 
         if top.features.composite >= self._thresh_weak:
             # In the weak band we always attempt an LLM tiebreak when a
@@ -158,13 +149,11 @@ class LyricsMatcher:
                         picked=picked.candidate.source,
                         **log,
                     )
-                    return await self._build_result(
-                        picked, asr_text, language, confidence="medium",
+                    return self._build_result(
+                        picked, language, confidence="medium",
                     )
             logger.info("matcher_decision", outcome="weak_win", **log)
-            return await self._build_result(
-                top, asr_text, language, confidence="medium",
-            )
+            return self._build_result(top, language, confidence="medium")
 
         logger.info("matcher_decision", outcome="reject", **log)
         return None
@@ -178,26 +167,13 @@ class LyricsMatcher:
             *(self._expander.expand(c.lyrics) for c in candidates)
         )
 
-    async def _build_result(
+    def _build_result(
         self,
         ranked: _Ranked,
-        asr_text: str,
         language: str,
         confidence: str,
     ) -> LyricsResult:
-        # Start from the EXPANDED lyrics (those reflect what's actually sung).
-        # Run them through the ASR-driven filter (drops non-sung metadata that
-        # would otherwise confuse the CTC aligner) before the final cleanup
-        # of residual bracketed markers.
-        lyrics = ranked.expanded_lyrics
-        if self._asr_filter is not None and asr_text.strip():
-            filtered = await self._asr_filter.filter(
-                asr_text=asr_text,
-                candidate_lyrics=lyrics,
-                language=language,
-            )
-            lyrics = filtered.lyrics_clean
-        lyrics = clean_lyrics(lyrics).strip()
+        lyrics = clean_lyrics(ranked.expanded_lyrics).strip()
         return LyricsResult(
             artist=ranked.candidate.artist,
             title=ranked.candidate.title,
