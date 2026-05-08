@@ -22,7 +22,9 @@ from typing import TYPE_CHECKING
 
 import structlog
 
+from karaoke_shared.alignment import syllable_timings_to_document
 from karaoke_shared.messaging.rabbitmq import RabbitMQClient
+from karaoke_shared.models.alignment import AlignmentRevision
 from karaoke_shared.models.job import Job
 from karaoke_shared.models.track import TrackCreate
 from karaoke_shared.repositories.pg_repository import PgRepository
@@ -278,6 +280,19 @@ class GpuPipeline(BasePipeline):
                 )
             )
             track_id = track.id
+
+            await self.repo.create_alignment_revision(
+                AlignmentRevision(
+                    track_id=track_id,
+                    revision_no=1,
+                    source="auto",
+                    lyrics_text=lyrics_result.lyrics,
+                    syllable_timings=syllable_timings,
+                    document=syllable_timings_to_document(syllable_timings),
+                    is_published=True,
+                    published_at=track.updated_at,
+                )
+            )
 
             await self.repo.set_job_track_id(job.id, track_id)
 

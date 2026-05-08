@@ -5,6 +5,14 @@ All Pydantic models are re-exported from this package so callers can do:
     from karaoke_shared.models import Track, TrackCreate, Session, ...
 """
 
+from karaoke_shared.models.alignment import (
+    AlignmentDocument,
+    AlignmentLine,
+    AlignmentRevision,
+    AlignmentSection,
+    AlignmentSyllable,
+    AlignmentWord,
+)
 from karaoke_shared.models.job import Job, JobCreate, JobUpdate
 from karaoke_shared.models.play_history import PlayHistoryCreate, PlayHistoryEntry
 from karaoke_shared.models.queue import QueueEntry, QueueEntryCreate
@@ -27,6 +35,12 @@ from karaoke_shared.models.track import (
 )
 
 __all__ = [
+    "AlignmentDocument",
+    "AlignmentLine",
+    "AlignmentRevision",
+    "AlignmentSection",
+    "AlignmentSyllable",
+    "AlignmentWord",
     "Job",
     "JobCreate",
     "JobUpdate",

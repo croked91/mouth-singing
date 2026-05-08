@@ -35,6 +35,7 @@ from karaoke_shared.constants import (
     SessionStatus,
     TrackStatus,
 )
+from karaoke_shared.models.alignment import AlignmentDocument, AlignmentRevision
 from karaoke_shared.models.catalog_cluster import CatalogCluster
 from karaoke_shared.models.track import SyllableTiming, Track, TrackCreate, TrackUpdate
 
@@ -390,6 +391,171 @@ class PgRepository:
             rec_cluster_id=row.get("rec_cluster_id"),
             created_at=_ts(row["created_at"]),
             updated_at=_ts(row["updated_at"]),
+        )
+
+    # ------------------------------------------------------------------
+    # Alignment revisions
+    # ------------------------------------------------------------------
+
+    async def create_alignment_revision(
+        self,
+        revision: AlignmentRevision,
+    ) -> AlignmentRevision:
+        """Insert an alignment revision and return the stored model."""
+        await self.pool.execute(
+            """
+            INSERT INTO alignment_revisions (
+                id, track_id, revision_no, source, lyrics_text, syllable_timings,
+                document, operations, diagnostics, is_published, created_by,
+                created_at, updated_at, published_at
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6,
+                $7, $8, $9, $10, $11,
+                $12, $13, $14
+            )
+            """,
+            revision.id,
+            revision.track_id,
+            revision.revision_no,
+            revision.source,
+            revision.lyrics_text,
+            json.dumps([st.model_dump() for st in revision.syllable_timings]),
+            json.dumps(revision.document.model_dump()) if revision.document else None,
+            json.dumps(revision.operations),
+            json.dumps(revision.diagnostics),
+            revision.is_published,
+            revision.created_by,
+            _to_dt(revision.created_at),
+            _to_dt(revision.updated_at),
+            _to_dt(revision.published_at),
+        )
+        stored = await self.get_alignment_revision(revision.id)
+        if stored is None:
+            raise RuntimeError(f"AlignmentRevision {revision.id} not found after insert")
+        return stored
+
+    async def next_alignment_revision_no(self, track_id: str) -> int:
+        """Return the next revision number for a track."""
+        value = await self.pool.fetchval(
+            (
+                "SELECT COALESCE(MAX(revision_no), 0) + 1 "
+                "FROM alignment_revisions WHERE track_id = $1"
+            ),
+            track_id,
+        )
+        return int(value or 1)
+
+    async def get_alignment_revision(
+        self, revision_id: str
+    ) -> AlignmentRevision | None:
+        """Return one alignment revision by id."""
+        row = await self.pool.fetchrow(
+            "SELECT * FROM alignment_revisions WHERE id = $1", revision_id
+        )
+        if row is None:
+            return None
+        return self._alignment_revision_from_row(row)
+
+    async def list_alignment_revisions(self, track_id: str) -> list[AlignmentRevision]:
+        """Return revisions for a track, newest first."""
+        rows = await self.pool.fetch(
+            """
+            SELECT * FROM alignment_revisions
+            WHERE track_id = $1
+            ORDER BY revision_no DESC
+            """,
+            track_id,
+        )
+        return [self._alignment_revision_from_row(row) for row in rows]
+
+    async def get_published_alignment_revision(
+        self, track_id: str
+    ) -> AlignmentRevision | None:
+        """Return the currently published alignment revision for a track."""
+        row = await self.pool.fetchrow(
+            """
+            SELECT * FROM alignment_revisions
+            WHERE track_id = $1 AND is_published = TRUE
+            ORDER BY revision_no DESC
+            LIMIT 1
+            """,
+            track_id,
+        )
+        if row is None:
+            return None
+        return self._alignment_revision_from_row(row)
+
+    async def publish_alignment_revision(
+        self, track_id: str, revision_id: str
+    ) -> AlignmentRevision | None:
+        """Publish a revision and copy it into the track snapshot."""
+        async with self.pool.acquire() as conn, conn.transaction():
+            row = await conn.fetchrow(
+                """
+                SELECT * FROM alignment_revisions
+                WHERE id = $1 AND track_id = $2
+                """,
+                revision_id,
+                track_id,
+            )
+            if row is None:
+                return None
+            now = _now_dt()
+            await conn.execute(
+                "UPDATE alignment_revisions SET is_published = FALSE WHERE track_id = $1",
+                track_id,
+            )
+            await conn.execute(
+                """
+                UPDATE alignment_revisions
+                SET is_published = TRUE, published_at = $1, updated_at = $1
+                WHERE id = $2
+                """,
+                now,
+                revision_id,
+            )
+            await conn.execute(
+                """
+                UPDATE tracks
+                SET lyrics_text = $1, syllable_timings = $2, updated_at = $3
+                WHERE id = $4
+                """,
+                row.get("lyrics_text"),
+                row.get("syllable_timings"),
+                now,
+                track_id,
+            )
+        return await self.get_alignment_revision(revision_id)
+
+    def _alignment_revision_from_row(self, row: asyncpg.Record) -> AlignmentRevision:
+        raw_timings = row.get("syllable_timings") or []
+        if isinstance(raw_timings, str):
+            raw_timings = json.loads(raw_timings)
+        raw_document = row.get("document")
+        if isinstance(raw_document, str):
+            raw_document = json.loads(raw_document)
+        raw_operations = row.get("operations") or []
+        if isinstance(raw_operations, str):
+            raw_operations = json.loads(raw_operations)
+        raw_diagnostics = row.get("diagnostics") or {}
+        if isinstance(raw_diagnostics, str):
+            raw_diagnostics = json.loads(raw_diagnostics)
+
+        return AlignmentRevision(
+            id=row["id"],
+            track_id=row["track_id"],
+            revision_no=row["revision_no"],
+            source=row["source"],
+            lyrics_text=row.get("lyrics_text"),
+            syllable_timings=[SyllableTiming(**item) for item in raw_timings],
+            document=AlignmentDocument(**raw_document) if raw_document else None,
+            operations=raw_operations,
+            diagnostics=raw_diagnostics,
+            is_published=row.get("is_published", False),
+            created_by=row.get("created_by"),
+            created_at=_ts(row["created_at"]),
+            updated_at=_ts(row["updated_at"]),
+            published_at=_ts(row.get("published_at")),
         )
 
     # ------------------------------------------------------------------

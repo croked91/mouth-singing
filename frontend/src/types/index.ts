@@ -157,3 +157,89 @@ export interface HistoryItem {
   played_at: string;
   source: string;
 }
+
+export interface AlignmentSyllable {
+  id: string;
+  text: string;
+  start: number;
+  end: number;
+  word_id: string;
+  line_id: string;
+  flags: string[];
+}
+
+export interface AlignmentWord {
+  id: string;
+  text: string;
+  start: number;
+  end: number;
+  line_id: string;
+  syllable_ids: string[];
+  flags: string[];
+}
+
+export interface AlignmentLine {
+  id: string;
+  text: string;
+  start: number;
+  end: number;
+  word_ids: string[];
+  flags: string[];
+}
+
+export interface AlignmentSection {
+  id: string;
+  title?: string | null;
+  line_ids: string[];
+}
+
+export interface AlignmentDocument {
+  sections: AlignmentSection[];
+  lines: AlignmentLine[];
+  words: AlignmentWord[];
+  syllables: AlignmentSyllable[];
+}
+
+export interface AlignmentRevision {
+  id: string;
+  track_id: string;
+  revision_no: number;
+  source: string;
+  lyrics_text?: string | null;
+  syllable_timings: SyllableTiming[];
+  document?: AlignmentDocument | null;
+  operations: Record<string, unknown>[];
+  diagnostics: Record<string, unknown>;
+  is_published: boolean;
+  created_by?: string | null;
+  created_at: string;
+  updated_at: string;
+  published_at?: string | null;
+}
+
+export interface AlignmentTrackSummary {
+  id: string;
+  artist: string;
+  title: string;
+  duration_sec: number | null;
+  lyrics_source: string | null;
+  source: string;
+  status: string;
+}
+
+export interface AlignmentEditorPayload {
+  track: AlignmentTrackSummary;
+  stream_url: string | null;
+  lyrics_text: string | null;
+  syllable_timings: SyllableTiming[];
+  document: AlignmentDocument;
+  active_revision: AlignmentRevision | null;
+  revisions: AlignmentRevision[];
+}
+
+export interface SaveAlignmentDraftRequest {
+  document: AlignmentDocument;
+  operations: Record<string, unknown>[];
+  diagnostics: Record<string, unknown>;
+  created_by?: string | null;
+}

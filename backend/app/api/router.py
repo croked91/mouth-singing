@@ -7,7 +7,16 @@ so it has no /api/v1 prefix.
 
 from fastapi import APIRouter
 
-from app.api.v1 import playback, queue, recommendations, sessions, sse, tags, tracks
+from app.api.v1 import (
+    alignment,
+    playback,
+    queue,
+    recommendations,
+    sessions,
+    sse,
+    tags,
+    tracks,
+)
 
 v1_router = APIRouter()
 
@@ -21,6 +30,9 @@ v1_router.include_router(sessions.router, prefix="/sessions", tags=["sessions"])
 v1_router.include_router(queue.router, tags=["queue"])
 
 v1_router.include_router(tracks.router, prefix="/tracks", tags=["tracks"])
+
+# Alignment editor routes declare /tracks/{track_id}/alignment paths.
+v1_router.include_router(alignment.router, tags=["alignment"])
 
 # Playback routes declare their own full paths (e.g. /tracks/{id}/stream)
 # so they are mounted without a prefix.
