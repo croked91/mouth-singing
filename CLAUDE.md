@@ -35,8 +35,11 @@ make migrate-qdrant-clusters  # Backfill rec_cluster_id into QDrant (run before 
 # Tests (requires local venv with deps installed)
 python -m pytest tests/ -v              # All tests
 make test-quick                         # Fast subset (skips tests/worker/)
+make test-alignment                     # TorchCTCAligner CPU regression (~2s)
+make test-alignment-regen               # Regenerate alignment fixtures via worker container (needs `make up-gpu`)
 python -m pytest tests/test_api_tracks.py -v          # Single file
 python -m pytest tests/test_api_tracks.py::test_name  # Single test
+# tests/worker/ uses its own conftest — for that subdir add: --confcutdir=tests/worker
 
 # Lint (ruff: line-length=88, rules E/F/I/UP, configured in backend/pyproject.toml)
 ruff check backend/ worker/ shared/ rec-service/
@@ -86,9 +89,12 @@ Processing order (defined in `PipelineStep` enum):
 SEPARATING → VAD → TRANSCRIBING → SEARCHING_LYRICS → ALIGNING → LINE_BREAKING
 
 - **SEPARATING**: Direct PyTorch BS-Roformer inference (`worker/gpu/uvr_separator.py`). Model loaded in FP16, batched chunk processing with overlap-add on GPU, autocast enabled. Vocals output as 16kHz mono WAV (ready for VAD/Whisper). Instrumental WAV→MP3 conversion (ffmpeg, matching original bitrate via ffprobe) and S3 upload run as background asyncio task parallel to VAD+Whisper.
+- **Back-vocal split** (sub-step inside SEPARATING, no separate `PipelineStep`): `BackVocalSeparator` (`worker/gpu/back_vocal_separator.py`) runs a second Mel-Band RoFormer pass (`mel_band_roformer_karaoke_aufr33_viperx_sdr_10.1956`) that splits the UVR vocals into **lead** and **backing** stems. All downstream steps (VAD, TRANSCRIBING, ALIGNING, LINE_BREAKING) consume the **lead** vocals — backing harmonies otherwise confuse ASR and CTC. Falls back to full vocals if the separator fails.
 - **VAD**: RMS energy detection via PyTorch CPU (`worker/common/vad_processor.py`). No librosa dependency — uses `torch.unfold` + threshold. Audio loaded via soundfile, resampled via `torchaudio.functional.resample` if needed.
 - **TRANSCRIBING**: HuggingFace Transformers Whisper (PyTorch-native, not CTranslate2). Model stays in VRAM between tracks (no per-job cleanup). First job on cold worker ~9s (CUDA JIT), subsequent ~1.8s.
-- **ALIGNING**: MMS-300M CTC forced aligner via torchaudio on GPU.
+- **SEARCHING_LYRICS**: Provider chain in `worker/common/lyrics/` — fetches lyrics from genius, lrclib, lyricsovh, chartlyrics, simpmusic (one of these may use the local SearXNG instance in `searxng/` as fallback). Chain logic in `provider_chain.py`, candidate scoring/matching in `worker/common/lyrics/matching/`.
+- **ALIGNING**: MMS-300M CTC forced aligner (`MahmoudAshraf/mms-300m-1130-forced-aligner` via HuggingFace transformers `Wav2Vec2ForCTC`) using `torchaudio.functional.forced_align` + `merge_tokens` on GPU. Includes Silero VAD pre-trim of intro noise plus three optional post-pass RMS adjustments for line-start anchoring, word-end drift trim, and word-end sustain extension (all toggleable in `TorchCTCAligner.__init__`).
+- **LINE_BREAKING**: Injects `\n` markers into the syllable stream (`shared/karaoke_shared/utils/line_breaker.py`, called from `worker/gpu/gpu_pipeline.py`). Auto-selects between *gap mode* (break at inter-syllable gaps above a track-adaptive threshold) and *beat mode* (`librosa.beat.beat_track` on the vocal audio — used when too few large gaps, typical for rap). Skipped when timings already carry `\n` from LRC.
 
 Worker creates track at finalization (deferred track creation — no track record until pipeline completes). Then publishes to Rec Service.
 
@@ -120,7 +126,11 @@ Worker creates track at finalization (deferred track creation — no track recor
 
 ### Utility scripts
 
-`scripts/` contains bulk operations: `seed_catalog.py`, `cluster_catalog.py`, `create_mood_tags.py`, `reindex_audio_features.py`, `fetch_artist_images.py`, `bootstrap_worker.py` (pre-download ML models).
+`scripts/` contains bulk operations: catalog seeding/clustering, QDrant migrations, audio feature reindexing, artist image fetching, ML model pre-download (`bootstrap_worker.py`), MinIO import, alignment fixture generation, etc. `ls scripts/` for the full list.
+
+### A/B alignment
+
+`a-b-alignment/` holds reference MP3s used for manual alignment quality comparisons (not part of the test suite).
 
 ## Environment
 
@@ -137,6 +147,6 @@ Required env vars (see `.env.example`):
 - `ARCHITECTURE.md` — full architecture description
 - `ADR.md` — Architecture Decision Records (e.g. ADR-03: no foreign keys)
 - `DEPLOYMENT_GUIDE.md` — deployment procedures
-- `WORKER_FLOW.md` — worker pipeline flow
+- `upload-sequence.md`, `upload-sequence-worker.md`, `upload-sequence-rec.md`, `upload-components.md` — upload flow sequence diagrams and component map (target architecture)
 - `PROJECT_LOG.md`, `PHASES.md` — project history and development phases
-- `upload-sequence*.md` — upload flow sequence diagrams (target architecture)
+- `CURRENT_HIT_PLAN.md`, `RECOMMENDATIONS_V2_BRAINSTORM.md` — in-flight planning docs
