@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Box, Typography } from '@mui/material';
 import type { SyllableTiming } from '../types';
 
@@ -34,6 +34,8 @@ const STYLE_TRANSITION = 'opacity 0.5s ease, filter 0.5s ease';
 const LINE_TRANSITION_MS = 600;
 const COUNTDOWN_BAR_WIDTH = 500;
 const MIN_GAP_FOR_COUNTDOWN_SEC = 5;
+const MIN_LINE_BREAK_GAP_SEC = 0.3;
+const MAX_LINE_CHARS = 50;
 
 
 // ─── Helper: group syllables into lines ───────────────────────────────────────
@@ -47,21 +49,36 @@ function groupIntoLines(syllables: SyllableTiming[]): LyricLine[] {
     endTime: group[group.length - 1].end,
   });
 
+  const hasExplicitBreaks = syllables.some((item) => item.syllable.startsWith('\n'));
+  const gaps = syllables.slice(1).map((item, index) => Math.max(0, item.start - syllables[index].end));
+  const sortedGaps = [...gaps].sort((left, right) => left - right);
+  const p75Index = sortedGaps.length > 0 ? Math.floor((sortedGaps.length - 1) * 0.75) : -1;
+  const dynamicGapThreshold = p75Index >= 0 ? Math.max(MIN_LINE_BREAK_GAP_SEC, sortedGaps[p75Index] * 2.5) : MIN_LINE_BREAK_GAP_SEC;
+
   const lines: LyricLine[] = [];
   let currentGroup: SyllableTiming[] = [syllables[0]];
+  let currentCharCount = syllables[0].syllable.replace(/^\n/, '').length;
 
   for (let i = 1; i < syllables.length; i++) {
-    const syllableText = syllables[i].syllable;
+    const syllable = syllables[i];
+    const syllableText = syllable.syllable;
+    const normalizedText = syllableText.replace(/^\n/, '');
+    const gap = Math.max(0, syllable.start - syllables[i - 1].end);
+    const startsWord = /^\s/.test(normalizedText);
+    const shouldBreakByGap = !hasExplicitBreaks && startsWord && gap > dynamicGapThreshold;
+    const shouldBreakByLength = !hasExplicitBreaks && startsWord && currentCharCount > MAX_LINE_CHARS;
 
     // Line break marker from backend (\n at the start of a syllable).
     // Strip the \n prefix and start a new line.
-    if (syllableText.startsWith('\n')) {
+    if (syllableText.startsWith('\n') || shouldBreakByGap || shouldBreakByLength) {
       lines.push(makeLine(currentGroup));
-      currentGroup = [{ ...syllables[i], syllable: syllableText.slice(1) }];
+      currentGroup = [{ ...syllable, syllable: normalizedText }];
+      currentCharCount = normalizedText.length;
       continue;
     }
 
-    currentGroup.push(syllables[i]);
+    currentGroup.push(syllable);
+    currentCharCount += normalizedText.length;
   }
 
   if (currentGroup.length > 0) {
@@ -443,7 +460,7 @@ export const LyricHighlight: React.FC<LyricHighlightProps> = ({
   getCurrentTime,
   isPlaying,
 }) => {
-  const lines = useRef<LyricLine[]>(groupIntoLines(syllableTimings)).current;
+  const lines = useMemo(() => groupIntoLines(syllableTimings), [syllableTimings]);
 
   // Active line index is React state because transitioning lines needs a
   // re-render to swap out components. We keep it coarse (one update per line
@@ -454,6 +471,12 @@ export const LyricHighlight: React.FC<LyricHighlightProps> = ({
 
   const rafRef = useRef<number | null>(null);
   const lastActiveRef = useRef<number>(activeLineIndex);
+
+  useEffect(() => {
+    const nextIndex = findActiveLineIndex(lines, getCurrentTime());
+    lastActiveRef.current = nextIndex;
+    setActiveLineIndex(nextIndex);
+  }, [lines, getCurrentTime]);
 
   const checkLineTransition = useCallback(() => {
     const currentTime = getCurrentTime();

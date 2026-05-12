@@ -117,21 +117,25 @@ def document_to_syllable_timings(document: AlignmentDocument) -> list[SyllableTi
     result: list[SyllableTiming] = []
 
     for line_index, line in enumerate(document.lines):
-        line_syllables: list[AlignmentSyllable] = []
-        for word_id in line.word_ids:
+        line_syllables: list[tuple[AlignmentSyllable, bool]] = []
+        for word_index, word_id in enumerate(line.word_ids):
             word = words_by_id.get(word_id)
             if word is None:
                 continue
+            is_non_first_word = word_index > 0
             for syllable_id in word.syllable_ids:
                 syllable = syllables_by_id.get(syllable_id)
                 if syllable is not None:
-                    line_syllables.append(syllable)
+                    line_syllables.append((syllable, is_non_first_word))
+                    is_non_first_word = False
 
         if not line_syllables and line.text.strip():
-            line_syllables = _line_text_to_syllables(line)
+            line_syllables = [(syllable, False) for syllable in _line_text_to_syllables(line)]
 
-        for syllable_index, syllable in enumerate(line_syllables):
+        for syllable_index, (syllable, prepend_space) in enumerate(line_syllables):
             text = syllable.text
+            if prepend_space and text and not text.startswith((" ", "\n")):
+                text = f" {text}"
             if line_index > 0 and syllable_index == 0:
                 text = f"\n{text}"
             result.append(
