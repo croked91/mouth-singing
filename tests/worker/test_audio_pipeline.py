@@ -76,7 +76,7 @@ def mock_deps():
     uvr._model_name = "test.ckpt"
     vad.process.return_value = "/data/cleaned_vocals.wav"
     whisper.transcribe.return_value = WhisperResult(
-        text="some transcribed text", language="en", confidence=0.8
+        text="some transcribed text", language="en"
     )
     whisper.cleanup.return_value = None
     lyrics_searcher.search = AsyncMock(return_value=LyricsResult(
@@ -92,7 +92,7 @@ def mock_deps():
             SyllableTiming(syllable="line", start=0.0, end=0.5),
             SyllableTiming(syllable=" one", start=0.5, end=1.0),
         ],
-        AlignmentStats(total_words=2, char_level_used=2, proportional_fallback=0),
+        AlignmentStats(total_words=2, proportional_fallback=0),
     )
     feature_extractor.extract.return_value = [0.1] * 45
     lyric_embedder.embed.return_value = [0.1] * 384
@@ -237,26 +237,3 @@ class TestPipelineErrors:
         mock_deps["job_service"].mark_failed.assert_called_once()
 
 
-class TestPipelineHelpers:
-    """Test helper methods."""
-
-    def test_parse_hints_artist_title(self):
-        artist, title = GpuPipeline._parse_hints_from_path(
-            "/data/media/Земфира - Хочешь.mp3"
-        )
-        assert artist == "Земфира"
-        assert title == "Хочешь"
-
-    def test_parse_hints_no_separator(self):
-        artist, title = GpuPipeline._parse_hints_from_path(
-            "/data/media/some_track.mp3"
-        )
-        assert artist is None
-        assert title is None
-
-    def test_parse_hints_multiple_dashes(self):
-        artist, title = GpuPipeline._parse_hints_from_path(
-            "/data/media/A - B - C.mp3"
-        )
-        assert artist == "A"
-        assert title == "B - C"

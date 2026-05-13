@@ -69,10 +69,6 @@ class WorkerSettings(BaseSettings):
     mms_pre_trim_enabled: bool = True
     mms_pre_trim_threshold: float = 0.7
     mms_pre_trim_min_speech_ms: int = 300
-    mms_pre_trim_lead_in_ms: int = 100
-    """Deprecated — no longer applied. Silero onset is refined via RMS
-    back-tracking (``_refine_silero_onset``) which adapts per-track
-    instead of using a fixed lead-in. Kept for .env backward compat."""
 
     # Per-line RMS-dip adjustment: for every first-in-line word, search
     # the natural window [prev_word_end, this_word_end] for a sandwich'ed
@@ -124,7 +120,7 @@ class WorkerSettings(BaseSettings):
     back_vocal_overlap: float = 4.0
 
     # ------------------------------------------------------------------
-    # GPU mode: faster-whisper local ASR
+    # GPU mode: Whisper local ASR (HuggingFace Transformers, PyTorch)
     # ------------------------------------------------------------------
 
     whisper_model_size: str = "tiny"

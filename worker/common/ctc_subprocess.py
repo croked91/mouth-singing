@@ -32,9 +32,6 @@ def main() -> None:
         with open(args.lyrics_file, "r", encoding="utf-8") as f:
             lyrics_text = f.read()
 
-        import re
-
-        import numpy as np
         import onnxruntime
         from ctc_forced_aligner import (
             AlignmentSingleton,
@@ -47,11 +44,9 @@ def main() -> None:
             preprocess_text,
         )
 
-        from karaoke_shared.models.track import SyllableTiming
         from karaoke_shared.utils.syllabifier import Syllabifier
 
         # --- constants ---
-        MIN_FRAMES = 10
         LANG_ISO3 = {"ru": "rus", "en": "eng"}
 
         def lang_flags(language):
@@ -126,7 +121,7 @@ def main() -> None:
         match_count = min(ctc_count, lyrics_count)
         total_frames = emissions.shape[0]
 
-        stats = {"total_words": match_count, "char_level_used": 0, "proportional_fallback": 0}
+        stats = {"total_words": match_count, "proportional_fallback": 0}
         all_timings = []
         is_first_overall = True
 

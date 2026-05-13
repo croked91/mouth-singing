@@ -29,7 +29,6 @@ class AlignmentStats:
     """Alignment quality statistics (matches CTCAligner interface)."""
 
     total_words: int = 0
-    char_level_used: int = 0
     proportional_fallback: int = 0
 
 
@@ -51,7 +50,6 @@ class TorchCTCAligner:
         pre_trim_enabled: bool = True,
         pre_trim_threshold: float = 0.7,
         pre_trim_min_speech_ms: int = 300,
-        pre_trim_lead_in_ms: int = 100,
         line_start_rms_adjust: bool = True,
         word_end_drift_adjust: bool = True,
         word_end_sustain_extend: bool = True,
@@ -69,7 +67,6 @@ class TorchCTCAligner:
         self._pre_trim_enabled = pre_trim_enabled
         self._pre_trim_threshold = pre_trim_threshold
         self._pre_trim_min_speech_ms = pre_trim_min_speech_ms
-        self._pre_trim_lead_in_ms = pre_trim_lead_in_ms
         self._silero_model = None
         self._silero_get_ts = None
         # Per-line RMS-dip adjustment: every first-in-line word is a
@@ -244,7 +241,6 @@ class TorchCTCAligner:
         logger.info(
             "alignment_complete",
             total_words=stats.total_words,
-            char_level=stats.char_level_used,
             fallback=stats.proportional_fallback,
             syllables=len(timings),
             duration_sec=round(time.monotonic() - t0, 2),

@@ -50,7 +50,7 @@ class GpuPipeline(BasePipeline):
         job_service: For updating job state.
         uvr: Vocal/instrumental separator (local GPU).
         repo: PostgreSQL repository.
-        whisper: faster-whisper ASR transcriber.
+        whisper: Whisper ASR transcriber (HuggingFace Transformers).
         vad_processor: Voice activity detector.
         lyrics_searcher: Agent-based lyrics finder (optional).
         ctc_aligner: CTC forced alignment.
@@ -155,7 +155,7 @@ class GpuPipeline(BasePipeline):
             # ~44% shorter transcript → lyrics matcher picked the wrong
             # song version.
             # ==============================================================
-            whisper_result, vad_segments = await self._vad_and_transcribe(
+            whisper_result = await self._vad_and_transcribe(
                 vocals_path,
                 job.id,
             )
@@ -224,7 +224,6 @@ class GpuPipeline(BasePipeline):
                 "ctc_alignment_done",
                 job_id=job.id,
                 total_words=align_stats.total_words,
-                char_level=align_stats.char_level_used,
                 fallback=align_stats.proportional_fallback,
             )
 
@@ -417,10 +416,6 @@ class GpuPipeline(BasePipeline):
 
         VAD produces cleaned audio (silence removed).  Whisper runs on
         the VAD-cleaned track so it only sees voiced segments.
-
-        Returns:
-            (WhisperResult, vad_segments) where vad_segments is a list of
-            (start_sec, end_sec) voiced intervals in original audio time.
         """
         vad_result = await asyncio.to_thread(
             self.vad_processor.process,
@@ -435,13 +430,4 @@ class GpuPipeline(BasePipeline):
         )
 
         await self.job_service.mark_step(job_id, "transcribing", 100)
-        return result, vad_result.segments
-
-    @staticmethod
-    def _parse_hints_from_path(mp3_path: str) -> tuple[str | None, str | None]:
-        """Extract artist/title from filename like 'Artist - Title.mp3'."""
-        name = Path(mp3_path).stem
-        if " - " in name:
-            parts = name.split(" - ", 1)
-            return parts[0].strip(), parts[1].strip()
-        return None, None
+        return result

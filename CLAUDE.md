@@ -79,7 +79,7 @@ frontend/     → React 19 + TypeScript + MUI + Zustand. Vite build. Pages in sr
 
 - **PostgreSQL**: sessions, participants, queue_entries, tracks (with syllable_timings JSONB), job_queue (with data JSONB), mood_tags, catalog_clusters, artists. Full-text search via tsvector + GIN index
 - **MinIO (S3-compatible)**: `uploads/{job_id}.mp3` (temporary), `instrumentals/{job_id}.mp3` (permanent)
-- **RabbitMQ**: 3 exchanges — `jobs` (direct), `job.progress` (fanout), `rec` (direct). DLQ: `jobs.dlq`, `rec.dlq`
+- **RabbitMQ**: 4 exchanges — `jobs` (direct), `job.progress` (fanout, non-durable), `rec` (direct), `dlq` (direct). Main queues: `jobs.process` (with `x-max-priority=10`), `rec.index`, `rec.indexed` (rec-service publishes after QDrant upsert with routing_key=`indexed`; backend consumes to set `tracks.qdrant_synced=1`). DLQ: `jobs.dlq`, `rec.dlq` (bound via `x-dead-letter-exchange`). SSE clients open exclusive auto-delete queues on `job.progress`. Connection uses `aio_pika.connect_robust` (auto-reconnect)
 - **QDrant**: `audio_features` (45-d librosa vectors), `lyrics_embeddings` (384-d sentence-transformer vectors)
 - **Nginx**: Reverse proxy, SSE passthrough, frontend static files
 
@@ -89,10 +89,10 @@ Processing order (defined in `PipelineStep` enum):
 SEPARATING → VAD → TRANSCRIBING → SEARCHING_LYRICS → ALIGNING → LINE_BREAKING
 
 - **SEPARATING**: Direct PyTorch BS-Roformer inference (`worker/gpu/uvr_separator.py`). Model loaded in FP16, batched chunk processing with overlap-add on GPU, autocast enabled. Vocals output as 16kHz mono WAV (ready for VAD/Whisper). Instrumental WAV→MP3 conversion (ffmpeg, matching original bitrate via ffprobe) and S3 upload run as background asyncio task parallel to VAD+Whisper.
-- **Back-vocal split** (sub-step inside SEPARATING, no separate `PipelineStep`): `BackVocalSeparator` (`worker/gpu/back_vocal_separator.py`) runs a second Mel-Band RoFormer pass (`mel_band_roformer_karaoke_aufr33_viperx_sdr_10.1956`) that splits the UVR vocals into **lead** and **backing** stems. All downstream steps (VAD, TRANSCRIBING, ALIGNING, LINE_BREAKING) consume the **lead** vocals — backing harmonies otherwise confuse ASR and CTC. Falls back to full vocals if the separator fails.
+- **Back-vocal split** (sub-step inside SEPARATING, no separate `PipelineStep`): `BackVocalSeparator` (`worker/gpu/back_vocal_separator.py`) runs a second Mel-Band RoFormer pass (`mel_band_roformer_karaoke_aufr33_viperx_sdr_10.1956`) that splits the UVR vocals into **lead** and **backing** stems. **VAD and TRANSCRIBING run on the full vocals** (backing harmonies actually help Whisper identify the track — a lead-only experiment produced ~44% shorter transcripts and broke lyrics matching). **Only ALIGNING and LINE_BREAKING consume the lead stem** (see `worker/gpu/gpu_pipeline.py:158-237`). Falls back to full vocals for the lead stem if the separator fails.
 - **VAD**: RMS energy detection via PyTorch CPU (`worker/common/vad_processor.py`). No librosa dependency — uses `torch.unfold` + threshold. Audio loaded via soundfile, resampled via `torchaudio.functional.resample` if needed.
-- **TRANSCRIBING**: HuggingFace Transformers Whisper (PyTorch-native, not CTranslate2). Model stays in VRAM between tracks (no per-job cleanup). First job on cold worker ~9s (CUDA JIT), subsequent ~1.8s.
-- **SEARCHING_LYRICS**: Provider chain in `worker/common/lyrics/` — fetches lyrics from genius, lrclib, lyricsovh, chartlyrics, simpmusic (one of these may use the local SearXNG instance in `searxng/` as fallback). Chain logic in `provider_chain.py`, candidate scoring/matching in `worker/common/lyrics/matching/`.
+- **TRANSCRIBING**: HuggingFace Transformers Whisper (PyTorch-native, not CTranslate2). Default model `openai/whisper-tiny`. `WhisperTranscriber.cleanup()` is invoked from the pipeline after every job (`del model` + `torch.cuda.empty_cache()`), so the next job re-loads weights from the local HF cache. A `warmup()` method exists but is never called — CUDA-kernel JIT happens on the first real job. The `whisper_compute_type="float16"` setting in `worker/app/config.py` is **not** a CTranslate2 flag — it just selects `torch.float16` vs `torch.float32`; the stale "faster-whisper" comments in `config.py` and `gpu_pipeline.py` docstring are leftovers from a prior backend.
+- **SEARCHING_LYRICS**: Provider chain in `worker/common/lyrics/` — actually wired in `worker/app/main.py:88-100` are **only three providers**: `GeniusProvider` (if `GENIUS_TOKEN` is set), `LRCLibProvider`, `LyricsOvhProvider`. `ChartLyricsProvider` and `SimpMusicProvider` classes exist in `worker/common/lyrics/providers/` but are not imported and not instantiated (dead code). When the provider chain fails, the pipeline falls back to `LyricsAgent` (`worker/common/lyrics_agent.py`) — an agentic loop using DeepSeek + SearXNG (local instance in `searxng/`) / Yandex Search; if even the agent fails, raw ASR text is used (`lyrics_source="asr_fallback"`). Chain logic in `provider_chain.py`, candidate scoring/matching in `worker/common/lyrics/matching/`.
 - **ALIGNING**: MMS-300M CTC forced aligner (`MahmoudAshraf/mms-300m-1130-forced-aligner` via HuggingFace transformers `Wav2Vec2ForCTC`) using `torchaudio.functional.forced_align` + `merge_tokens` on GPU. Includes Silero VAD pre-trim of intro noise plus three optional post-pass RMS adjustments for line-start anchoring, word-end drift trim, and word-end sustain extension (all toggleable in `TorchCTCAligner.__init__`).
 - **LINE_BREAKING**: Injects `\n` markers into the syllable stream (`shared/karaoke_shared/utils/line_breaker.py`, called from `worker/gpu/gpu_pipeline.py`). Auto-selects between *gap mode* (break at inter-syllable gaps above a track-adaptive threshold) and *beat mode* (`librosa.beat.beat_track` on the vocal audio — used when too few large gaps, typical for rap). Skipped when timings already carry `\n` from LRC.
 
@@ -107,7 +107,7 @@ Worker creates track at finalization (deferred track creation — no track recor
 - pytest uses `asyncio_mode = auto` (no need for `@pytest.mark.asyncio`)
 - Shared constants (status enums, collection names, pipeline steps) live in `shared/karaoke_shared/constants.py`
 - DB schema in `backend/app/db/init_pg.sql`, applied at startup via `init_pg()`. No migration tool
-- No foreign keys in PostgreSQL (denormalized by design, see ADR-03)
+- No foreign keys in PostgreSQL (denormalized by design)
 - Docker Compose: base `docker-compose.yml` + `docker-compose.gpu.yml`, optionally + `docker-compose.prod.yml` or `docker-compose.local.yml`
 - Docker services: `postgres`, `minio`, `rabbitmq`, `qdrant`, `backend`, `rec-service`, `frontend`, `worker`
 - Container names prefixed `karaoke_`. Network: `karaoke_net`
@@ -143,10 +143,7 @@ Required env vars (see `.env.example`):
 
 ## Documentation
 
-`journals/` contains detailed docs:
-- `ARCHITECTURE.md` — full architecture description
-- `ADR.md` — Architecture Decision Records (e.g. ADR-03: no foreign keys)
-- `DEPLOYMENT_GUIDE.md` — deployment procedures
-- `upload-sequence.md`, `upload-sequence-worker.md`, `upload-sequence-rec.md`, `upload-components.md` — upload flow sequence diagrams and component map (target architecture)
-- `PROJECT_LOG.md`, `PHASES.md` — project history and development phases
-- `CURRENT_HIT_PLAN.md`, `RECOMMENDATIONS_V2_BRAINSTORM.md` — in-flight planning docs
+`journals/` (only these files are current — prior journals were deleted because they contained inaccurate claims; do not resurrect them from git history):
+- `WORKER_FACTS.md` — exhaustive map of the worker pipeline with `file:line` citations from the live code. Source of truth for any worker-related fact.
+- `THESIS_PLAN.md` — HSE master-thesis formatting requirements.
+- `BUSINESS_CUSTOMER.md` — business-customer notes.

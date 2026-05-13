@@ -285,7 +285,6 @@ class BootstrapPipeline(BasePipeline):
                     "language": language,
                     "align_stats": {
                         "total_words": align_stats.total_words,
-                        "char_level_used": align_stats.char_level_used,
                     },
                 },
             )

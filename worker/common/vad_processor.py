@@ -2,14 +2,13 @@
 
 Uses RMS energy detection via PyTorch to find voiced segments and
 concatenates them into a single cleaned WAV file at 16kHz mono.
-Also exposes voiced intervals for segmented CTC alignment.
 """
 
 from __future__ import annotations
 
 import pathlib
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import structlog
 
@@ -23,7 +22,6 @@ class VADResult:
     """Result of VAD processing."""
 
     cleaned_path: str
-    segments: list[tuple[float, float]] = field(default_factory=list)
 
 
 class VADProcessor:
@@ -44,8 +42,7 @@ class VADProcessor:
             vocals_path: Absolute path to vocals.wav from UVR.
 
         Returns:
-            VADResult with path to cleaned WAV and voiced intervals
-            in seconds as (start_sec, end_sec) tuples.
+            VADResult with path to cleaned WAV.
         """
         import numpy as np
         import soundfile as sf
@@ -93,15 +90,12 @@ class VADProcessor:
             for s, e in zip(starts, ends)
         ]
 
-        # Voiced intervals in seconds (for segmented alignment).
-        segments = [(s / _SR, e / _SR) for s, e in intervals]
-
         voiced = [y[s:e] for s, e in intervals]
         cleaned = np.concatenate(voiced)
 
         if len(cleaned) / _SR < 1.0:
             logger.warning("vad_result_too_short", duration_sec=len(cleaned) / _SR)
-            return VADResult(cleaned_path=vocals_path, segments=segments)
+            return VADResult(cleaned_path=vocals_path)
 
         track_id = pathlib.Path(vocals_path).stem.split("_")[0]
         out_path = str(
@@ -114,29 +108,6 @@ class VADProcessor:
             original_sec=len(y) / _SR,
             cleaned_sec=len(cleaned) / _SR,
             reduction_pct=round((1 - len(cleaned) / len(y)) * 100, 1),
-            segments=len(segments),
             duration_sec=round(time.monotonic() - t0, 2),
         )
-        return VADResult(cleaned_path=out_path, segments=segments)
-
-    @staticmethod
-    def map_cleaned_to_original(
-        cleaned_time: float,
-        segments: list[tuple[float, float]],
-    ) -> float:
-        """Map a timestamp from VAD-cleaned audio back to original audio time.
-
-        The cleaned audio is a concatenation of voiced segments. This method
-        finds which segment the cleaned_time falls into and returns the
-        corresponding absolute time in the original audio.
-        """
-        accumulated = 0.0
-        for seg_start, seg_end in segments:
-            seg_dur = seg_end - seg_start
-            if accumulated + seg_dur > cleaned_time:
-                return seg_start + (cleaned_time - accumulated)
-            accumulated += seg_dur
-        # Past the end — return end of last segment.
-        if segments:
-            return segments[-1][1]
-        return cleaned_time
+        return VADResult(cleaned_path=out_path)

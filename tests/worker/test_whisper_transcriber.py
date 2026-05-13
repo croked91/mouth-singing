@@ -9,7 +9,6 @@ class TestWhisperResult:
     """Test WhisperResult dataclass."""
 
     def test_create(self):
-        r = WhisperResult(text="hello world", language="en", confidence=0.8)
+        r = WhisperResult(text="hello world", language="en")
         assert r.text == "hello world"
         assert r.language == "en"
-        assert r.confidence == 0.8

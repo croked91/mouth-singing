@@ -7,7 +7,6 @@ for LLM lyrics search. Errors in 20-30% of words are acceptable.
 
 from __future__ import annotations
 
-import math
 import time
 from dataclasses import dataclass
 
@@ -29,20 +28,20 @@ class WhisperResult:
 
     text: str  # full text, segments joined by ' '
     language: str  # two-letter code ('ru', 'en', ...)
-    confidence: float  # average log-prob → prob (0..1)
 
 
 class WhisperTranscriber:
     """PyTorch-native Whisper transcriber via HuggingFace Transformers.
 
-    No CTranslate2 — avoids ~28 s CUDA kernel JIT on first inference.
-    The model is loaded once at construction and held in memory.
-    Methods are synchronous; use asyncio.to_thread for async contexts.
+    The model is loaded eagerly at construction; ``cleanup()`` releases
+    VRAM and the next ``transcribe()`` call reloads weights from the
+    local HuggingFace cache. Methods are synchronous; use
+    ``asyncio.to_thread`` for async contexts.
 
     Args:
         model_size: 'tiny' (~70MB) or 'base' (~140MB).
         device: 'cuda' or 'cpu'.
-        compute_type: 'float16' for GPU, ignored for CPU.
+        compute_type: 'float16' for GPU (selects torch.float16), ignored for CPU.
         model_cache_dir: Directory for HuggingFace model cache.
     """
 
@@ -93,28 +92,6 @@ class WhisperTranscriber:
             backend="transformers",
         )
 
-    def warmup(self) -> None:
-        """Run full-length dummy inference to trigger CUDA kernel JIT compilation."""
-        import numpy as np
-        import torch
-
-        if self._model is None:
-            self._load_model()
-
-        # Use 30 sec of silence (one full Whisper chunk) with max tokens
-        # to compile all CUDA kernels used during real inference.
-        dummy = self._processor(
-            np.zeros(30 * 16000, dtype=np.float32),
-            sampling_rate=16000,
-            return_tensors="pt",
-        )
-        with torch.no_grad():
-            self._model.generate(
-                dummy.input_features.to(device=self._device, dtype=self._torch_dtype),
-                max_new_tokens=440,
-            )
-        logger.info("whisper_warmup_done")
-
     def transcribe(self, audio_path: str) -> WhisperResult:
         """Transcribe an audio file.
 
@@ -122,7 +99,7 @@ class WhisperTranscriber:
             audio_path: Path to WAV file (ideally 16kHz mono after VAD).
 
         Returns:
-            WhisperResult with text, language, confidence.
+            WhisperResult with text and language.
         """
         import soundfile as sf
         import torch
@@ -145,7 +122,6 @@ class WhisperTranscriber:
         # Process in 30-second chunks (Whisper's native window size)
         chunk_samples = 30 * 16000
         all_text_parts = []
-        all_log_probs = []
         language = "en"
 
         for chunk_start in range(0, len(audio), chunk_samples):
@@ -165,7 +141,6 @@ class WhisperTranscriber:
                 output = self._model.generate(
                     input_features,
                     return_dict_in_generate=True,
-                    output_scores=True,
                     max_new_tokens=440,
                 )
 
@@ -207,33 +182,19 @@ class WhisperTranscriber:
                         language = lang_code
                         break
 
-            # Collect log-probs for confidence
-            if output.scores:
-                for i, score in enumerate(output.scores):
-                    tok = token_ids[i + 1] if i + 1 < len(token_ids) else None
-                    if tok is not None:
-                        lp = torch.log_softmax(score[0], dim=-1)[tok].item()
-                        all_log_probs.append(lp)
-
         text = " ".join(all_text_parts)
-
-        confidence = 0.5
-        if all_log_probs:
-            avg_logprob = sum(all_log_probs) / len(all_log_probs)
-            confidence = min(1.0, max(0.0, math.exp(avg_logprob)))
 
         elapsed = round(time.monotonic() - t0, 2)
 
         logger.info(
             "whisper_completed",
             language=language,
-            confidence=round(confidence, 3),
             text_length=len(text),
             text=text,
             duration_sec=elapsed,
         )
 
-        return WhisperResult(text=text, language=language, confidence=confidence)
+        return WhisperResult(text=text, language=language)
 
     def cleanup(self) -> None:
         """Release VRAM held by the model."""

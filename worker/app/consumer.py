@@ -1,8 +1,9 @@
 """RabbitMQ-based job consumer — replaces DB-polling JobPoller.
 
 Consumes messages from the "jobs.process" queue. Each message contains
-{job_id, mp3_key}. The consumer locks the job in the DB, runs the
-pipeline, then acks or nacks the message.
+{job_id}; the consumer locks the job in the DB, fetches the rest of
+the job record (including mp3_key), runs the pipeline, then acks or
+nacks the message.
 """
 
 from __future__ import annotations

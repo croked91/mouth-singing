@@ -30,7 +30,6 @@ _SUBPROCESS_TIMEOUT = 300
 class AlignmentStats:
     """Alignment quality statistics."""
     total_words: int = 0
-    char_level_used: int = 0
     proportional_fallback: int = 0
 
 
@@ -148,14 +147,12 @@ class CTCAligner:
             ]
             stats = AlignmentStats(
                 total_words=data["stats"]["total_words"],
-                char_level_used=data["stats"]["char_level_used"],
                 proportional_fallback=data["stats"]["proportional_fallback"],
             )
 
             logger.info(
                 "alignment_complete",
                 total_words=stats.total_words,
-                char_level=stats.char_level_used,
                 fallback=stats.proportional_fallback,
                 syllables=len(timings),
                 subprocess=True,

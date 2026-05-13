@@ -5,8 +5,9 @@ Splits UVR vocals output into lead-only and backing-only stems via
 16kHz mono vocals produced by :class:`UVRSeparator` (upsampled to
 44.1kHz stereo internally for the model, then downsampled back).
 
-Downstream VAD/Whisper/CTC steps consume the lead_vocals output so
-backing harmonies no longer confuse ASR or alignment.
+The lead stem is consumed by CTC alignment and line-break detection;
+VAD and Whisper run on the full vocals (backing harmonies actually
+help Whisper identify the track — see comments in ``gpu_pipeline.py``).
 """
 
 from __future__ import annotations
