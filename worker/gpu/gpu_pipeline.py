@@ -30,10 +30,10 @@ from karaoke_shared.services.job_service import JobService
 from karaoke_shared.storage import S3Storage
 
 from worker.common.base_pipeline import BasePipeline
-from worker.common.ctc_aligner import CTCAligner
 from worker.common.lyrics import LyricsProviderChain
 from worker.common.lyrics_searcher import LyricsSearchError
 from worker.common.vad_processor import VADProcessor
+from worker.gpu.torch_ctc_aligner import TorchCTCAligner
 from worker.gpu.uvr_separator import UVRSeparator
 from worker.gpu.whisper_transcriber import WhisperTranscriber
 
@@ -67,7 +67,7 @@ class GpuPipeline(BasePipeline):
         whisper: WhisperTranscriber,
         vad_processor: VADProcessor,
         lyrics_searcher: LyricsProviderChain | None,
-        ctc_aligner: CTCAligner,
+        ctc_aligner: TorchCTCAligner,
         storage: S3Storage,
         rmq: RabbitMQClient,
         settings: object | None = None,

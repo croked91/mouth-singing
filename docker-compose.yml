@@ -205,7 +205,6 @@ volumes:
   qdrant_data:
   media_data:
   models_data:
-  ctc_model:
 
 networks:
   karaoke_net:

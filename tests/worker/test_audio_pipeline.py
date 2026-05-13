@@ -10,7 +10,7 @@ from karaoke_shared.models.job import Job
 from karaoke_shared.models.track import SyllableTiming, Track
 
 from worker.gpu.gpu_pipeline import GpuPipeline
-from worker.common.ctc_aligner import AlignmentStats
+from worker.gpu.torch_ctc_aligner import AlignmentStats
 from worker.common.lyrics_searcher import (
     LyricsNotFoundError,
     LyricsResult,

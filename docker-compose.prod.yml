@@ -8,12 +8,10 @@ services:
 
   backend:
     volumes:
-      - /root/bootstrap_output:/data/sqlite:rw
       - /root/bootstrap_output:/data/media:rw
 
   worker:
     volumes:
-      - /root/bootstrap_output:/data/sqlite:rw
       - /root/bootstrap_output:/data/media:rw
       - /root/models:/data/models:rw
 

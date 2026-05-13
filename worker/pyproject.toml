@@ -40,10 +40,6 @@ dependencies = [
 gpu = [
     # UVR local separation (BS-Roformer)
     "audio-separator>=0.24",
-    "onnxruntime-gpu>=1.18",
-    # Local ASR
-    "faster-whisper==1.0.3",
-    "ctranslate2==4.4.0",
     # Local lyric embedder
     "sentence-transformers>=2.2,<3",
     "transformers<5",

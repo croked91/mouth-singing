@@ -4,7 +4,7 @@
 
 > **Статус:** в работе. Прочитанные файлы перечислены в разделе «История чтения» в конце.
 
-> **⚠️ Cleanup 2026-05-13.** Описанный ниже мёртвый код был удалён из репозитория. Конкретные `file:line` ссылки на удалённые места могут не существовать в текущем `HEAD` — см. раздел «Cleanup 2026-05-13» сразу после раздела 7.
+> **⚠️ Cleanup 2026-05-13/14.** Часть описанного ниже мёртвого кода была удалена из репозитория. Конкретные `file:line` ссылки на удалённые места могут не существовать в текущем `HEAD` — детальная история удалений в `git log`.
 
 ---
 
@@ -276,77 +276,11 @@
 
 ## 7. Несоответствия и открытые вопросы
 
-1. **Whisper-backend.** ✅ **Резолюция:** реальный backend — HuggingFace Transformers (см. п. 10.1), как и пишет `CLAUDE.md`. Утверждения «faster-whisper» в `worker/app/config.py:127` и docstring `worker/gpu/gpu_pipeline.py:53` — устаревшая документация (вероятно, после миграции с faster-whisper комментарии не обновили). Параметр `whisper_compute_type="float16"` в этом коде — **не CT2-параметр**, а простой флаг для выбора `torch.float16` против `torch.float32` (`worker/gpu/whisper_transcriber.py:73-77`).
+> Подпункты, устранённые в ходе cleanup'а 2026-05-13/14 (правки CLAUDE.md, удаление мёртвого кода, удаление backend test-suite/SQLite-инфры), удалены из этого раздела. Детальная история — в `git log`. Здесь оставлены только **реальные открытые вопросы**.
 
-   ⚠️ **Но новое противоречие с CLAUDE.md внутри той же секции:** CLAUDE.md утверждает «Model stays in VRAM between tracks (**no per-job cleanup**). First job on cold worker ~9s (CUDA JIT), subsequent ~1.8s.» Реальность по коду: `whisper.cleanup()` **вызывается из пайплайна после каждой задачи** (`worker/gpu/gpu_pipeline.py:164`), внутри `cleanup()` модель удаляется из памяти + `torch.cuda.empty_cache()`. На следующую задачу `transcribe()` снова грузит модель из кеша HuggingFace (`worker/gpu/whisper_transcriber.py:131-132`). Дополнительно: метод `warmup()` определён, но **нигде не вызывается** (проверено grep'ом по worker/ и shared/) — JIT происходит на первой реальной задаче.
+1. **`PipelineStep.VAD`, `ALIGNING`, `LINE_BREAKING` определены, но `mark_step` для них не вызывается в runtime.** ✅ Подтверждено grep'ом: в `worker/gpu/gpu_pipeline.py` есть только `mark_step` для `separating`, `transcribing`, `searching_lyrics`. В коде `TorchCTCAligner` колбэков прогресса тоже нет — между `searching_lyrics 100%` и `mark_completed` SSE-канал «молчит» (≈ длительность CTC + line breaker). Это функциональный пробел в UX, а не несоответствие документации.
 
-2. **VAD/TRANSCRIBING на full vocals, а не на lead.** В `CLAUDE.md`: *«All downstream steps (VAD, TRANSCRIBING, ALIGNING, LINE_BREAKING) consume the lead vocals — backing harmonies otherwise confuse ASR and CTC.»* В коде однозначно наоборот: `_vad_and_transcribe(vocals_path, …)` принимает **полные** вокалы (`worker/gpu/gpu_pipeline.py:158-161`), а в комментарии 152-156 это явно объясняется: «backing vocals help Whisper recognise the track. Lead-only was tried and produced a ~44% shorter transcript → lyrics matcher picked the wrong song version». **Только** `ALIGNING` и `LINE_BREAKING` работают на lead vocals (`worker/gpu/gpu_pipeline.py:215, 237`).
-
-3. **`ctc_device="cpu"` vs `TorchCTCAligner(device="cuda")`.** ✅ **Резолюция:** `settings.ctc_device="cpu"` относится к **legacy `CTCAligner`** (ONNX, subprocess) — `worker/common/ctc_aligner.py:48,57`. Параметр и комментарий про CUDA EP / CPU↔GPU memcpy — про ONNX wav2vec2. Этот aligner используется **только в bootstrap-пайплайне** (`worker/bootstrap/pipeline.py`), не в runtime. В runtime — `TorchCTCAligner` с захардкоженным `device="cuda"`. См. п. 13 (две CTC-реализации сосуществуют).
-
-4. **Поле `mp3_key` в сообщении.** Шапка `worker/app/consumer.py:1-6` указывает, что сообщение содержит `{job_id, mp3_key}`, но фактически читается только `job_id` — `mp3_key` достаётся из БД через `repo.get_job`. Скорее всего, устаревший комментарий.
-
-5. **`PipelineStep.VAD`, `ALIGNING`, `LINE_BREAKING` определены, но `mark_step` для них не вызывается в основном runtime.** ✅ Подтверждено grep'ом: в `worker/gpu/gpu_pipeline.py` есть только `mark_step` для `separating`, `transcribing`, `searching_lyrics`. `mark_step("aligning", …)` найден только в `worker/bootstrap/pipeline.py` (массовый бутстрап). В коде `TorchCTCAligner` колбэков прогресса тоже нет — между `searching_lyrics 100%` и `mark_completed` SSE-канал «молчит» (≈ длительность CTC + line breaker). Это функциональный пробел в UX, а не несоответствие документации.
-
-6. **Декомпозиция шагов пайплайна.** CLAUDE.md перечисляет 6 шагов в `PipelineStep` enum: SEPARATING → VAD → TRANSCRIBING → SEARCHING_LYRICS → ALIGNING → LINE_BREAKING. Реальный поток по коду — 7 содержательных стадий: SEPARATING + back-vocal split + VAD + TRANSCRIBING + SEARCHING_LYRICS + ALIGNING + LINE_BREAKING + finalization/publish. Back-vocal split в `PipelineStep` enum не выделен (это под-стадия SEPARATING — что подтверждает CLAUDE.md в одном месте, но в другом противоречит).
-
-7. **Только 3 из 5 lyrics-провайдеров реально используются.** CLAUDE.md перечисляет «genius, lrclib, lyricsovh, **chartlyrics**, **simpmusic**». В `_build_gpu_pipeline` (`worker/app/main.py:88-100`) фактически инстанциируются только Genius (если задан токен), LRCLib, LyricsOvh. Классы `ChartLyricsProvider` и `SimpMusicProvider` определены в `worker/common/lyrics/providers/` (117 + 77 строк), но нигде не импортируются и не вызываются — мёртвый код. См. п. 17.2.
-
-8. **`rec.indexed` очередь не упомянута в CLAUDE.md.** CLAUDE.md в описании RabbitMQ перечисляет: «3 exchanges — `jobs` (direct), `job.progress` (fanout), `rec` (direct). DLQ: `jobs.dlq`, `rec.dlq`». В реальности — **4 exchange** (плюс `dlq`) и существует **5-я основная очередь `rec.indexed`** (durable, bound к exchange `rec` с routing_key=`indexed`). Эта очередь замыкает цикл с рекомендательной подсистемой: rec-service публикует туда после QDrant upsert, backend читает и обновляет `tracks.qdrant_synced=1`. См. п. 23.2.
-
----
-
-## 7.5. Cleanup 2026-05-13 — удалённый мёртвый код
-
-В этот день мёртвый код, описанный в разделах ниже, был удалён из репозитория. Точные строковые ссылки в более поздних разделах (10.4, 11.2, 12.1, 12.5, 12.6, 13, 14, 17.6, 17.7, 20, 22.x) **больше не действительны** — см. этот раздел как сводный список того, что было удалено.
-
-### Удалённые файлы целиком
-
-- `worker/common/lyrics/providers/chartlyrics.py` (`ChartLyricsProvider`).
-- `worker/common/lyrics/providers/simpmusic.py` (`SimpMusicProvider`).
-- `worker/common/segment_builder.py` (`build_segments_from_vad`).
-- `tests/test_syllabifier.py` (40+ тестов на удалённые методы `Syllabifier`).
-
-### Удалённые символы в живых файлах
-
-| Символ | Где было | Заменён на |
-|---|---|---|
-| `WhisperTranscriber.warmup()` | `worker/gpu/whisper_transcriber.py` | — (нигде не вызывался; JIT теперь только на первой реальной задаче) |
-| `WhisperResult.confidence` | `worker/gpu/whisper_transcriber.py` | — (поле вычислялось через log-probs, нигде не читалось; вместе с ним убрано накопление `all_log_probs` и `output_scores=True`) |
-| `GpuPipeline._parse_hints_from_path` | `worker/gpu/gpu_pipeline.py` | — (хинты теперь только из `job.artist_hint`/`title_hint`; вместе удалены 3 теста `TestPipelineHelpers`) |
-| `AlignmentStats.char_level_used` | `worker/gpu/torch_ctc_aligner.py`, `worker/common/ctc_aligner.py`, `worker/common/ctc_subprocess.py`, `worker/bootstrap/pipeline.py` | — (всегда `0`, char-level CTC отключён) |
-| `TorchCTCAligner.pre_trim_lead_in_ms` (+ `WorkerSettings.mms_pre_trim_lead_in_ms`) | `worker/gpu/torch_ctc_aligner.py`, `worker/app/config.py`, `worker/app/main.py`, `scripts/generate_alignment_fixtures.py` | — (deprecated, заменён `_refine_silero_onset`) |
-| `VADProcessor.map_cleaned_to_original` | `worker/common/vad_processor.py` | — (нигде не вызывался) |
-| `VADResult.segments` + вычисление в `process()` + возврат `vad_segments` из `_vad_and_transcribe` | `worker/common/vad_processor.py`, `worker/gpu/gpu_pipeline.py` | — (segmented alignment не реализован; интервалы вычислялись и игнорировались) |
-| `Syllabifier.syllabify` + `_from_bpe_tokens` + `_from_word_tokens` + `split_text_to_syllables` | `shared/karaoke_shared/utils/syllabifier.py` | — (артефакты WhisperX/Soniox-миграций; в runtime используется только приватный `_split_word`) |
-| Мёртвый импорт `SyllableTiming`, неиспользуемые `MIN_FRAMES`, `import re`, `import numpy` | `worker/common/ctc_subprocess.py` | — |
-
-### Обновлённые устаревшие комментарии
-
-- `worker/app/config.py:127` — `GPU mode: faster-whisper local ASR` → `GPU mode: Whisper local ASR (HuggingFace Transformers, PyTorch)`.
-- `worker/gpu/gpu_pipeline.py:53` — `whisper: faster-whisper ASR transcriber.` → `whisper: Whisper ASR transcriber (HuggingFace Transformers).`
-- `worker/gpu/back_vocal_separator.py:8-9` — комментарий «Downstream VAD/Whisper/CTC steps consume the lead_vocals output» переписан, чтобы корректно отражать факт: lead идёт только в CTC + line-breaker, VAD и Whisper работают на full vocals.
-- `worker/app/consumer.py:1-6` — шапка с описанием `{job_id, mp3_key}` исправлена на `{job_id}`; `mp3_key` достаётся из БД.
-
-### Что НЕ удалено (намеренно)
-
-- `worker/common/ctc_aligner.py` и `worker/common/ctc_subprocess.py` — это legacy ONNX-путь, используемый bootstrap'ом (`worker/bootstrap/pipeline.py`), а не самим мёртвым кодом. Сам класс `CTCAligner` живой в bootstrap-pipeline.
-- Тесты `tests/worker/test_ctc_aligner.py` — содержат 9 предсуществующих сломанных тестов, ссылающихся на давно отсутствующие методы (`_syllables_from_char_timings`, `lang_flags`, `_proportional_syllables` и т. п.). Это уже было сломано до 2026-05-13 (проверено git stash baseline) — не входит в задачу.
-- Предсуществующие ruff-нарушения в `worker/common/ctc_subprocess.py` (`E741 l`, `F841 nf`) — не описаны в WORKER_FACTS как мёртвый код.
-
-### Несоответствия раздела 7, которые после cleanup'а тоже устранены
-
-- № 1 (Whisper «no per-job cleanup») — расхождение в CLAUDE.md уже исправлено (см. секцию TRANSCRIBING). `warmup()` удалён.
-- № 4 («mp3_key в сообщении») — комментарий в шапке `consumer.py` исправлен.
-- № 7 (5 lyrics-провайдеров) — мёртвые `ChartLyrics`/`SimpMusic` удалены, теперь в репозитории ровно 3 провайдера.
-
-### Что осталось из несоответствий
-
-- № 2 (VAD/Whisper на full vocals) — формулировка в `CLAUDE.md` уже исправлена, поведение в коде не меняли.
-- № 3 (`ctc_device="cpu"` vs runtime CUDA) — параметр относится к bootstrap-пути, поэтому не трогали.
-- № 5 (`mark_step` не вызывается для VAD/ALIGNING/LINE_BREAKING) — функциональный пробел UX, не мёртвый код; не входит в задачу cleanup'а.
-- № 6 (декомпозиция шагов 6 vs 7) — документационный нюанс, не код.
-- № 8 (`rec.indexed` не в CLAUDE.md) — устранено правкой CLAUDE.md.
+2. **Декомпозиция шагов пайплайна.** CLAUDE.md перечисляет 6 шагов в `PipelineStep` enum: SEPARATING → VAD → TRANSCRIBING → SEARCHING_LYRICS → ALIGNING → LINE_BREAKING. Реальный поток по коду — 7 содержательных стадий: SEPARATING + back-vocal split + VAD + TRANSCRIBING + SEARCHING_LYRICS + ALIGNING + LINE_BREAKING + finalization/publish. Back-vocal split в `PipelineStep` enum не выделен (это под-стадия SEPARATING — что подтверждает CLAUDE.md в одном месте, но в другом противоречит).
 
 ---
 
@@ -509,7 +443,7 @@
 
 - ✅ «Back-vocal split (sub-step inside SEPARATING, no separate PipelineStep): BackVocalSeparator … splits the UVR vocals into lead and backing stems» — соответствует.
 - ✅ «Falls back to full vocals if the separator fails» — это поведение реализовано не здесь, а в `gpu_pipeline.py:128-146` (try/except → `lead_vocals_path = vocals_path`).
-- ⚠️ Шапка-комментарий самого файла (`worker/gpu/back_vocal_separator.py:8-9`) утверждает: «Downstream VAD/Whisper/CTC steps consume the lead_vocals output» — это **устаревшая документация**, повторяющая ошибочное утверждение из CLAUDE.md. Реальное поведение в `gpu_pipeline.py`: VAD и Whisper работают на full vocals, lead — только для CTC и line breaker. См. п. 7 (несоответствие 2).
+- ⚠️ Шапка-комментарий самого файла (`worker/gpu/back_vocal_separator.py:8-9`) утверждает: «Downstream VAD/Whisper/CTC steps consume the lead_vocals output» — это **устаревшая документация**, повторяющая ошибочное утверждение из CLAUDE.md. Реальное поведение в `gpu_pipeline.py`: VAD и Whisper работают на full vocals, lead — только для CTC и line breaker. Формулировка в CLAUDE.md уже исправлена в cleanup'е 2026-05-13 (см. `git log`).
 
 ---
 
@@ -524,7 +458,7 @@
 - Импорт: `from transformers import WhisperForConditionalGeneration, WhisperProcessor` — `worker/gpu/whisper_transcriber.py:67`.
 - Лог при загрузке: `logger.info("whisper_loaded", ..., backend="transformers")` — `worker/gpu/whisper_transcriber.py:89-94`.
 
-**Это снимает противоречие №1** из раздела 7: реальный backend — Transformers, как и утверждает `CLAUDE.md`. Шапка `worker/app/config.py:127` («GPU mode: faster-whisper local ASR») и docstring `GpuPipeline` («faster-whisper ASR transcriber», `worker/gpu/gpu_pipeline.py:53`) — **устаревшие** комментарии (видимо, раньше использовался faster-whisper, после миграции их не обновили).
+Реальный backend — Transformers, как и утверждает `CLAUDE.md`. Шапка `worker/app/config.py:127` («GPU mode: faster-whisper local ASR») и docstring `GpuPipeline` («faster-whisper ASR transcriber», `worker/gpu/gpu_pipeline.py:53`) были **устаревшими** комментариями (после миграции с faster-whisper их не обновили) — исправлены в cleanup'е 2026-05-13 (см. `git log`).
 
 ### 10.2. Параметры конструктора и MODEL_ID_MAP
 
@@ -587,7 +521,7 @@ class WhisperResult:
 - `del self._model; del self._processor`; обнуление полей; `gc.collect()`; `torch.cuda.empty_cache()`.
 - Вызывается из `gpu_pipeline.py:164` **после каждой задачи** (`asyncio.to_thread(self.whisper.cleanup)`).
 - Поскольку в `transcribe()` модель загружается заново при `self._model is None` — после cleanup следующая задача **повторно загружает модель из кеша HuggingFace** (без сетевого запроса, но с CPU→GPU переносом и autoload весов).
-- Это **противоречит утверждению CLAUDE.md** «Model stays in VRAM between tracks (no per-job cleanup). First job on cold worker ~9s (CUDA JIT), subsequent ~1.8s.» — фактически модель выгружается между задачами и каждый раз загружается обратно. Это новое несоответствие — фиксирую в разделе 7.
+- Это **противоречило утверждению CLAUDE.md** «Model stays in VRAM between tracks (no per-job cleanup). First job on cold worker ~9s (CUDA JIT), subsequent ~1.8s.» — фактически модель выгружается между задачами и каждый раз загружается обратно. Формулировка в CLAUDE.md (секция TRANSCRIBING) исправлена в cleanup'е 2026-05-13 (см. `git log`).
 
 ---
 
@@ -871,7 +805,7 @@ class VADResult:
 
 ---
 
-## 13. Legacy CTC — `CTCAligner` (ONNX + subprocess)
+## 13. Legacy CTC — `CTCAligner` (ONNX + subprocess) *(файл удалён 2026-05-13)*
 
 **Файл:** `worker/common/ctc_aligner.py`. Класс `CTCAligner`, dataclass `AlignmentStats` (отдельный от такого же в `torch_ctc_aligner.py`).
 
@@ -944,7 +878,7 @@ class VADResult:
 
 ---
 
-## 14. Подпроцесс legacy CTC — `worker/common/ctc_subprocess.py`
+## 14. Подпроцесс legacy CTC — `worker/common/ctc_subprocess.py` *(файл удалён 2026-05-13)*
 
 **Файл:** `worker/common/ctc_subprocess.py` (191 строка). Standalone-скрипт, запускается как `python -m worker.common.ctc_subprocess`.
 
@@ -1397,7 +1331,7 @@ margin            — 0.05
 | `ChartLyricsProvider` | **нет** | **нет** | **мёртвый код** — класс определён, никогда не подключается к chain'у |
 | `SimpMusicProvider` | **нет** | **нет** | **мёртвый код** — класс определён, никогда не подключается к chain'у |
 
-**Это противоречит описанию CLAUDE.md** в разделе SEARCHING_LYRICS: «fetches lyrics from genius, lrclib, lyricsovh, chartlyrics, simpmusic» — на самом деле в реальном пайплайне работают только первые три. ChartLyrics и SimpMusic — реликтовый код (возможно, отключены после нестабильности или плохого качества). Зафиксировано как несоответствие № 7.
+**Это противоречило описанию CLAUDE.md** в разделе SEARCHING_LYRICS: «fetches lyrics from genius, lrclib, lyricsovh, chartlyrics, simpmusic» — на самом деле в реальном пайплайне работают только первые три. ChartLyrics и SimpMusic были реликтовым кодом и удалены в cleanup'е 2026-05-13 (см. `git log`).
 
 `__init__.py` файла пустой — то есть нет «общего» импорта, который бы все провайдеры поднимал автоматически. `_build_gpu_pipeline` вручную выбирает, какие подключать.
 
@@ -1447,7 +1381,7 @@ margin            — 0.05
 
 ### 17.8. Соответствие CLAUDE.md
 
-- ⚠️ **Расхождение №7 (новое):** CLAUDE.md перечисляет «genius, lrclib, lyricsovh, chartlyrics, simpmusic» как провайдеры. Фактически в `_build_gpu_pipeline` собираются **только первые три** (Genius — условно, при наличии токена; LRCLib и LyricsOvh — всегда). ChartLyrics и SimpMusic — мёртвый код. Зафиксировано в разделе 7.
+- ⚠️ **Устранённое расхождение:** CLAUDE.md перечислял «genius, lrclib, lyricsovh, chartlyrics, simpmusic» как провайдеры. Фактически в `_build_gpu_pipeline` собирались **только первые три** (Genius — условно, при наличии токена; LRCLib и LyricsOvh — всегда). ChartLyrics и SimpMusic удалены как мёртвый код 2026-05-13 (см. `git log`).
 - ✅ «one of these may use the local SearXNG instance in `searxng/` as fallback» — **не относится к провайдерам как таковым**: SearXNG используется только в `LyricsAgent` (см. сборку в `_build_gpu_pipeline`). Среди провайдеров файла `searxng.py` нет.
 
 ---
@@ -1801,7 +1735,7 @@ CLAUDE.md этот файл прямо не упоминает — он част
 
 ### 22.8. Итог: накопленный мёртвый код
 
-**Cleanup 2026-05-13:** все 10 артефактов, ранее перечисленных в этой таблице, удалены из репозитория. Полный список того, что было и куда делось, см. раздел «7.5. Cleanup 2026-05-13». Историческое содержание таблицы оставлено ниже для отслеживания технического долга / истории эволюции подсистемы — все артефакты теперь имеют статус **УДАЛЕНО**.
+**Cleanup 2026-05-13:** все 10 артефактов, ранее перечисленных в этой таблице, удалены из репозитория (см. `git log`). Историческое содержание таблицы оставлено ниже для отслеживания технического долга / истории эволюции подсистемы — все артефакты теперь имеют статус **УДАЛЕНО**.
 
 | # | Артефакт | Тип | Намерение | Статус |
 |---|---|---|---|---|
