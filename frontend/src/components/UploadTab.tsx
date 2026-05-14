@@ -22,12 +22,26 @@ import type { JobStatusEvent } from '../types';
 const MAX_FILE_SIZE_MB = 50;
 const ACCEPTED_TYPES = '.mp3,audio/mpeg';
 
-const STEP_LABELS: Record<string, string> = {
-  separating: 'Разделение вокала и музыки',
-  transcribing: 'Распознавание текста',
-  extracting_features: 'Анализ музыки',
-  embedding_lyrics: 'Обработка текста',
-  syncing_qdrant: 'Индексация',
+const TOTAL_STEPS = 7;
+
+const STEP_NUMBERS: Record<string, number> = {
+  separating: 1,
+  back_vocal_separating: 2,
+  vad: 3,
+  transcribing: 4,
+  searching_lyrics: 5,
+  aligning: 6,
+  line_breaking: 7,
+};
+
+const STEP_FUN_MESSAGES: Record<string, string> = {
+  separating: 'Расщепляем квазар',
+  back_vocal_separating: 'Усмиряем пульсары',
+  vad: 'Глушим вакуум',
+  transcribing: 'Ловим радиоэхо',
+  searching_lyrics: 'Чертим карту',
+  aligning: 'Цепляем парсеки',
+  line_breaking: 'Делим световые годы',
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -270,7 +284,11 @@ export const UploadTab: React.FC<UploadTabProps> = ({
             closeStream();
             return { ...j, phase: { kind: 'error' as const, message: event.error ?? 'Ошибка при обработке' }, unsubscribe: undefined };
           }
-          const stepLabel = event.step ? (STEP_LABELS[event.step] ?? event.step) : 'Обработка...';
+          const stepNumber = event.step ? STEP_NUMBERS[event.step] : undefined;
+          const funMessage = event.step ? STEP_FUN_MESSAGES[event.step] : undefined;
+          const stepLabel = stepNumber !== undefined
+            ? `${stepNumber}/${TOTAL_STEPS}${funMessage ? ` · ${funMessage}` : ''}`
+            : (event.step ?? 'Обработка...');
           return { ...j, phase: { kind: 'processing' as const, step: stepLabel, progress: event.progress ?? 0 } };
         }));
       },

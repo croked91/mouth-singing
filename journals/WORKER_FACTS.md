@@ -158,8 +158,9 @@
 
 ## 5. Константы (`shared/karaoke_shared/constants.py`)
 
-- `PipelineStep` (StrEnum, `shared/karaoke_shared/constants.py:94-106`):
+- `PipelineStep` (StrEnum, `shared/karaoke_shared/constants.py:94-107`):
   - `SEPARATING = "separating"`
+  - `BACK_VOCAL_SEPARATING = "back_vocal_separating"`
   - `VAD = "vad"`
   - `TRANSCRIBING = "transcribing"`
   - `SEARCHING_LYRICS = "searching_lyrics"`
@@ -178,14 +179,15 @@
 
 **Файл:** `worker/gpu/gpu_pipeline.py`.
 
-Шапка-документация перечисляет шаги (`worker/gpu/gpu_pipeline.py:1-14`):
-1. UVR separation (BS-Roformer)
-1b. Back-vocal separation (Mel-Band RoFormer aufr33)
-2. **VAD на FULL vocals** (CPU) — «backing vocals help Whisper recognise the track»
-3. **Whisper ASR на VAD-cleaned FULL vocals**
-4. LLM lyrics search
-5+6. CTC alignment **на LEAD vocals**
-7. Line break detection (CPU)
+Шапка-документация перечисляет 7 шагов (`worker/gpu/gpu_pipeline.py:1-14`). Все семь идут последовательно; параллельно запущена только фоновая задача кодирования + загрузки инструментала, она перекрывает шаги 2..7, но в нумерацию не входит.
+
+1. **separating** — UVR separation (BS-Roformer), вокал/инструментал.
+2. **back_vocal_separating** — Mel-Band RoFormer aufr33, лидер/бэк.
+3. **VAD на FULL vocals** (CPU) — «backing vocals help Whisper recognise the track».
+4. **transcribing** — Whisper ASR на VAD-cleaned FULL vocals.
+5. **searching_lyrics** — LLM lyrics search / провайдеры.
+6. **CTC alignment на LEAD vocals**.
+7. **Line break detection** (CPU).
 
 Шапка явно говорит про `faster-whisper ASR transcriber` в docstring класса (`worker/gpu/gpu_pipeline.py:53`).
 
@@ -194,40 +196,55 @@
 1. Проверка `job.mp3_key` — если пусто, `mark_failed` и выход.
 2. `pipeline_t0 = time.monotonic()` — фиксация времени старта.
 3. `storage.download_to_file(job.mp3_key, "/tmp/{job.id}.mp3")` — скачивание оригинала.
-4. **STEP 1 (separating, 0%)**: `_separate_with_fallback(local_mp3)` → `(vocals_path, instrumental_path)`. См. п. 6.3.
+4. **STEP 1 (`mark_step("separating", 0)`)**: `_separate_with_fallback(local_mp3)` → `(vocals_path, instrumental_path)`. См. п. 6.3.
 5. `asyncio.to_thread(self.uvr.cleanup)` — освобождение VRAM UVR.
-6. **Запуск фоновой задачи** `_encode_and_upload_instrumental(...)` — конвертация инструментала и заливка в S3 идёт **параллельно** со следующими шагами. См. п. 6.2.
-7. **STEP 1b (back-vocal split)**: `back_vocal_separator.separate(vocals_path)` → `(lead_vocals_path, _backing_path)`. На исключении логируется `back_vocal_separation_failed_falling_back_to_full_vocals`, `lead_vocals_path = vocals_path`. В `finally` — `cleanup` бэк-вокального сепаратора.
-8. `mark_step("separating", 100)`.
-9. **STEPS 2+3 (`_vad_and_transcribe`)** на полных вокалах:
-   - `vad_processor.process(vocals_path)` → `(cleaned_path, segments)`.
-   - `mark_step("transcribing", 0)`.
-   - `whisper.transcribe(cleaned_path)` → `WhisperResult{text, language}`.
-   - `mark_step("transcribing", 100)`.
-10. `whisper.cleanup()` — освобождение VRAM.
-11. **STEP 4 (searching_lyrics, 0%)**:
+6. `mark_step("separating", 100)` сразу после очистки UVR — STEP 1 закрыт.
+7. **Запуск фоновой задачи** `_encode_and_upload_instrumental(...)` — конвертация инструментала и заливка в S3 идёт **параллельно** со STEP 2..7. См. п. 6.2.
+8. **STEP 2 (`back_vocal_separating`)** — выполняется только если `back_vocal_separator` не None:
+   - `mark_step("back_vocal_separating", 0)`.
+   - `back_vocal_separator.separate(vocals_path)` → `(lead_vocals_path, _backing_path)`. На исключении логируется `back_vocal_separation_failed_falling_back_to_full_vocals`, `lead_vocals_path = vocals_path`. В `finally` — `cleanup` бэк-вокального сепаратора.
+   - `mark_step("back_vocal_separating", 100)`.
+9. **STEP 3 (`_vad`)** на полных вокалах:
+   - `mark_step("vad", 0)`.
+   - `vad_processor.process(vocals_path)` → `cleaned_path` (`VADResult.cleaned_path`).
+   - `mark_step("vad", 100)`.
+10. **STEP 4 (`_transcribe`)** на VAD-cleaned полных вокалах:
+    - `mark_step("transcribing", 0)`.
+    - `whisper.transcribe(cleaned_path)` → `WhisperResult{text, language}`.
+    - `mark_step("transcribing", 100)`.
+11. `whisper.cleanup()` — освобождение VRAM.
+12. **STEP 5 (`searching_lyrics`)**:
+    - `mark_step("searching_lyrics", 0)`.
     - Если `lyrics_searcher is None` → `mark_permanently_failed("Lyrics agent not configured…")`.
     - `lyrics_searcher.search(asr_text=whisper_result.text, detected_language=whisper_result.language, artist_hint=job.artist_hint, title_hint=job.title_hint, filename=(job.data or {}).get("filename"))` → `lyrics_result`.
     - На `LyricsSearchError` → `mark_permanently_failed`.
     - `mark_step("searching_lyrics", 100)`.
     - `repo.update_job_data(job.id, {artist, title, lyrics, language})`.
-12. **STEPS 5+6 (CTC alignment, без `mark_step`)**: `ctc_aligner.align(lead_vocals_path, lyrics_result.lyrics, lyrics_result.language)` → `(syllable_timings, align_stats)`. `align_stats` содержит `total_words`, `char_level_used`, `proportional_fallback`. `cleanup` ctc_aligner.
-13. **STEP 7 (line breaking, без `mark_step`)**: ленивый `from karaoke_shared.utils.line_breaker import detect_line_breaks` — `worker/gpu/gpu_pipeline.py:234`. Вызывается `detect_line_breaks(syllable_timings, lead_vocals_path)`.
-14. Удаление временных файлов:
+13. **STEP 6 (`aligning`)** на LEAD vocals:
+    - `mark_step("aligning", 0)`.
+    - `ctc_aligner.align(lead_vocals_path, lyrics_result.lyrics, lyrics_result.language)` → `(syllable_timings, align_stats)`. `align_stats` содержит `total_words`, `char_level_used`, `proportional_fallback`.
+    - `mark_step("aligning", 100)`.
+    - `cleanup` ctc_aligner.
+14. **STEP 7 (`line_breaking`)**:
+    - `mark_step("line_breaking", 0)`.
+    - Ленивый `from karaoke_shared.utils.line_breaker import detect_line_breaks`.
+    - `detect_line_breaks(syllable_timings, lead_vocals_path)` → обновлённый `syllable_timings`.
+    - `mark_step("line_breaking", 100)`.
+15. Удаление временных файлов:
     - `vocals_path` (полный вокал)
     - `lead_vocals_path` (если отличается)
     - `…_(Backing).wav` (рассчитывается из имени lead-файла)
     - `cleaned_vocals_{id}.wav` (от VAD)
-15. **Финализация**:
+16. **Финализация**:
     - `await instrumental_upload_task` — ждём завершения фоновой загрузки инструментала.
     - `repo.get_job(job.id)` → читаем актуальный `job.data` (там уже лежит `instrumental_key`).
-    - `repo.create_track(TrackCreate(artist, title, source="user_upload", instrumental_key, lyrics_text, lyrics_source=lyrics_result.source_note, syllable_timings, language, status="ready", qdrant_synced=0))` → `track`.
+    - `repo.create_track(TrackCreate(artist, title, source="user_upload", instrumental_key, lyrics_text, lyrics_source=lyrics_result.source_note, syllable_timings, language, status="ready"))` → `track` (поле `qdrant_synced` берёт дефолт `0` из модели).
     - `repo.set_job_track_id(job.id, track.id)`.
     - `job_service.mark_completed(job.id, {track_id, instrumental_key, language})`.
-16. **Публикация события для рекомендаций**: `rmq.publish("rec", "", {"track_id": track_id, "mp3_key": job.mp3_key, "lyrics": lyrics_result.lyrics})` — `worker/gpu/gpu_pipeline.py:296-304`.
-17. `logger.info("pipeline_completed", ..., total_duration_sec=…)`.
-18. Удаление `/tmp/{job.id}.mp3` и `instrumental_path`.
-19. **На исключении (`except Exception`)** — `worker/gpu/gpu_pipeline.py:317-326`:
+17. **Публикация события для рекомендаций**: `rmq.publish("rec", "", {"track_id": track_id, "mp3_key": job.mp3_key, "lyrics": lyrics_result.lyrics})` — `worker/gpu/gpu_pipeline.py:296-304`.
+18. `logger.info("pipeline_completed", ..., total_duration_sec=…)`.
+19. Удаление `/tmp/{job.id}.mp3` и `instrumental_path`.
+20. **На исключении (`except Exception`)** — `worker/gpu/gpu_pipeline.py:317-326`:
     - `logger.error("pipeline_failed", ..., exc_info=True)`.
     - `asyncio.to_thread(self.cleanup)` — общий cleanup всех моделей (под защитой try/except).
     - `job_service.mark_permanently_failed(job.id, str(exc))`.
@@ -254,17 +271,21 @@
 
 ### 6.5. Прогресс через `mark_step`
 
-В коде `process(...)` явно вызывается `job_service.mark_step` для шагов:
+В коде `process(...)` (и helper'ах `_vad`, `_transcribe`) явно вызывается `job_service.mark_step` для **всех** константных шагов `PipelineStep`:
 
 - `separating` — 0% и 100%.
-- `transcribing` — 0% и 100%.
+- `back_vocal_separating` — 0% и 100% (только если `back_vocal_separator` не None; иначе шаг отсутствует целиком).
+- `vad` — 0% и 100% (внутри `_vad`).
+- `transcribing` — 0% и 100% (внутри `_transcribe`).
 - `searching_lyrics` — 0% и 100%.
+- `aligning` — 0% и 100%.
+- `line_breaking` — 0% и 100%.
 
-**Не вызывается** `mark_step` для шагов: `vad`, `aligning`, `line_breaking` — хотя соответствующие константы определены в `PipelineStep`. Возможно, `aligning` сообщается изнутри `ctc_aligner` через колбэк прогресса (нужно проверить при чтении aligner-а).
+Прогресс-колбэков **внутри** конкретных моделей (UVR, BackVocal, VAD, Whisper, CTC, line breaker) нет — каждый шаг репортит только начало и конец, без промежуточных значений. То есть SSE-канал обновляется ровно 12 (или 14, если включён back-vocal) раз за задачу.
 
 ### 6.6. Финализация и интеграция со смежной подсистемой
 
-- Создание `Track` с `status="ready"`, `qdrant_synced=0`.
+- Создание `Track` с `status="ready"` (значение `qdrant_synced=0` приходит дефолтом из модели `TrackCreate`).
 - Сообщение в exchange `"rec"` (routing key — пустая строка) для рекомендательной подсистемы. Поля: `track_id`, `mp3_key`, `lyrics`.
 
 ### 6.7. Типизация
@@ -276,11 +297,7 @@
 
 ## 7. Несоответствия и открытые вопросы
 
-> Подпункты, устранённые в ходе cleanup'а 2026-05-13/14 (правки CLAUDE.md, удаление мёртвого кода, удаление backend test-suite/SQLite-инфры), удалены из этого раздела. Детальная история — в `git log`. Здесь оставлены только **реальные открытые вопросы**.
-
-1. **`PipelineStep.VAD`, `ALIGNING`, `LINE_BREAKING` определены, но `mark_step` для них не вызывается в runtime.** ✅ Подтверждено grep'ом: в `worker/gpu/gpu_pipeline.py` есть только `mark_step` для `separating`, `transcribing`, `searching_lyrics`. В коде `TorchCTCAligner` колбэков прогресса тоже нет — между `searching_lyrics 100%` и `mark_completed` SSE-канал «молчит» (≈ длительность CTC + line breaker). Это функциональный пробел в UX, а не несоответствие документации.
-
-2. **Декомпозиция шагов пайплайна.** CLAUDE.md перечисляет 6 шагов в `PipelineStep` enum: SEPARATING → VAD → TRANSCRIBING → SEARCHING_LYRICS → ALIGNING → LINE_BREAKING. Реальный поток по коду — 7 содержательных стадий: SEPARATING + back-vocal split + VAD + TRANSCRIBING + SEARCHING_LYRICS + ALIGNING + LINE_BREAKING + finalization/publish. Back-vocal split в `PipelineStep` enum не выделен (это под-стадия SEPARATING — что подтверждает CLAUDE.md в одном месте, но в другом противоречит).
+Открытых вопросов на момент 2026-05-14 не зафиксировано. По мере чтения остального кода новые расхождения добавлять сюда. Детальная история — в `git log`.
 
 ---
 
@@ -441,8 +458,8 @@
 
 ### 9.7. Соответствие CLAUDE.md
 
-- ✅ «Back-vocal split (sub-step inside SEPARATING, no separate PipelineStep): BackVocalSeparator … splits the UVR vocals into lead and backing stems» — соответствует.
-- ✅ «Falls back to full vocals if the separator fails» — это поведение реализовано не здесь, а в `gpu_pipeline.py:128-146` (try/except → `lead_vocals_path = vocals_path`).
+- ✅ «BACK_VOCAL_SEPARATING: BackVocalSeparator … splits the UVR vocals into lead and backing stems» — соответствует. Шаг выделен в отдельную константу `PipelineStep.BACK_VOCAL_SEPARATING` и сопровождается своей парой `mark_step(..., 0/100)` в `gpu_pipeline.py` (только если `back_vocal_separator` не None).
+- ✅ «Falls back to full vocals if the separator fails» — это поведение реализовано не здесь, а в `gpu_pipeline.py` (try/except → `lead_vocals_path = vocals_path`).
 - ⚠️ Шапка-комментарий самого файла (`worker/gpu/back_vocal_separator.py:8-9`) утверждает: «Downstream VAD/Whisper/CTC steps consume the lead_vocals output» — это **устаревшая документация**, повторяющая ошибочное утверждение из CLAUDE.md. Реальное поведение в `gpu_pipeline.py`: VAD и Whisper работают на full vocals, lead — только для CTC и line breaker. Формулировка в CLAUDE.md уже исправлена в cleanup'е 2026-05-13 (см. `git log`).
 
 ---
@@ -721,9 +738,9 @@ ratio = waveform.size(1) / 16000 / emission.size(1)  # sec/frame
 ### 11.17. Подтверждённые наблюдения по mark_step
 
 `grep -rn 'mark_step'` по `worker/`:
-- В `worker/gpu/gpu_pipeline.py` есть только `separating(0/100)`, `searching_lyrics(0/100)`, `transcribing(0/100)` — итого **3 шага**.
-- В `worker/bootstrap/pipeline.py` (массовый бутстрап) есть дополнительно `mark_step(..., "aligning", 0/100)`.
-- В runtime-пайплайне `mark_step("aligning", …)` и `mark_step("line_breaking", …)` **не вызываются вообще**. Между `searching_lyrics 100%` и `mark_completed` пользователь по SSE не получает обновлений; CTC и line-breaker идут «молча». Это функциональный пробел.
+- В `worker/gpu/gpu_pipeline.py` (включая helper'ы `_vad`, `_transcribe`) вызывается `separating(0/100)`, `back_vocal_separating(0/100)` (опционально, только если `back_vocal_separator` не None), `vad(0/100)`, `transcribing(0/100)`, `searching_lyrics(0/100)`, `aligning(0/100)`, `line_breaking(0/100)` — итого **все 7 константных шагов `PipelineStep`** (или 6, если back-vocal отключён).
+- Промежуточных значений прогресса (1..99 %) ни один из шагов не репортит — модели прогресс-колбэков не имеют. SSE-канал получает по 2 события на шаг (старт/конец), плюс события `mark_completed` / `mark_permanently_failed`.
+- Бутстрап-скрипт (`worker/bootstrap/`) удалён в cleanup'е 2026-05-13 — отдельных вызовов `mark_step` для каталога больше нет.
 
 ### 11.18. Соответствие CLAUDE.md
 
@@ -1880,7 +1897,7 @@ Error paths:
 
 ## 24. PostgreSQL-репозиторий — worker-релевантная часть (`shared/karaoke_shared/repositories/pg_repository.py`)
 
-Файл: 1121 строка (читались только worker-релевантные диапазоны). Класс `PgRepository`, конструируется с `asyncpg.Pool`. В каталоге также есть `sqlite_repository.py` (1220 строк) и `qdrant_repository.py` (246 строк) — последний для рекомендаций, вне ВКР.
+Файл: 1121 строка (читались только worker-релевантные диапазоны). Класс `PgRepository`, конструируется с `asyncpg.Pool`. В каталоге также есть `qdrant_repository.py` (246 строк) — для рекомендаций, вне ВКР.
 
 ### 24.1. Базис
 
@@ -1910,8 +1927,9 @@ catalog_cluster_id, rec_cluster_id, created_at, updated_at
 ```
 artist, title, source="user_upload", instrumental_key, lyrics_text,
 lyrics_source=lyrics_result.source_note, syllable_timings, language,
-status="ready", qdrant_synced=0
+status="ready"
 ```
+Поле `qdrant_synced` получает дефолт `0` из модели `TrackCreate`.
 
 ### 24.3. Jobs — список worker-релевантных операций
 
@@ -2032,7 +2050,6 @@ WHERE id = $3
 
 - Что вызывает `fail_job` vs `fail_job_permanently` — это в `JobService` (читаю следующим).
 - Есть ли где-то `record_api_cost`, `get_monthly_costs` — это другая фича (cost tracking), вне пайплайна.
-- `sqlite_repository.py` (1220 строк) — альтернативная реализация репозитория. Возможно, использовалась в bootstrap или offline-режиме. **Прочитать опционально — не критично для ВКР**.
 
 ---
 
@@ -2294,26 +2311,6 @@ class SyllableTiming(BaseModel):
 3. **`status` как str**, не как enum-тип Pydantic. StrEnum'ы из `constants.py` используются как источник значений, но поля приняты как `str` для гибкости.
 4. **Все nullable-поля имеют default `None`**, а не required. Это позволяет создавать промежуточные объекты с минимумом обязательных полей.
 5. **`id` через `default_factory=lambda: str(uuid4())`** — UUID-строка.
-
-### 27.4. Соответствие CLAUDE.md
-
-- ✅ «**PostgreSQL: tracks (with syllable_timings JSONB), job_queue (with data JSONB)**» — поля моделей соответствуют схемам, JSONB-поля помечены явно.
-- 🆕 Не описаны:
-  - Timestamps как ISO-строки (не `datetime`).
-  - `qdrant_synced` как `int 0/1`, не bool.
-  - `SyllableTiming` как именованная Pydantic-модель — простая структура `(syllable, start, end)`.
-
----
-
-## Ещё не прочитано (план)
-
-- `worker/bootstrap/pipeline.py` — bulk-импорт каталога.
-_Worker-релевантные файлы прочитаны полностью._
-
-**Опционально (для полной картины проекта):**
-- `worker/bootstrap/pipeline.py` — bulk-импорт каталога (вне основной ВКР, использует legacy CTCAligner).
-- `shared/karaoke_shared/repositories/sqlite_repository.py` — альтернативная реализация репозитория (≈1220 строк, вне основного runtime).
-- `shared/karaoke_shared/models/{session,queue,recommendation,mood_tag,catalog_cluster,artist,play_history}.py` — модели для других сущностей.
 
 ---
 

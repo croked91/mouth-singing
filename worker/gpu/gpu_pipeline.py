@@ -1,12 +1,15 @@
 """GPU audio processing pipeline.
 
-Orchestrates the 8-step pipeline using local GPU hardware:
-  1.  UVR separation (GPU, BS-Roformer — vocals/instrumental)
-  1b. Back-vocal separation (GPU, Mel-Band RoFormer aufr33 — lead/backing vocals)
-  2.  VAD on FULL vocals (CPU) — backing vocals help Whisper recognise the track
-  3.  Whisper ASR (GPU, on VAD-cleaned FULL vocals)
-  4.  LLM lyrics search (API)
-  5+6. CTC alignment (GPU, torchaudio MMS_FA on LEAD vocals — clean for forced alignment)
+Orchestrates the 7-step pipeline using local GPU hardware. All seven steps
+run sequentially; only the instrumental WAV→MP3 encode + S3 upload runs as
+a background asyncio task in parallel with steps 2..7.
+
+  1.  separating              — UVR (BS-Roformer) vocals/instrumental split
+  2.  back_vocal_separating   — Mel-Band RoFormer aufr33 lead/backing split
+  3.  VAD on FULL vocals (CPU) — backing vocals help Whisper recognise the track
+  4.  transcribing            — Whisper ASR on VAD-cleaned FULL vocals
+  5.  searching_lyrics        — provider chain / lyrics agent
+  6.  CTC alignment on LEAD vocals (torchaudio MMS_FA)
   7.  Line break detection (CPU)
 
 Feature extraction, lyric embedding, and QDrant sync are handled by the
@@ -99,7 +102,7 @@ class GpuPipeline(BasePipeline):
             await self.storage.download_to_file(job.mp3_key, local_mp3)
 
             # ==============================================================
-            # STEP 1: UVR separation (GPU, ~60-90s)
+            # STEP 1: UVR separation (GPU)
             # ==============================================================
             await self.job_service.mark_step(job.id, "separating", 0)
 
@@ -109,6 +112,8 @@ class GpuPipeline(BasePipeline):
 
             # Free UVR VRAM.
             await asyncio.to_thread(self.uvr.cleanup)
+
+            await self.job_service.mark_step(job.id, "separating", 100)
 
             # Launch instrumental encode + upload in background.
             instrumental_key = f"instrumentals/{job.id}.mp3"
@@ -122,10 +127,13 @@ class GpuPipeline(BasePipeline):
             )
 
             # ==============================================================
-            # STEP 1b: Back-vocal separation (lead vs backing vocals)
+            # STEP 2: Back-vocal separation (lead vs backing vocals)
             # ==============================================================
             lead_vocals_path = vocals_path
             if self.back_vocal_separator is not None:
+                await self.job_service.mark_step(
+                    job.id, "back_vocal_separating", 0
+                )
                 try:
                     lead_vocals_path, _backing_path = await asyncio.to_thread(
                         self.back_vocal_separator.separate, vocals_path
@@ -144,27 +152,30 @@ class GpuPipeline(BasePipeline):
                     lead_vocals_path = vocals_path
                 finally:
                     await asyncio.to_thread(self.back_vocal_separator.cleanup)
-
-            await self.job_service.mark_step(job.id, "separating", 100)
+                await self.job_service.mark_step(
+                    job.id, "back_vocal_separating", 100
+                )
 
             # ==============================================================
-            # STEPS 2+3: VAD + ASR (sequential, runs while upload proceeds)
-            # Runs on FULL vocals (not lead-only): Whisper benefits from
-            # backing vocals (repeated chorus lines, ad-libs) that help
+            # STEP 3: VAD — RMS-based silence removal on FULL vocals.
+            # Backing vocals are kept on purpose: they help Whisper
             # recognise the track. Lead-only was tried and produced a
             # ~44% shorter transcript → lyrics matcher picked the wrong
             # song version.
             # ==============================================================
-            whisper_result = await self._vad_and_transcribe(
-                vocals_path,
-                job.id,
-            )
+            cleaned_vocals_path = await self._vad(vocals_path, job.id)
+
+            # ==============================================================
+            # STEP 4: Whisper ASR on the VAD-cleaned FULL vocals.
+            # Runs while the background instrumental upload proceeds.
+            # ==============================================================
+            whisper_result = await self._transcribe(cleaned_vocals_path, job.id)
 
             # Free Whisper VRAM.
             await asyncio.to_thread(self.whisper.cleanup)
 
             # ==============================================================
-            # STEP 4: LLM lyrics search (~2-5s)
+            # STEP 5: LLM lyrics search
             # ==============================================================
             await self.job_service.mark_step(job.id, "searching_lyrics", 0)
 
@@ -208,14 +219,16 @@ class GpuPipeline(BasePipeline):
             )
 
             # ==============================================================
-            # STEPS 5+6: CTC alignment (GPU via torchaudio)
+            # STEP 6: CTC alignment (GPU via torchaudio)
             # ==============================================================
+            await self.job_service.mark_step(job.id, "aligning", 0)
             syllable_timings, align_stats = await asyncio.to_thread(
                 self.ctc_aligner.align,
                 lead_vocals_path,
                 lyrics_result.lyrics,
                 lyrics_result.language,
             )
+            await self.job_service.mark_step(job.id, "aligning", 100)
 
             # Free CTC model VRAM.
             if hasattr(self.ctc_aligner, "cleanup"):
@@ -232,9 +245,11 @@ class GpuPipeline(BasePipeline):
             # ==============================================================
             from karaoke_shared.utils.line_breaker import detect_line_breaks
 
+            await self.job_service.mark_step(job.id, "line_breaking", 0)
             syllable_timings = await asyncio.to_thread(
                 detect_line_breaks, syllable_timings, lead_vocals_path
             )
+            await self.job_service.mark_step(job.id, "line_breaking", 100)
 
             # Clean up vocal files after line break detection.
             Path(vocals_path).unlink(missing_ok=True)
@@ -273,7 +288,6 @@ class GpuPipeline(BasePipeline):
                     syllable_timings=syllable_timings,
                     language=lyrics_result.language,
                     status="ready",
-                    qdrant_synced=0,
                 )
             )
             track_id = track.id
@@ -407,27 +421,32 @@ class GpuPipeline(BasePipeline):
                 return await asyncio.to_thread(self.uvr.separate, mp3_path)
             raise
 
-    async def _vad_and_transcribe(
-        self,
-        vocals_path: str,
-        job_id: str,
-    ):
-        """VAD + Whisper ASR (sequential).
+    async def _vad(self, vocals_path: str, job_id: str) -> str:
+        """STEP 3: VAD — strip silence from the full vocals track.
 
-        VAD produces cleaned audio (silence removed).  Whisper runs on
-        the VAD-cleaned track so it only sees voiced segments.
+        Emits ``mark_step("vad", 0)`` before the call and
+        ``mark_step("vad", 100)`` after it returns. Returns the path
+        to the cleaned (voiced-only) audio file that Whisper will then
+        transcribe.
         """
+        await self.job_service.mark_step(job_id, "vad", 0)
         vad_result = await asyncio.to_thread(
             self.vad_processor.process,
             vocals_path,
         )
+        await self.job_service.mark_step(job_id, "vad", 100)
+        return vad_result.cleaned_path
 
+    async def _transcribe(self, cleaned_vocals_path: str, job_id: str):
+        """STEP 4: Whisper ASR on the VAD-cleaned vocals.
+
+        Emits ``mark_step("transcribing", 0)`` before the call and
+        ``mark_step("transcribing", 100)`` after it returns.
+        """
         await self.job_service.mark_step(job_id, "transcribing", 0)
-
         result = await asyncio.to_thread(
             self.whisper.transcribe,
-            vad_result.cleaned_path,
+            cleaned_vocals_path,
         )
-
         await self.job_service.mark_step(job_id, "transcribing", 100)
         return result

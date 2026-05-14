@@ -99,6 +99,7 @@ class PipelineStep(StrEnum):
     """
 
     SEPARATING = "separating"
+    BACK_VOCAL_SEPARATING = "back_vocal_separating"
     VAD = "vad"
     TRANSCRIBING = "transcribing"
     SEARCHING_LYRICS = "searching_lyrics"
