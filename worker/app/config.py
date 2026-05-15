@@ -127,7 +127,7 @@ class WorkerSettings(BaseSettings):
     # GPU mode: Whisper local ASR (HuggingFace Transformers, PyTorch)
     # ------------------------------------------------------------------
 
-    whisper_model_size: str = "tiny"
+    whisper_model_size: str = "medium"
     whisper_device: str = "cuda"
     whisper_compute_type: str = "float16"
 

@@ -121,7 +121,7 @@
 
 ### 2.7. Whisper — `worker/app/config.py:128-132`
 
-- `whisper_model_size = "tiny"`.
+- `whisper_model_size = "medium"`.
 - `whisper_device = "cuda"`.
 - `whisper_compute_type = "float16"`.
 - Комментарий-заголовок секции `worker/app/config.py:127`: **«GPU mode: faster-whisper local ASR»** — указывает на faster-whisper / CTranslate2.
@@ -483,9 +483,9 @@
 
 ### 10.2. Параметры конструктора и MODEL_ID_MAP
 
-- Defaults: `model_size="tiny"`, `device="cuda"`, `compute_type="float16"`, `model_cache_dir=None` — `worker/gpu/whisper_transcriber.py:49-55`.
+- Defaults: `model_size="medium"`, `device="cuda"`, `compute_type="float16"`, `model_cache_dir=None` — `worker/gpu/whisper_transcriber.py:49-55`.
 - `MODEL_ID_MAP` — `worker/gpu/whisper_transcriber.py:18-23`: `tiny → openai/whisper-tiny`, `base → openai/whisper-base`, `small → openai/whisper-small`, `medium → openai/whisper-medium`. Для других значений — fallback `f"openai/whisper-{model_size}"`. **`large`/`large-v2`/`large-v3` явно не в карте**, но через fallback тоже сработает.
-- При фактических `WorkerSettings`: загружается **`openai/whisper-tiny`**.
+- При фактических `WorkerSettings`: загружается **`openai/whisper-medium`**.
 - `compute_type="float16"` в этом коде — **не CTranslate2-параметр**, а простой флаг для выбора `torch.float16` против `torch.float32` (`worker/gpu/whisper_transcriber.py:73-77`): `torch.float16` если `device == "cuda"` и в `compute_type` есть подстрока `"16"`, иначе — `torch.float32`. Имя случайно совпадает с CT2-параметром, что и сбило с толку при чтении конфига.
 
 ### 10.3. Загрузка модели — `_load_model`, `worker/gpu/whisper_transcriber.py:65-94`

@@ -47,7 +47,7 @@ class WhisperTranscriber:
 
     def __init__(
         self,
-        model_size: str = "tiny",
+        model_size: str = "medium",
         device: str = "cuda",
         compute_type: str = "float16",
         model_cache_dir: str | None = None,
