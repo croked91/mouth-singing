@@ -11,6 +11,7 @@ import logging
 import sys
 
 import structlog
+import structlog.contextvars  # noqa: F401  — register submodule so .merge_contextvars resolves
 
 from app.config import settings
 
@@ -34,6 +35,10 @@ def configure_logging() -> None:
     )
 
     shared_processors: list[structlog.types.Processor] = [
+        # Pull request_id (and any other contextvars set via
+        # structlog.contextvars.bind_contextvars) into every event dict —
+        # used to stitch backend↔worker logs by X-Request-ID.
+        structlog.contextvars.merge_contextvars,
         # Add log level and logger name to every event dict.
         structlog.stdlib.add_log_level,
         structlog.stdlib.add_logger_name,

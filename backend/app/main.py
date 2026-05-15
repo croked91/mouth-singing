@@ -22,6 +22,7 @@ from app.api.router import v1_router
 from app.config import settings
 from app.db import init_pg
 from app.logging_config import configure_logging
+from app.middleware import RequestIdMiddleware
 from app.services.rec_client import RecClient
 from karaoke_shared.messaging import RabbitMQClient
 from karaoke_shared.repositories.pg_repository import PgRepository
@@ -149,6 +150,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# RequestId comes after CORS so preflight OPTIONS replies still get a stable id.
+app.add_middleware(RequestIdMiddleware)
 
 app.include_router(v1_router, prefix="/api/v1")
 

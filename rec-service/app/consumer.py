@@ -6,6 +6,7 @@ import json
 
 import aio_pika
 import structlog
+from structlog.contextvars import bind_contextvars, reset_contextvars
 
 from app.indexer import RecIndexer
 
@@ -46,6 +47,12 @@ class RecConsumer:
                 log.error("rec_consumer.invalid_message", error=str(exc), body=body[:500])
                 return
 
+            # Bind request_id (if present) to structlog contextvars so every
+            # downstream log line carries it — completes the upload→worker→
+            # rec-service correlation chain started by RequestIdMiddleware.
+            request_id = data.get("request_id")
+            tokens = bind_contextvars(request_id=request_id) if request_id else {}
+
             log = log.bind(track_id=track_id, mp3_key=mp3_key)
             log.info("rec_consumer.processing")
 
@@ -64,3 +71,6 @@ class RecConsumer:
             except Exception:
                 log.exception("rec_consumer.index_failed")
                 raise
+            finally:
+                if tokens:
+                    reset_contextvars(**tokens)

@@ -204,7 +204,10 @@ async def upload_track(
 
     rmq = getattr(request.app.state, "rmq", None)
     service = TrackService(repo, storage, rmq)
-    job = await service.upload_mp3(content, artist, title, filename=filename)
+    request_id = getattr(request.state, "request_id", None)
+    job = await service.upload_mp3(
+        content, artist, title, filename=filename, request_id=request_id,
+    )
 
     logger.info(
         "track_upload_accepted",

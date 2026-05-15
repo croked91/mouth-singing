@@ -180,8 +180,12 @@ def _build_gpu_pipeline(
 
 async def main() -> None:
     """Worker entry point."""
+    import structlog.contextvars  # noqa: F401 — register submodule for merge_contextvars
     structlog.configure(
         processors=[
+            # Pull request_id (and other contextvars) into every log line so
+            # worker events can be stitched to the originating backend request.
+            structlog.contextvars.merge_contextvars,
             structlog.processors.add_log_level,
             structlog.processors.TimeStamper(fmt="iso"),
             structlog.processors.JSONRenderer(),

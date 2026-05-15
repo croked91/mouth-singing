@@ -13,6 +13,7 @@ import json
 
 import aio_pika
 import structlog
+from structlog.contextvars import bind_contextvars, reset_contextvars
 
 from karaoke_shared.messaging.rabbitmq import RabbitMQClient
 from karaoke_shared.repositories.pg_repository import PgRepository
@@ -85,13 +86,23 @@ class JobConsumer:
             return
 
         job_id = body.get("job_id", "unknown")
+        request_id = body.get("request_id")
+
+        # Bind request_id (and job_id) to structlog contextvars so every log
+        # line emitted during pipeline processing carries them automatically —
+        # this is what stitches worker logs to the originating backend request.
+        ctx_kwargs: dict[str, str] = {"job_id": job_id}
+        if request_id:
+            ctx_kwargs["request_id"] = request_id
+        tokens = bind_contextvars(**ctx_kwargs)
+
         try:
-            logger.info("job_received", job_id=job_id, worker_id=self._worker_id)
+            logger.info("job_received", worker_id=self._worker_id)
 
             # Lock the job in DB
             locked = await self._repo.lock_job(job_id, self._worker_id)
             if not locked:
-                logger.warning("job_lock_failed", job_id=job_id)
+                logger.warning("job_lock_failed")
                 # Cooldown before requeue prevents a CPU spin when racing
                 # another worker that already claimed this job.
                 await asyncio.sleep(0.5)
@@ -101,16 +112,18 @@ class JobConsumer:
             # Get full job record
             job = await self._repo.get_job(job_id)
             if job is None:
-                logger.error("job_not_found_after_lock", job_id=job_id)
+                logger.error("job_not_found_after_lock")
                 await message.ack()
                 return
 
             # Run the pipeline
             await self._pipeline.process(job)
             await message.ack()
-            logger.info("job_completed", job_id=job_id)
+            logger.info("job_completed")
 
         except Exception:
-            logger.exception("job_processing_failed", job_id=job_id)
+            logger.exception("job_processing_failed")
             # Nack to DLQ — the pipeline already wrote the error to DB.
             await message.nack(requeue=False)
+        finally:
+            reset_contextvars(**tokens)

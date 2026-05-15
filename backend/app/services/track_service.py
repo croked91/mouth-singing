@@ -45,6 +45,7 @@ class TrackService:
         title: str | None,
         *,
         filename: str | None = None,
+        request_id: str | None = None,
     ) -> Job:
         """Upload MP3 to S3 and create a pending job record.
 
@@ -79,12 +80,14 @@ class TrackService:
         # Create job record (no track record)
         job = await self.repo.create_job(job_data)
 
-        # Publish to RabbitMQ for worker consumption
+        # Publish to RabbitMQ for worker consumption. request_id flows through
+        # so the worker can stitch its logs to this upload (see RequestIdMiddleware).
         if self._rmq:
+            body: dict[str, str] = {"job_id": job_id, "mp3_key": mp3_key}
+            if request_id:
+                body["request_id"] = request_id
             await self._rmq.publish(
-                "jobs", "",
-                {"job_id": job_id, "mp3_key": mp3_key},
-                priority=job_data.priority,
+                "jobs", "", body, priority=job_data.priority,
             )
             logger.info("job_published_to_rmq", job_id=job_id)
 

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { nanoid } from 'nanoid';
 import type {
   Session,
   SessionWithParticipants,
@@ -21,6 +22,16 @@ const apiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+});
+
+// Stamp every outgoing request with X-Request-ID so backend↔worker logs can
+// be stitched together by a single user action. Skips when the caller has
+// already set one (e.g. retries that want to keep the original id).
+apiClient.interceptors.request.use((config) => {
+  if (!config.headers['X-Request-ID']) {
+    config.headers['X-Request-ID'] = nanoid();
+  }
+  return config;
 });
 
 apiClient.interceptors.response.use(

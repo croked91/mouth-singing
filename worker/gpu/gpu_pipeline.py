@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 import structlog
+from structlog.contextvars import get_contextvars
 
 from karaoke_shared.messaging.rabbitmq import RabbitMQClient
 from karaoke_shared.models.job import Job
@@ -35,7 +36,6 @@ from karaoke_shared.storage import S3Storage
 
 from worker.common.base_pipeline import BasePipeline
 from worker.common.lyrics import LyricsProviderChain
-from worker.common.lyrics_searcher import LyricsSearchError
 from worker.common.vad_processor import VADProcessor
 from worker.gpu.torch_ctc_aligner import TorchCTCAligner
 from worker.gpu.uvr_separator import UVRSeparator
@@ -251,20 +251,17 @@ class GpuPipeline(BasePipeline):
             title_hint = job.title_hint
             filename = (job.data or {}).get("filename")
 
-            try:
-                lyrics_result = await self.lyrics_searcher.search(
-                    asr_text=whisper_result.text,
-                    detected_language=whisper_result.language,
-                    artist_hint=artist_hint,
-                    title_hint=title_hint,
-                    filename=filename,
-                )
-            except LyricsSearchError as exc:
-                logger.error("lyrics_search_failed", job_id=job.id, error=str(exc))
-                await self.job_service.mark_permanently_failed(
-                    job.id, f"Lyrics search failed: {exc}"
-                )
-                return
+            # LyricsSearchError (and any other failure here) propagates to the
+            # outer except, which logs `pipeline_failed` once and writes the
+            # message via mark_permanently_failed. Catching it locally would
+            # double-log the same incident.
+            lyrics_result = await self.lyrics_searcher.search(
+                asr_text=whisper_result.text,
+                detected_language=whisper_result.language,
+                artist_hint=artist_hint,
+                title_hint=title_hint,
+                filename=filename,
+            )
 
             await self.job_service.mark_step(job.id, "searching_lyrics", 100)
 
@@ -373,15 +370,17 @@ class GpuPipeline(BasePipeline):
             )
 
             # Publish to Rec Service for feature extraction + embedding + QDrant sync.
-            await self.rmq.publish(
-                "rec",
-                "",
-                {
-                    "track_id": track_id,
-                    "mp3_key": job.mp3_key,
-                    "lyrics": lyrics_result.lyrics,
-                },
-            )
+            # Carry request_id from contextvars so rec-service logs can be
+            # stitched to the original upload too.
+            rec_body: dict = {
+                "track_id": track_id,
+                "mp3_key": job.mp3_key,
+                "lyrics": lyrics_result.lyrics,
+            }
+            request_id = get_contextvars().get("request_id")
+            if request_id:
+                rec_body["request_id"] = request_id
+            await self.rmq.publish("rec", "", rec_body)
 
             logger.info(
                 "pipeline_completed",
