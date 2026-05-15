@@ -70,15 +70,31 @@ class JobConsumer:
         self, message: aio_pika.abc.AbstractIncomingMessage
     ) -> None:
         """Handle an incoming job message."""
+        # Decode the body first so a malformed message goes straight to DLQ
+        # without polluting the business-error path with NameError on `body`.
         try:
             body = json.loads(message.body)
-            job_id = body["job_id"]
+        except json.JSONDecodeError as exc:
+            logger.error(
+                "invalid_message_body",
+                error=str(exc),
+                raw=(message.body[:200].decode("utf-8", errors="replace")
+                     if message.body else None),
+            )
+            await message.nack(requeue=False)
+            return
+
+        job_id = body.get("job_id", "unknown")
+        try:
             logger.info("job_received", job_id=job_id, worker_id=self._worker_id)
 
             # Lock the job in DB
             locked = await self._repo.lock_job(job_id, self._worker_id)
             if not locked:
                 logger.warning("job_lock_failed", job_id=job_id)
+                # Cooldown before requeue prevents a CPU spin when racing
+                # another worker that already claimed this job.
+                await asyncio.sleep(0.5)
                 await message.nack(requeue=True)
                 return
 
@@ -94,11 +110,7 @@ class JobConsumer:
             await message.ack()
             logger.info("job_completed", job_id=job_id)
 
-        except Exception as exc:
-            logger.error(
-                "job_processing_failed",
-                job_id=body.get("job_id", "unknown") if 'body' in dir() else "unknown",
-                error=str(exc),
-            )
-            # Nack — RabbitMQ will requeue or send to DLQ
+        except Exception:
+            logger.exception("job_processing_failed", job_id=job_id)
+            # Nack to DLQ — the pipeline already wrote the error to DB.
             await message.nack(requeue=False)

@@ -2,9 +2,8 @@
 
 Schema reference:
 - job_queue: id, track_id (nullable), mp3_key, artist_hint, title_hint,
-  priority, status, attempts, max_attempts, locked_by, locked_at,
-  data (JSONB), result (JSONB), error_message, current_step, progress,
-  created_at, updated_at
+  priority, status, locked_by, locked_at, data (JSONB), result (JSONB),
+  error_message, current_step, progress, created_at, updated_at
 """
 
 from __future__ import annotations
@@ -27,8 +26,6 @@ class Job(BaseModel):
     title_hint: str | None = None
     priority: int = 1
     status: str
-    attempts: int = 0
-    max_attempts: int = 3
     locked_by: str | None = None
     locked_at: str | None = None
     data: dict | None = None  # intermediate pipeline data (JSONB)
@@ -51,8 +48,6 @@ class JobCreate(BaseModel):
     # Server-side defaults
     id: str = Field(default_factory=lambda: str(uuid4()))
     status: str = JobStatus.PENDING
-    attempts: int = 0
-    max_attempts: int = 3
     data: dict | None = None
     created_at: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
@@ -66,7 +61,6 @@ class JobUpdate(BaseModel):
     """Partial update model for jobs — all fields are optional."""
 
     status: str | None = None
-    attempts: int | None = None
     locked_by: str | None = None
     locked_at: str | None = None
     result: dict | None = None

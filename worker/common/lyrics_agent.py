@@ -113,6 +113,28 @@ _BROWSER_UA = (
     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
 
+# Yandex Search API enum mapping by ISO 639-1 detected language code.
+# Unsupported languages fall back to the global SEARCH_TYPE_COM with
+# English localisation, which is closest to a neutral default.
+_YANDEX_SEARCH_TYPE = {
+    "ru": "SEARCH_TYPE_RU",
+    "tr": "SEARCH_TYPE_TR",
+    "kk": "SEARCH_TYPE_KK",
+}
+_YANDEX_LOCALIZATION = {
+    "ru": "LOCALIZATION_RU",
+    "uk": "LOCALIZATION_UK",
+    "be": "LOCALIZATION_BE",
+    "kk": "LOCALIZATION_KK",
+    "tr": "LOCALIZATION_TR",
+    "en": "LOCALIZATION_EN",
+}
+
+# Default search language when Whisper did not detect anything (empty / None).
+# English biases the search backend towards global content, which is a safer
+# default than Russian for an agent serving multilingual songs.
+_DEFAULT_SEARCH_LANGUAGE = "en"
+
 # Max words allowed inside any "..." quoted fragment in a search query.
 # Whisper-distorted long phrases almost never match in exact mode; short
 # anchors (artist, title, rare keyword) is what works.
@@ -140,6 +162,7 @@ def _searxng_search(
     query: str,
     base_url: str,
     timeout: float,
+    language: str = _DEFAULT_SEARCH_LANGUAGE,
 ) -> list[dict] | None:
     try:
         response = httpx.get(
@@ -148,7 +171,7 @@ def _searxng_search(
                 "q": query,
                 "format": "json",
                 "categories": "general",
-                "language": "ru",
+                "language": language,
             },
             timeout=timeout,
         )
@@ -172,7 +195,10 @@ def _yandex_search(
     api_key: str,
     folder_id: str,
     timeout: float,
+    language: str = _DEFAULT_SEARCH_LANGUAGE,
 ) -> list[dict] | None:
+    search_type = _YANDEX_SEARCH_TYPE.get(language, "SEARCH_TYPE_COM")
+    l10n = _YANDEX_LOCALIZATION.get(language, "LOCALIZATION_EN")
     try:
         response = httpx.post(
             _YANDEX_SEARCH_URL,
@@ -182,7 +208,7 @@ def _yandex_search(
             },
             json={
                 "query": {
-                    "searchType": "SEARCH_TYPE_RU",
+                    "searchType": search_type,
                     "queryText": query,
                     "familyMode": "FAMILY_MODE_NONE",
                     "page": 0,
@@ -194,7 +220,7 @@ def _yandex_search(
                     "docsInGroup": 1,
                 },
                 "maxPassages": 2,
-                "l10n": "LOCALIZATION_RU",
+                "l10n": l10n,
                 "responseFormat": "FORMAT_XML",
             },
             timeout=timeout,
@@ -230,6 +256,7 @@ def _yandex_search(
 def _web_search(
     query: str,
     backend: str,
+    language: str = _DEFAULT_SEARCH_LANGUAGE,
     api_key: str = "",
     folder_id: str = "",
     timeout: float = 15.0,
@@ -239,7 +266,9 @@ def _web_search(
 
     The orchestrator (:class:`LyricsAgent.search`) drives backend choice
     sequentially: first pass uses SearXNG only; if the agent returns no
-    candidates, a second pass is launched against Yandex.
+    candidates, a second pass is launched against Yandex. ``language`` is
+    the Whisper-detected ISO code that biases each backend's regional
+    relevance.
     """
     bad_phrase = _quoted_phrase_too_long(query)
     if bad_phrase is not None:
@@ -261,13 +290,13 @@ def _web_search(
             return json.dumps(
                 {"error": "SearXNG backend not configured"}, ensure_ascii=False,
             )
-        results = _searxng_search(query, searxng_url, timeout)
+        results = _searxng_search(query, searxng_url, timeout, language)
     elif backend == "yandex":
         if not (api_key and folder_id):
             return json.dumps(
                 {"error": "Yandex Search backend not configured"}, ensure_ascii=False,
             )
-        results = _yandex_search(query, api_key, folder_id, timeout)
+        results = _yandex_search(query, api_key, folder_id, timeout, language)
     else:
         return json.dumps(
             {"error": f"Unknown backend: {backend}"}, ensure_ascii=False,
@@ -340,6 +369,10 @@ class LyricsAgent:
         artist_alts: list[str] | None = None,
         title_alts: list[str] | None = None,
     ) -> list[LyricsCandidate]:
+        # Whisper occasionally returns "" for short / instrumental segments.
+        # Falling back to a deterministic default keeps SearXNG/Yandex from
+        # silently mis-localising into the previously hard-coded "ru".
+        search_language = (detected_language or "").lower() or _DEFAULT_SEARCH_LANGUAGE
         """Return up to ~3 raw candidate lyrics from web search.
 
         ``artist_alts`` / ``title_alts`` provide alternative spellings (e.g.
@@ -401,7 +434,7 @@ class LyricsAgent:
 
             try:
                 raw_response = await asyncio.to_thread(
-                    self._run_agent, pass_message, backend,
+                    self._run_agent, pass_message, backend, search_language,
                 )
             except LyricsSearchError:
                 raise
@@ -429,7 +462,12 @@ class LyricsAgent:
     # Agent loop (synchronous — called via asyncio.to_thread)
     # ------------------------------------------------------------------
 
-    def _run_agent(self, user_message: str, backend: str) -> str:
+    def _run_agent(
+        self,
+        user_message: str,
+        backend: str,
+        language: str = _DEFAULT_SEARCH_LANGUAGE,
+    ) -> str:
         client = OpenAI(
             api_key=self._deepseek_api_key,
             base_url="https://api.deepseek.com",
@@ -445,6 +483,7 @@ class LyricsAgent:
             "web_search": lambda query: _web_search(
                 query=query,
                 backend=backend,
+                language=language,
                 api_key=self._yandex_api_key,
                 folder_id=self._yandex_folder_id,
                 timeout=self._timeout,

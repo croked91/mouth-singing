@@ -472,8 +472,6 @@ class TestJobCreate:
         assert _is_iso8601(jc.created_at)
         assert _is_iso8601(jc.updated_at)
         assert jc.status == "pending"
-        assert jc.attempts == 0
-        assert jc.max_attempts == 3
         assert jc.priority == 1
 
     def test_missing_track_id_raises(self):
@@ -492,7 +490,6 @@ class TestJobUpdate:
     def test_all_fields_default_none_except_updated_at(self):
         ju = JobUpdate()
         assert ju.status is None
-        assert ju.attempts is None
         assert ju.locked_by is None
         assert ju.locked_at is None
         assert ju.result is None
@@ -503,7 +500,6 @@ class TestJobUpdate:
         ju = JobUpdate(status="running", locked_by="worker-1")
         assert ju.status == "running"
         assert ju.locked_by == "worker-1"
-        assert ju.attempts is None
 
     def test_round_trip(self):
         original = JobUpdate(status="completed", result={"output": "ok"})
@@ -531,8 +527,6 @@ class TestJob:
         assert job.result is None
         assert job.error_message is None
         assert job.priority == 1
-        assert job.attempts == 0
-        assert job.max_attempts == 3
 
     def test_round_trip(self):
         from datetime import timezone

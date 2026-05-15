@@ -5,9 +5,9 @@ Only GPU mode is supported. API mode (MVSEP + OpenAI Whisper) has been removed.
 
 from __future__ import annotations
 
-import os
 import socket
 
+from pydantic import Field
 from pydantic_settings import BaseSettings
 
 
@@ -30,7 +30,11 @@ class WorkerSettings(BaseSettings):
     # RabbitMQ
     rabbitmq_url: str = "amqp://karaoke:karaoke@rabbitmq:5672/"
     model_cache_dir: str = "/data/models"
-    worker_id: str = f"{socket.gethostname()}-{os.getpid()}"
+    # Stable identity for crash-recovery: env WORKER_ID (set per-replica when
+    # scaling) overrides the hostname fallback. Container hostname is
+    # deterministic only when set explicitly in compose (see hostname: in
+    # docker-compose.gpu.yml).
+    worker_id: str = Field(default_factory=socket.gethostname)
     poll_interval_sec: float = 2.0
     log_level: str = "INFO"
 
@@ -126,6 +130,20 @@ class WorkerSettings(BaseSettings):
     whisper_model_size: str = "tiny"
     whisper_device: str = "cuda"
     whisper_compute_type: str = "float16"
+
+    # ------------------------------------------------------------------
+    # Per-step pipeline timeouts (proportional to mp3 duration)
+    # Base values are for a baseline-length mp3 (default 180 s);
+    # actual timeout = base * (probed duration / baseline). Empirical
+    # for MVP — protect against hung CUDA kernels without killing
+    # legitimate long-track processing.
+    # ------------------------------------------------------------------
+
+    step_timeout_separating_base: float = 30.0
+    step_timeout_back_vocal_separating_base: float = 30.0
+    step_timeout_transcribing_base: float = 30.0
+    step_timeout_aligning_base: float = 10.0
+    step_timeout_baseline_seconds: float = 180.0
 
     model_config = {"env_prefix": ""}
 

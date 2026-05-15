@@ -58,15 +58,6 @@ class JobService:
             except Exception as exc:
                 logger.warning("completed_publish_failed", job_id=job_id, error=str(exc))
 
-    async def mark_failed(self, job_id: str, error: str) -> None:
-        """Record a job failure and trigger retry logic."""
-        await self.repo.fail_job(job_id, error)
-        if self._publisher:
-            try:
-                await self._publisher.publish_error(job_id, error)
-            except Exception as exc:
-                logger.warning("error_publish_failed", job_id=job_id, error=str(exc))
-
     async def mark_permanently_failed(self, job_id: str, error: str) -> None:
         """Mark a job as failed without retry."""
         await self.repo.fail_job_permanently(job_id, error)

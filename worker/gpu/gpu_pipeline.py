@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from contextlib import suppress
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -91,8 +92,20 @@ class GpuPipeline(BasePipeline):
     async def process(self, job: Job) -> None:
         """Run the full GPU pipeline for a single job."""
         if not job.mp3_key:
-            await self.job_service.mark_failed(job.id, f"Job {job.id} has no mp3_key")
+            await self.job_service.mark_permanently_failed(
+                job.id, f"Job {job.id} has no mp3_key"
+            )
             return
+
+        # Tempfile paths and background task captured here so the finally
+        # block can clean them up unconditionally on success or failure.
+        local_mp3: str | None = None
+        vocals_path: str | None = None
+        instrumental_path: str | None = None
+        lead_vocals_path: str | None = None
+        backing_path: str | None = None
+        cleaned_vocals_path: str | None = None
+        instrumental_upload_task: asyncio.Task | None = None
 
         try:
             pipeline_t0 = time.monotonic()
@@ -101,14 +114,36 @@ class GpuPipeline(BasePipeline):
             local_mp3 = f"/tmp/{job.id}.mp3"
             await self.storage.download_to_file(job.mp3_key, local_mp3)
 
+            # Probe duration once → scale per-step timeouts proportionally.
+            duration_sec = await self._probe_duration_seconds(local_mp3)
+            baseline = self.settings.step_timeout_baseline_seconds
+            scale = max(duration_sec / baseline, 0.5)
+            logger.info(
+                "step_timeouts_calculated",
+                job_id=job.id,
+                duration_sec=round(duration_sec, 1),
+                scale=round(scale, 2),
+            )
+
             # ==============================================================
             # STEP 1: UVR separation (GPU)
+            # NOTE: asyncio.wait_for(asyncio.to_thread(...)) cancels only
+            # the awaiting coroutine; the underlying GPU thread keeps
+            # running until the CUDA kernel returns. A hard external
+            # watchdog (separate process / k8s liveness) is out of scope.
             # ==============================================================
             await self.job_service.mark_step(job.id, "separating", 0)
-
-            vocals_path, instrumental_path = await self._separate_with_fallback(
-                local_mp3
-            )
+            sep_timeout = self.settings.step_timeout_separating_base * scale
+            try:
+                vocals_path, instrumental_path = await asyncio.wait_for(
+                    self._separate_with_fallback(local_mp3),
+                    timeout=sep_timeout,
+                )
+            except asyncio.TimeoutError as exc:
+                raise RuntimeError(
+                    f"Step timeout: separating after {sep_timeout:.1f}s "
+                    f"(duration={duration_sec:.1f}s, scale={scale:.2f})"
+                ) from exc
 
             # Free UVR VRAM.
             await asyncio.to_thread(self.uvr.cleanup)
@@ -134,15 +169,31 @@ class GpuPipeline(BasePipeline):
                 await self.job_service.mark_step(
                     job.id, "back_vocal_separating", 0
                 )
+                bvs_timeout = (
+                    self.settings.step_timeout_back_vocal_separating_base * scale
+                )
                 try:
-                    lead_vocals_path, _backing_path = await asyncio.to_thread(
-                        self.back_vocal_separator.separate, vocals_path
+                    lead_vocals_path, backing_path = await asyncio.wait_for(
+                        asyncio.to_thread(
+                            self.back_vocal_separator.separate, vocals_path
+                        ),
+                        timeout=bvs_timeout,
                     )
                     logger.info(
                         "back_vocal_separation_done",
                         job_id=job.id,
                         lead_vocals_path=lead_vocals_path,
                     )
+                except asyncio.TimeoutError:
+                    # Fall back to full vocals — backing harmonies in the
+                    # lead are better than failing the whole job on this
+                    # optional step.
+                    logger.warning(
+                        "back_vocal_separation_timeout_falling_back_to_full_vocals",
+                        job_id=job.id,
+                        timeout_sec=bvs_timeout,
+                    )
+                    lead_vocals_path = vocals_path
                 except Exception as exc:  # noqa: BLE001
                     logger.exception(
                         "back_vocal_separation_failed_falling_back_to_full_vocals",
@@ -169,7 +220,17 @@ class GpuPipeline(BasePipeline):
             # STEP 4: Whisper ASR on the VAD-cleaned FULL vocals.
             # Runs while the background instrumental upload proceeds.
             # ==============================================================
-            whisper_result = await self._transcribe(cleaned_vocals_path, job.id)
+            wsp_timeout = self.settings.step_timeout_transcribing_base * scale
+            try:
+                whisper_result = await asyncio.wait_for(
+                    self._transcribe(cleaned_vocals_path, job.id),
+                    timeout=wsp_timeout,
+                )
+            except asyncio.TimeoutError as exc:
+                raise RuntimeError(
+                    f"Step timeout: transcribing after {wsp_timeout:.1f}s "
+                    f"(duration={duration_sec:.1f}s, scale={scale:.2f})"
+                ) from exc
 
             # Free Whisper VRAM.
             await asyncio.to_thread(self.whisper.cleanup)
@@ -222,12 +283,22 @@ class GpuPipeline(BasePipeline):
             # STEP 6: CTC alignment (GPU via torchaudio)
             # ==============================================================
             await self.job_service.mark_step(job.id, "aligning", 0)
-            syllable_timings, align_stats = await asyncio.to_thread(
-                self.ctc_aligner.align,
-                lead_vocals_path,
-                lyrics_result.lyrics,
-                lyrics_result.language,
-            )
+            ctc_timeout = self.settings.step_timeout_aligning_base * scale
+            try:
+                syllable_timings, align_stats = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        self.ctc_aligner.align,
+                        lead_vocals_path,
+                        lyrics_result.lyrics,
+                        lyrics_result.language,
+                    ),
+                    timeout=ctc_timeout,
+                )
+            except asyncio.TimeoutError as exc:
+                raise RuntimeError(
+                    f"Step timeout: aligning after {ctc_timeout:.1f}s "
+                    f"(duration={duration_sec:.1f}s, scale={scale:.2f})"
+                ) from exc
             await self.job_service.mark_step(job.id, "aligning", 100)
 
             # Free CTC model VRAM.
@@ -251,20 +322,16 @@ class GpuPipeline(BasePipeline):
             )
             await self.job_service.mark_step(job.id, "line_breaking", 100)
 
-            # Clean up vocal files after line break detection.
-            Path(vocals_path).unlink(missing_ok=True)
-            if lead_vocals_path != vocals_path:
-                Path(lead_vocals_path).unlink(missing_ok=True)
-                # Backing vocal (separation residual) — safe to delete
-                backing_path = Path(lead_vocals_path).with_name(
-                    Path(lead_vocals_path).name.replace("_(Lead).wav", "_(Backing).wav")
+            # If back_vocal_separator returned only the lead path, derive
+            # the backing path from naming convention so finally cleanup
+            # removes both stems.
+            if backing_path is None and lead_vocals_path != vocals_path:
+                backing_path = str(
+                    Path(lead_vocals_path).with_name(
+                        Path(lead_vocals_path)
+                        .name.replace("_(Lead).wav", "_(Backing).wav")
+                    )
                 )
-                backing_path.unlink(missing_ok=True)
-            track_id_stem = Path(vocals_path).stem.split("_")[0]
-            cleaned_path = (
-                Path(vocals_path).parent / f"cleaned_vocals_{track_id_stem}.wav"
-            )
-            cleaned_path.unlink(missing_ok=True)
 
             # ==============================================================
             # FINALIZATION: create track, publish to Rec Service
@@ -323,10 +390,6 @@ class GpuPipeline(BasePipeline):
                 total_duration_sec=round(time.monotonic() - pipeline_t0, 2),
             )
 
-            # Clean up temp files.
-            Path(local_mp3).unlink(missing_ok=True)
-            Path(instrumental_path).unlink(missing_ok=True)
-
         except Exception as exc:
             logger.error(
                 "pipeline_failed", job_id=job.id, error=str(exc), exc_info=True
@@ -337,6 +400,33 @@ class GpuPipeline(BasePipeline):
             except Exception:
                 pass
             await self.job_service.mark_permanently_failed(job.id, str(exc))
+        finally:
+            # Cancel background instrumental upload if pipeline aborted —
+            # avoids orphan S3 objects and stray disk usage for tracks
+            # that will never be finalised.
+            if (
+                instrumental_upload_task is not None
+                and not instrumental_upload_task.done()
+            ):
+                instrumental_upload_task.cancel()
+                with suppress(asyncio.CancelledError, Exception):
+                    await instrumental_upload_task
+            # Remove all tempfiles created during the pipeline. Each path
+            # stays None until the producing step actually ran, so we never
+            # try to delete a file that doesn't exist.
+            cleanup_paths = [
+                local_mp3,
+                vocals_path,
+                instrumental_path,
+                cleaned_vocals_path,
+            ]
+            if lead_vocals_path and lead_vocals_path != vocals_path:
+                cleanup_paths.append(lead_vocals_path)
+            cleanup_paths.append(backing_path)
+            for path in cleanup_paths:
+                if path:
+                    with suppress(Exception):
+                        Path(path).unlink(missing_ok=True)
 
     def cleanup(self) -> None:
         """Release GPU resources (UVR + BackVocal + Whisper + CTC models)."""
@@ -351,6 +441,56 @@ class GpuPipeline(BasePipeline):
     # Helper methods
     # ------------------------------------------------------------------
 
+    async def _ffprobe_field(self, mp3_path: str, entries: str) -> str | None:
+        """Return a single ffprobe field value, or None on failure.
+
+        ``entries`` is passed to ``-show_entries`` (e.g. ``"format=duration"``,
+        ``"format=bit_rate"``). Logs ffprobe stderr on non-zero exit so
+        diagnostics survive instead of being silently swallowed.
+        """
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "ffprobe",
+                "-v", "error",
+                "-show_entries", entries,
+                "-of", "default=noprint_wrappers=1:nokey=1",
+                mp3_path,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+            if proc.returncode != 0:
+                logger.warning(
+                    "ffprobe_failed",
+                    mp3_path=mp3_path,
+                    entries=entries,
+                    returncode=proc.returncode,
+                    stderr=stderr.decode("utf-8", errors="replace")[:200],
+                )
+                return None
+            value = stdout.decode("utf-8", errors="replace").strip()
+            return value or None
+        except Exception as exc:
+            logger.warning(
+                "ffprobe_exec_failed",
+                mp3_path=mp3_path,
+                entries=entries,
+                error=str(exc),
+            )
+            return None
+
+    async def _probe_duration_seconds(self, mp3_path: str) -> float:
+        """Probe mp3 duration via ffprobe; fallback to baseline on failure."""
+        baseline = self.settings.step_timeout_baseline_seconds
+        value = await self._ffprobe_field(mp3_path, "format=duration")
+        if value is None:
+            return baseline
+        try:
+            return float(value)
+        except ValueError:
+            logger.warning("ffprobe_duration_unparseable", value=value)
+            return baseline
+
     async def _encode_and_upload_instrumental(
         self,
         instrumental_path: str,
@@ -358,48 +498,56 @@ class GpuPipeline(BasePipeline):
         job_id: str,
         original_mp3: str,
     ) -> None:
-        """Convert instrumental WAV→MP3 and upload to S3 (runs in background)."""
-        # Detect original bitrate to preserve quality.
-        bitrate = "192k"
-        try:
-            probe = await asyncio.create_subprocess_exec(
-                "ffprobe",
-                "-v",
-                "quiet",
-                "-show_entries",
-                "format=bit_rate",
-                "-of",
-                "csv=p=0",
-                original_mp3,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL,
-            )
-            stdout, _ = await probe.communicate()
-            orig_bps = int(stdout.decode().strip())
-            bitrate = f"{orig_bps // 1000}k"
-        except Exception:
-            pass
+        """Convert instrumental WAV→MP3 and upload to S3 (runs in background).
 
+        On asyncio.CancelledError (pipeline aborted before finalisation) the
+        upload is skipped and the local mp3 is removed, so failed jobs leave
+        no orphan ``instrumentals/{job_id}.mp3`` in S3.
+        """
         instrumental_mp3 = f"/tmp/{job_id}_instrumental.mp3"
-        proc = await asyncio.create_subprocess_exec(
-            "ffmpeg",
-            "-y",
-            "-i",
-            instrumental_path,
-            "-codec:a",
-            "libmp3lame",
-            "-b:a",
-            bitrate,
-            instrumental_mp3,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.DEVNULL,
-        )
-        await proc.wait()
+        try:
+            # Detect original bitrate to preserve quality; ffprobe failure
+            # falls back to a sensible default.
+            bitrate = "192k"
+            value = await self._ffprobe_field(original_mp3, "format=bit_rate")
+            if value is not None:
+                try:
+                    bitrate = f"{int(value) // 1000}k"
+                except ValueError:
+                    logger.warning("ffprobe_bitrate_unparseable", value=value)
 
-        with open(instrumental_mp3, "rb") as f:
-            await self.storage.upload(instrumental_key, f.read())
-        Path(instrumental_mp3).unlink(missing_ok=True)
-        await self.repo.update_job_data(job_id, {"instrumental_key": instrumental_key})
+            proc = await asyncio.create_subprocess_exec(
+                "ffmpeg",
+                "-y",
+                "-i",
+                instrumental_path,
+                "-codec:a",
+                "libmp3lame",
+                "-b:a",
+                bitrate,
+                instrumental_mp3,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            _, stderr = await proc.communicate()
+            if proc.returncode != 0:
+                raise RuntimeError(
+                    "ffmpeg encode failed (rc="
+                    f"{proc.returncode}): "
+                    f"{stderr.decode('utf-8', errors='replace')[:500]}"
+                )
+
+            with open(instrumental_mp3, "rb") as f:
+                await self.storage.upload(instrumental_key, f.read())
+            await self.repo.update_job_data(
+                job_id, {"instrumental_key": instrumental_key}
+            )
+        except asyncio.CancelledError:
+            logger.info("instrumental_upload_cancelled", job_id=job_id)
+            raise
+        finally:
+            with suppress(Exception):
+                Path(instrumental_mp3).unlink(missing_ok=True)
 
     async def _separate_with_fallback(self, mp3_path: str) -> tuple[str, str]:
         """Try GPU separation, fall back to CPU on OOM."""
@@ -409,15 +557,7 @@ class GpuPipeline(BasePipeline):
             if "out of memory" in str(exc).lower() or "cuda" in str(exc).lower():
                 logger.warning("uvr_cuda_oom_fallback", error=str(exc))
                 await asyncio.to_thread(self.uvr.cleanup)
-                self.uvr = UVRSeparator(
-                    model_cache_dir=self.uvr.model_cache_dir,
-                    media_root=self.uvr.media_root,
-                    model_name=self.uvr._model_name,
-                    torch_device="cpu",
-                    chunk_batch_size=1,
-                    use_autocast=False,
-                    overlap=self.uvr._overlap,
-                )
+                self.uvr = self.uvr.fallback_to_cpu()
                 return await asyncio.to_thread(self.uvr.separate, mp3_path)
             raise
 

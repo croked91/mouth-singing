@@ -51,7 +51,15 @@ class S3Storage:
     ) -> None:
         self.bucket = bucket
 
-        s3_config = Config(signature_version="s3v4")
+        # Explicit retry/timeout policy: adaptive mode + 5 attempts handles
+        # transient MinIO/S3 hiccups without burning a worker job on a single
+        # network blip. Defaults are conservative for a long-running worker.
+        s3_config = Config(
+            signature_version="s3v4",
+            retries={"max_attempts": 5, "mode": "adaptive"},
+            connect_timeout=10,
+            read_timeout=60,
+        )
         self._client = boto3.client(
             "s3",
             endpoint_url=endpoint_url or None,

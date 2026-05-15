@@ -84,6 +84,22 @@ class UVRSeparator:
         self._model = None
         self._output_dir: str | None = None
 
+    def fallback_to_cpu(self) -> "UVRSeparator":
+        """Build a CPU-mode separator with the same configuration.
+
+        Used by the GPU pipeline to recover from CUDA OOM without reaching
+        into private attributes.
+        """
+        return UVRSeparator(
+            model_cache_dir=self.model_cache_dir,
+            media_root=self.media_root,
+            model_name=self._model_name,
+            torch_device="cpu",
+            chunk_batch_size=1,
+            use_autocast=False,
+            overlap=self._overlap,
+        )
+
     def _ensure_model(self):
         """Load the BS-Roformer model on first use."""
         if self._model is not None:
@@ -105,7 +121,13 @@ class UVRSeparator:
         if isinstance(state_dict, dict) and "state_dict" in state_dict:
             state_dict = state_dict["state_dict"]
         self._model.load_state_dict(state_dict)
-        self._model.to(self.torch_device).half().eval()
+        # FP16 only on GPU (paired with autocast). CPU has no autocast and
+        # would hit `mat1/mat2 dtype mismatch` because input chunks are
+        # built as float32 in `separate()`.
+        if self.torch_device == "cpu":
+            self._model.to(self.torch_device).float().eval()
+        else:
+            self._model.to(self.torch_device).half().eval()
 
         logger.info(
             "uvr_model_loaded",

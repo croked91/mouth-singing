@@ -7,6 +7,10 @@ services:
       context: .
       dockerfile: docker/worker-gpu.Dockerfile
     restart: unless-stopped
+    # WORKER_ID is auto-derived in entrypoint.sh from the container name
+    # (e.g. mouth-singing-worker-1) via the mounted docker.sock. Stable
+    # per replica across `compose down/up`, so reset_stale_running_jobs
+    # works correctly with deploy.replicas > 1.
     depends_on:
       postgres:
         condition: service_healthy
@@ -66,6 +70,9 @@ services:
     volumes:
       - media_data:/data/media
       - models_data:/data/models
+      # Read-only docker.sock — entrypoint.sh resolves container_id → name.
+      # Self-hosted-only; do not expose to untrusted workloads.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - karaoke_net
     deploy:

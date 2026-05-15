@@ -130,6 +130,10 @@ CREATE INDEX IF NOT EXISTS idx_history_track ON play_history(track_id);
 
 
 -- === job_queue ===
+-- Migration: drop attempts/max_attempts (DLQ is the single retry mechanism).
+ALTER TABLE IF EXISTS job_queue DROP COLUMN IF EXISTS attempts;
+ALTER TABLE IF EXISTS job_queue DROP COLUMN IF EXISTS max_attempts;
+
 CREATE TABLE IF NOT EXISTS job_queue (
     id TEXT PRIMARY KEY NOT NULL,
     track_id TEXT,                   -- NULL until worker finalisation (deferred track creation)
@@ -138,8 +142,6 @@ CREATE TABLE IF NOT EXISTS job_queue (
     title_hint TEXT,                 -- user-provided title (from upload form)
     priority INTEGER NOT NULL DEFAULT 1,
     status TEXT NOT NULL DEFAULT 'pending',  -- 'pending' | 'running' | 'completed' | 'failed'
-    attempts INTEGER NOT NULL DEFAULT 0,
-    max_attempts INTEGER NOT NULL DEFAULT 3,
     locked_by TEXT,
     locked_at TIMESTAMPTZ,
     data JSONB,                      -- intermediate pipeline data (instrumental_key, lyrics, etc.)

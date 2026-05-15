@@ -35,13 +35,13 @@ const STEP_NUMBERS: Record<string, number> = {
 };
 
 const STEP_FUN_MESSAGES: Record<string, string> = {
-  separating: 'Расщепляем квазар',
-  back_vocal_separating: 'Усмиряем пульсары',
-  vad: 'Глушим вакуум',
-  transcribing: 'Ловим радиоэхо',
-  searching_lyrics: 'Чертим карту',
-  aligning: 'Цепляем парсеки',
-  line_breaking: 'Делим световые годы',
+  separating: 'Вынимаем голос',
+  back_vocal_separating: 'Усмиряем хор',
+  vad: 'Срезаем дыхания',
+  transcribing: 'Снимаем на слух',
+  searching_lyrics: 'Листаем песенник',
+  aligning: 'Попадаем в долю',
+  line_breaking: 'Размечаем строфы',
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────

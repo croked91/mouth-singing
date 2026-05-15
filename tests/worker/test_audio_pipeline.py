@@ -185,16 +185,16 @@ class TestPipelineErrors:
         mock_deps["repo"].get_track = AsyncMock(return_value=None)
         job = _make_job()
         await pipeline.process(job)
-        mock_deps["job_service"].mark_failed.assert_called_once()
-        assert "not found" in mock_deps["job_service"].mark_failed.call_args[0][1]
+        mock_deps["job_service"].mark_permanently_failed.assert_called_once()
+        assert "not found" in mock_deps["job_service"].mark_permanently_failed.call_args[0][1]
 
     @pytest.mark.asyncio
     async def test_no_mp3_path(self, pipeline, mock_deps):
         mock_deps["repo"].get_track = AsyncMock(return_value=_make_track(mp3_path=None))
         job = _make_job()
         await pipeline.process(job)
-        mock_deps["job_service"].mark_failed.assert_called_once()
-        assert "mp3_path" in mock_deps["job_service"].mark_failed.call_args[0][1]
+        mock_deps["job_service"].mark_permanently_failed.assert_called_once()
+        assert "mp3_path" in mock_deps["job_service"].mark_permanently_failed.call_args[0][1]
 
     @pytest.mark.asyncio
     async def test_lyrics_not_found_saves_audio_features(self, pipeline, mock_deps):
@@ -206,7 +206,7 @@ class TestPipelineErrors:
         with patch("worker.gpu.gpu_pipeline.Path"):
             await pipeline.process(job)
 
-        mock_deps["job_service"].mark_failed.assert_called_once()
+        mock_deps["job_service"].mark_permanently_failed.assert_called_once()
         error_updates = [
             c for c in mock_deps["repo"].update_track.call_args_list
             if c[0][1].status == "error"
@@ -226,14 +226,14 @@ class TestPipelineErrors:
         )
         job = _make_job()
         await pipeline.process(job)
-        mock_deps["job_service"].mark_failed.assert_called_once()
-        assert "not configured" in mock_deps["job_service"].mark_failed.call_args[0][1]
+        mock_deps["job_service"].mark_permanently_failed.assert_called_once()
+        assert "not configured" in mock_deps["job_service"].mark_permanently_failed.call_args[0][1]
 
     @pytest.mark.asyncio
     async def test_uvr_failure_marks_job_failed(self, pipeline, mock_deps):
         mock_deps["uvr"].separate.side_effect = RuntimeError("file not found")
         job = _make_job()
         await pipeline.process(job)
-        mock_deps["job_service"].mark_failed.assert_called_once()
+        mock_deps["job_service"].mark_permanently_failed.assert_called_once()
 
 

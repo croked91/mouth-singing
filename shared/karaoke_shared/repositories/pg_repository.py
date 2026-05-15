@@ -864,19 +864,19 @@ class PgRepository:
             """
             INSERT INTO job_queue (
                 id, track_id, mp3_key, artist_hint, title_hint,
-                priority, status, attempts, max_attempts,
+                priority, status,
                 locked_by, locked_at, data, result, error_message,
                 current_step, progress, created_at, updated_at
             ) VALUES (
                 $1, $2, $3, $4, $5,
-                $6, $7, $8, $9,
-                $10, $11, $12, $13, $14,
-                $15, $16, $17, $18
+                $6, $7,
+                $8, $9, $10, $11, $12,
+                $13, $14, $15, $16
             )
             """,
             data.id, data.track_id, data.mp3_key, data.artist_hint,
             data.title_hint,
-            data.priority, data.status, data.attempts, data.max_attempts,
+            data.priority, data.status,
             None, None, json.dumps(data.data) if data.data else None,
             None, None,
             None, 0, _to_dt(data.created_at), _to_dt(data.updated_at),
@@ -957,31 +957,8 @@ class PgRepository:
             JobStatus.COMPLETED, json.dumps(result), _now_dt(), job_id,
         )
 
-    async def fail_job(self, job_id: str, error: str) -> None:
-        """Record a job failure and increment the attempt counter."""
-        row = await self.pool.fetchrow(
-            "SELECT attempts, max_attempts FROM job_queue WHERE id = $1",
-            job_id,
-        )
-        if row is None:
-            return
-
-        attempts = row["attempts"] + 1
-        max_attempts = row["max_attempts"]
-        new_status = JobStatus.PENDING if attempts < max_attempts else JobStatus.FAILED
-
-        await self.pool.execute(
-            """
-            UPDATE job_queue
-            SET status = $1, attempts = $2, error_message = $3,
-                locked_by = NULL, locked_at = NULL, updated_at = $4
-            WHERE id = $5
-            """,
-            new_status, attempts, error, _now_dt(), job_id,
-        )
-
     async def fail_job_permanently(self, job_id: str, error: str) -> None:
-        """Mark a job as failed without retry, regardless of max_attempts."""
+        """Mark a job as failed and route it to DLQ semantics."""
         await self.pool.execute(
             """
             UPDATE job_queue
@@ -999,7 +976,6 @@ class PgRepository:
             UPDATE job_queue
             SET status = $1, locked_by = NULL, locked_at = NULL, updated_at = $2
             WHERE status = $3 AND locked_by = $4
-                AND attempts < max_attempts
             """,
             JobStatus.PENDING, _now_dt(), JobStatus.RUNNING, worker_id,
         )
@@ -1074,8 +1050,6 @@ class PgRepository:
             title_hint=row.get("title_hint"),
             priority=row.get("priority", 1),
             status=row["status"],
-            attempts=row.get("attempts", 0),
-            max_attempts=row.get("max_attempts", 3),
             locked_by=row.get("locked_by"),
             locked_at=_ts(row.get("locked_at")),
             data=data,

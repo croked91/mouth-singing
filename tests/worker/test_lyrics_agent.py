@@ -279,7 +279,7 @@ class TestSequentialBackendPasses:
         agent = self._agent_with_both_backends()
         calls: list[str] = []
 
-        def fake_run(user_message: str, backend: str) -> str:  # noqa: ARG001
+        def fake_run(user_message: str, backend: str, _language: str = "en") -> str:  # noqa: ARG001
             calls.append(backend)
             return json.dumps([
                 {"artist": "A", "title": "T", "lyrics": "lyrics text long enough"}
@@ -297,7 +297,7 @@ class TestSequentialBackendPasses:
         agent = self._agent_with_both_backends()
         calls: list[str] = []
 
-        def fake_run(user_message: str, backend: str) -> str:  # noqa: ARG001
+        def fake_run(user_message: str, backend: str, _language: str = "en") -> str:  # noqa: ARG001
             calls.append(backend)
             if backend == "searxng":
                 return "[]"
@@ -317,7 +317,7 @@ class TestSequentialBackendPasses:
         agent = self._agent_with_both_backends()
         captured_messages: list[str] = []
 
-        def fake_run(user_message: str, backend: str) -> str:  # noqa: ARG001
+        def fake_run(user_message: str, backend: str, _language: str = "en") -> str:  # noqa: ARG001
             captured_messages.append(user_message)
             return "[]"
 
@@ -340,7 +340,7 @@ class TestSequentialBackendPasses:
         )
         calls: list[str] = []
 
-        def fake_run(user_message: str, backend: str) -> str:  # noqa: ARG001
+        def fake_run(user_message: str, backend: str, _language: str = "en") -> str:  # noqa: ARG001
             calls.append(backend)
             return "[]"
 
@@ -447,7 +447,7 @@ class TestSearchAltsInPrompt:
         agent = _make_agent(max_iterations=3)
         captured: dict[str, str] = {}
 
-        def fake_run(user_message: str, backend: str) -> str:  # noqa: ARG001
+        def fake_run(user_message: str, backend: str, _language: str = "en") -> str:  # noqa: ARG001
             captured["msg"] = user_message
             return "[]"
 
@@ -471,7 +471,7 @@ class TestSearchAltsInPrompt:
         agent = _make_agent(max_iterations=3)
         captured: dict[str, str] = {}
 
-        def fake_run(user_message: str, backend: str) -> str:  # noqa: ARG001
+        def fake_run(user_message: str, backend: str, _language: str = "en") -> str:  # noqa: ARG001
             captured["msg"] = user_message
             return "[]"
 
