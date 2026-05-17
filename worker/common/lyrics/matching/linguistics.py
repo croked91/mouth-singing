@@ -14,17 +14,23 @@ Each word is represented as a triple of features:
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
-from functools import lru_cache
 from typing import Callable
 
 import jellyfish
 import pymorphy3
 import snowballstemmer
+import structlog
 from unidecode import unidecode
+
+logger = structlog.get_logger(__name__)
 
 _ENGLISH_VOWELS = frozenset("aeiouy")
 _RU_DROP_CHARS = frozenset("аеёиоуыэюяьъй")
+
+_MORPH: pymorphy3.MorphAnalyzer | None = None
+_MORPH_LOCK = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -47,9 +53,29 @@ def make_word_featurizer(language: str) -> WordFeaturizer:
     return _universal_featurizer(lang)
 
 
-@lru_cache(maxsize=1)
+def init_morph_analyzer() -> pymorphy3.MorphAnalyzer:
+    """Eagerly initialise the shared pymorphy3 MorphAnalyzer.
+
+    Construction reads ~30 MB of dictionary data and takes ~1–2 s. Call
+    once from worker startup (before consume) so the first Russian-language
+    job does not block the event loop on lazy init.
+
+    Thread-safe: a process-wide lock guarantees a single MorphAnalyzer
+    instance even if multiple threads race here.
+    """
+    global _MORPH
+    if _MORPH is not None:
+        return _MORPH
+    with _MORPH_LOCK:
+        if _MORPH is None:
+            logger.info("pymorphy3_init_start")
+            _MORPH = pymorphy3.MorphAnalyzer()
+            logger.info("pymorphy3_init_done")
+    return _MORPH
+
+
 def _shared_morph() -> pymorphy3.MorphAnalyzer:
-    return pymorphy3.MorphAnalyzer()
+    return init_morph_analyzer()
 
 
 def _ru_featurizer() -> WordFeaturizer:

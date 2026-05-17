@@ -54,16 +54,26 @@ class RabbitMQClient:
         """Declare all exchanges, queues, and bindings."""
         ch = self.channel
 
-        # DLQ infrastructure
+        # DLQ infrastructure. x-message-ttl=72h limits unbounded growth: dead
+        # messages older than the TTL are dropped by the broker. To change
+        # this on an existing deployment the DLQ queues must be deleted
+        # first (RMQ rejects redeclaration with different arguments).
+        dlq_ttl_ms = 72 * 60 * 60 * 1000  # 72h
         dlq_exchange = await ch.declare_exchange(
             "dlq", aio_pika.ExchangeType.DIRECT, durable=True
         )
-        await ch.declare_queue("jobs.dlq", durable=True)
-        jobs_dlq = await ch.get_queue("jobs.dlq")
+        jobs_dlq = await ch.declare_queue(
+            "jobs.dlq",
+            durable=True,
+            arguments={"x-message-ttl": dlq_ttl_ms},
+        )
         await jobs_dlq.bind(dlq_exchange, routing_key="jobs")
 
-        await ch.declare_queue("rec.dlq", durable=True)
-        rec_dlq = await ch.get_queue("rec.dlq")
+        rec_dlq = await ch.declare_queue(
+            "rec.dlq",
+            durable=True,
+            arguments={"x-message-ttl": dlq_ttl_ms},
+        )
         await rec_dlq.bind(dlq_exchange, routing_key="rec")
 
         # Exchange "jobs" (direct) → Queue "jobs.process"

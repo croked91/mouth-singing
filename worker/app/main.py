@@ -194,6 +194,13 @@ async def main() -> None:
 
     logger.info("worker_starting", worker_id=settings.worker_id)
 
+    # Eagerly initialise pymorphy3 (~30 MB dict, ~1–2 s on cold start).
+    # Doing it at startup avoids blocking the event loop on the first
+    # Russian-language job.
+    from worker.common.lyrics.matching.linguistics import init_morph_analyzer
+
+    init_morph_analyzer()
+
     pool = await _open_pg(settings.pg_dsn)
 
     # RabbitMQ connection.
@@ -201,13 +208,14 @@ async def main() -> None:
     await rmq.connect()
     await rmq.declare_topology()
 
-    # S3 storage.
+    # S3 storage (aioboto3 — persistent async client).
     storage = S3Storage(
         bucket=settings.s3_bucket,
         endpoint_url=settings.s3_endpoint_url,
         access_key=settings.s3_access_key,
         secret_key=settings.s3_secret_key,
     )
+    await storage.connect()
 
     try:
         from karaoke_shared.repositories.pg_repository import PgRepository
@@ -242,6 +250,7 @@ async def main() -> None:
     finally:
         if 'pipeline' in dir() and hasattr(pipeline, "cleanup"):
             pipeline.cleanup()
+        await storage.close()
         await rmq.close()
         await pool.close()
         logger.info("worker_stopped")

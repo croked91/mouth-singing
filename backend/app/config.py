@@ -40,6 +40,13 @@ class Settings(BaseSettings):
     deepseek_api_key: str = ""
     deepseek_model: str = "deepseek-chat"
 
+    # Job sweeper — periodic recovery of orphan pending jobs whose RMQ
+    # message was lost (broker volume reset, queue recreated, INSERT vs
+    # publish race, admin purge). See backend/app/services/job_sweeper.py.
+    sweeper_interval_sec: int = 300         # how often to scan (5 min)
+    sweeper_pending_ttl_sec: int = 600      # republish if pending > 10 min
+    sweeper_hard_fail_ttl_sec: int = 86400  # give up if pending > 24 h
+
     model_config = {"env_prefix": ""}
 
 

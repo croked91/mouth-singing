@@ -64,6 +64,7 @@ async def _run_consumer(shutdown_event: asyncio.Event) -> None:
         access_key=settings.s3_access_key,
         secret_key=settings.s3_secret_key,
     )
+    await s3.connect()
 
     qdrant_client = QdrantClient(host=settings.qdrant_host, port=settings.qdrant_port)
     qdrant_repo = QDrantRepository(qdrant_client)
@@ -93,6 +94,7 @@ async def _run_consumer(shutdown_event: asyncio.Event) -> None:
 
     lyric_embedder.cleanup()
     await rmq.close()
+    await s3.close()
     qdrant_client.close()
     logger.info("rec_service.consumer_stopped")
 

@@ -998,6 +998,28 @@ class PgRepository:
         )
         return [self._job_from_row(row) for row in rows]
 
+    async def find_stale_pending_jobs(
+        self, older_than_seconds: int
+    ) -> list[Job]:
+        """Return pending upload jobs whose updated_at is older than the cutoff.
+
+        Used by the backend's periodic sweeper to detect orphan jobs whose
+        RMQ message was lost (e.g. queue recreated, broker volume reset,
+        race between INSERT INTO job_queue and rmq.publish). Filters by
+        mp3_key IS NOT NULL to skip non-upload jobs.
+        """
+        rows = await self.pool.fetch(
+            """
+            SELECT * FROM job_queue
+            WHERE status = $1
+              AND mp3_key IS NOT NULL
+              AND updated_at < (now() - make_interval(secs => $2))
+            ORDER BY created_at ASC
+            """,
+            JobStatus.PENDING, older_than_seconds,
+        )
+        return [self._job_from_row(row) for row in rows]
+
     async def mark_step(self, job_id: str, step: str, progress: int) -> None:
         """Update the current processing step and progress percentage."""
         await self.pool.execute(

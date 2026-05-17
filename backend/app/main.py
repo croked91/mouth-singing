@@ -9,7 +9,6 @@ Startup sequence (managed by the lifespan context manager):
 6. Initialize MoodQueryExpander via DeepSeek (optional).
 """
 
-import asyncio
 import json
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -17,6 +16,9 @@ from contextlib import asynccontextmanager
 import structlog
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from karaoke_shared.messaging import RabbitMQClient
+from karaoke_shared.repositories.pg_repository import PgRepository
+from karaoke_shared.storage import S3Storage
 
 from app.api.router import v1_router
 from app.config import settings
@@ -24,9 +26,6 @@ from app.db import init_pg
 from app.logging_config import configure_logging
 from app.middleware import RequestIdMiddleware
 from app.services.rec_client import RecClient
-from karaoke_shared.messaging import RabbitMQClient
-from karaoke_shared.repositories.pg_repository import PgRepository
-from karaoke_shared.storage import S3Storage
 
 logger = structlog.get_logger(__name__)
 
@@ -73,7 +72,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     pool = await init_pg(settings.pg_dsn)
     app.state.pg_pool = pool
 
-    # 2. S3 storage.
+    # 2. S3 storage (aioboto3 — persistent async client).
     storage = S3Storage(
         bucket=settings.s3_bucket,
         endpoint_url=settings.s3_endpoint_url or None,
@@ -82,6 +81,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         region=settings.s3_region,
         presigned_url_base=settings.s3_presigned_url_base or None,
     )
+    await storage.connect()
     try:
         await storage.ensure_bucket()
     except Exception as exc:
@@ -120,15 +120,42 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             logger.warning("mood_expander_not_available", error=str(exc))
     app.state.mood_expander = mood_expander
 
+    # 6. JobSweeper — periodic recovery of orphan pending jobs whose RMQ
+    # message was lost. Disabled if RMQ failed to initialise above.
+    sweeper = None
+    if app.state.rmq is not None:
+        from karaoke_shared.repositories.pg_repository import PgRepository
+        from karaoke_shared.services.job_service import JobService
+        from karaoke_shared.services.progress_publisher import ProgressPublisher
+
+        from app.services.job_sweeper import JobSweeper
+
+        sweeper_repo = PgRepository(pool)
+        sweeper_publisher = ProgressPublisher(app.state.rmq)
+        sweeper_job_service = JobService(sweeper_repo, publisher=sweeper_publisher)
+        sweeper = JobSweeper(
+            repo=sweeper_repo,
+            rmq=app.state.rmq,
+            job_service=sweeper_job_service,
+            interval_seconds=settings.sweeper_interval_sec,
+            pending_ttl_seconds=settings.sweeper_pending_ttl_sec,
+            hard_fail_ttl_seconds=settings.sweeper_hard_fail_ttl_sec,
+        )
+        await sweeper.start()
+    app.state.sweeper = sweeper
+
     logger.info("karaoke_backend_ready")
 
     yield
 
     # Shutdown.
     logger.info("karaoke_backend_shutting_down")
+    if sweeper is not None:
+        await sweeper.stop()
     await rec_client.close()
     if app.state.rmq:
         await app.state.rmq.close()
+    await storage.close()
     await pool.close()
 
 
@@ -156,4 +183,5 @@ app.add_middleware(RequestIdMiddleware)
 app.include_router(v1_router, prefix="/api/v1")
 
 from app.api.v1 import health as health_module  # noqa: E402
+
 app.include_router(health_module.router)

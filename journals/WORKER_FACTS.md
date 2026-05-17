@@ -735,9 +735,9 @@ ratio = waveform.size(1) / 16000 / emission.size(1)  # sec/frame
 ### 11.16. cleanup — `worker/gpu/torch_ctc_aligner.py:254-263`
 
 - `del self._model; self._model = None; self._dictionary = {}`.
+- Silero-модель (если была лениво загружена через `_ensure_silero`) тоже выгружается: `del self._silero_model; self._silero_model = None; self._silero_get_ts = None`.
 - `gc.collect(); torch.cuda.empty_cache()`.
 - Вызывается из `gpu_pipeline.py:222` после каждой задачи.
-- Silero-модель остаётся загруженной (не удаляется в cleanup).
 
 ### 11.17. Подтверждённые наблюдения по mark_step
 
@@ -1809,8 +1809,8 @@ CLAUDE.md этот файл прямо не упоминает — он част
 | `jobs.process` | да | exchange `jobs`, rk=`""` | exchange `dlq`, rk=`jobs` | **`x-max-priority=10`** |
 | `rec.index` | да | exchange `rec`, rk=`""` | exchange `dlq`, rk=`rec` | — |
 | `rec.indexed` | да | exchange `rec`, rk=**`indexed`** | **нет** | — |
-| `jobs.dlq` | да | exchange `dlq`, rk=`jobs` | — | — |
-| `rec.dlq` | да | exchange `dlq`, rk=`rec` | — | — |
+| `jobs.dlq` | да | exchange `dlq`, rk=`jobs` | — | **`x-message-ttl=259200000`** (72 ч) |
+| `rec.dlq` | да | exchange `dlq`, rk=`rec` | — | **`x-message-ttl=259200000`** (72 ч) |
 
 **Сценарии:**
 
@@ -1946,6 +1946,7 @@ status="ready"
 | `fail_job(id, error)` | UPDATE с увеличением attempts; статус FAILED при `attempts >= max_attempts`, иначе PENDING. | job_service |
 | `fail_job_permanently(id, error)` | UPDATE status=FAILED безусловно. | job_service (`mark_permanently_failed`) |
 | `reset_stale_running_jobs(worker_id)` | Сброс висящих RUNNING-задач этого воркера обратно в PENDING. | main.py при старте воркера |
+| `find_stale_pending_jobs(older_than_seconds)` | SELECT pending-задач (с `mp3_key IS NOT NULL`) у которых `updated_at < now() - interval`. | backend `JobSweeper` |
 | `mark_step(id, step, progress)` | UPDATE current_step + progress. | job_service |
 | `update_job_data(id, new_data)` | **JSONB merge** через `||`. | gpu_pipeline.py |
 | `set_job_track_id(id, track_id)` | UPDATE track_id после создания трека. | gpu_pipeline.py:282 |
@@ -2144,39 +2145,47 @@ consumer.py:96-103 (try/except в _on_message)
 
 ## 26. S3-хранилище — `S3Storage` (`shared/karaoke_shared/storage/`)
 
-Файлы: `__init__.py` (экспорт), `s3_storage.py` (207 строк).
+Файлы: `__init__.py` (экспорт), `s3_storage.py`.
 
 ### 26.1. Backend и совместимость
 
-- Реализация через **`boto3` (синхронный SDK)**, все async-методы обёрнуты в `asyncio.to_thread(...)`.
-- `signature_version="s3v4"` через `botocore.config.Config`.
+- Реализация через **`aioboto3` (async-native SDK поверх `aiobotocore`)** — все network-методы — нативные `await`-вызовы без `asyncio.to_thread`-обёрток.
+- `signature_version="s3v4"` через `aiobotocore.config.AioConfig`; retry-policy: `retries={"max_attempts": 5, "mode": "adaptive"}`, `connect_timeout=10`, `read_timeout=60`.
+- Дополнительно создаётся **синхронный `boto3.client("s3", ...)` ТОЛЬКО для presigned URL** — `generate_presigned_url` это pure-crypto (HMAC-SHA256), не делает network call, и оставлен синхронным чтобы не ломать вызывающие сигнатуры (`backend/app/api/v1/playback.py:54`).
 - Совместимо с: **AWS S3, MinIO, Yandex Object Storage** и любыми S3-совместимыми хранилищами (через `endpoint_url`).
 - В воркере используется MinIO (`settings.s3_endpoint_url = "http://minio:9000"`, см. п. 2.1).
 
-### 26.2. Конструктор и двойной клиент
+### 26.2. Конструктор, lifecycle и двойной клиент
 
 `S3Storage(bucket, endpoint_url, access_key, secret_key, region="us-east-1", presigned_url_base=None)`.
 
-**Особенность:** создаются **два boto3-клиента** (`s3_storage.py:54-76`):
+**Lifecycle (новое в aioboto3-варианте):**
 
-- `_client` — для всех операций (upload/download/delete/exists/ensure_bucket). Использует `endpoint_url` (внутренний, например `http://minio:9000`).
-- `_presign_client` — для генерации presigned URL'ов. Использует `endpoint_url=presigned_url_base` (публичный, который видит браузер).
+- `__init__` создаёт только синхронный presign-клиент (sync boto3). Async-клиент НЕ создаётся.
+- `await storage.connect()` — открывает `aioboto3.Session().client("s3", ...)` как async-context manager и сохраняет вошедший клиент в `self._client`. Идемпотентен.
+- `await storage.close()` — выходит из async-context manager. Идемпотентен.
+- До вызова `connect()` любой async-метод (`upload`/`download_*`/`delete`/`exists`/`ensure_bucket`) бросает `RuntimeError("S3Storage not connected ...")`.
+- В startup-функциях воркера/бэкенда/rec-service `await storage.connect()` вызывается сразу после конструктора; `await storage.close()` — в shutdown-секциях.
+
+**Двойной клиент (purpose без изменений):**
+
+- `_client` (aioboto3, async) — для всех network-операций. Использует `endpoint_url` (внутренний, например `http://minio:9000`).
+- `_presign_client` (boto3, sync) — только для `generate_presigned_url`. Использует `endpoint_url=presigned_url_base or endpoint_url` (публичный, который видит браузер).
 
 Зачем: presigned URL содержит **подпись, привязанную к Host-header'у**. Если backend подпишет URL для внутреннего `minio:9000`, а браузер пойдёт через nginx → подпись не совпадёт. Поэтому подпись делается для публичного endpoint, а реальный HTTP-доступ — через тот, который доступен браузеру.
 
-Если `presigned_url_base` не задан → `_presign_client = _client` (для случаев AWS S3 / public endpoint).
-
 ### 26.3. Методы
 
-| Метод | Async | boto3 операция | Where used in worker |
+| Метод | Async | aioboto3/boto3 операция | Where used in worker |
 |---|---|---|---|
-| `upload(key, data)` | да | `put_object(Bucket, Key, Body, ContentType)` | `gpu_pipeline.py:387` (instrumental MP3) |
-| `download_to_file(key, local_path)` | да | `download_file(Bucket, Key, local_path)` | `gpu_pipeline.py:99` (input MP3) |
-| `download(key) -> bytes` | да | `get_object → Body.read()` | (не вызывается воркером; используется backend'ом) |
-| `delete(key)` | да | `delete_object` | (не вызывается воркером) |
-| `exists(key) -> bool` | да | `head_object` (ClientError → False) | (не вызывается воркером) |
-| `presigned_url(key, expires_in=3600)` | **нет** (sync, local crypto) | `generate_presigned_url("get_object", ...)` | (используется backend'ом для редиректа на playback) |
-| `ensure_bucket()` | да | `head_bucket` → `create_bucket` (idempotent) | (init helper) |
+| `connect()` / `close()` | да | enter/exit `session.client("s3", ...)` async-context | startup/shutdown (worker/backend/rec-service `main.py`) |
+| `upload(key, data)` | да | `await client.put_object(Bucket, Key, Body, ContentType)` | `gpu_pipeline.py:387` (instrumental MP3) |
+| `download_to_file(key, local_path)` | да | `await client.download_file(Bucket, Key, local_path)` (aioboto3 патчит с aiofiles + concurrent range-get) | `gpu_pipeline.py:99` (input MP3) |
+| `download(key) -> bytes` | да | `await client.get_object → async with response["Body"] as s: await s.read()` | (не вызывается воркером; используется backend'ом) |
+| `delete(key)` | да | `await client.delete_object` | rec-service `indexer.py:134` (cleanup оригинала) |
+| `exists(key) -> bool` | да | `await client.head_object` (ClientError → False) | (не вызывается воркером) |
+| `presigned_url(key, expires_in=3600)` | **нет** (sync, local crypto через отдельный boto3-клиент) | `generate_presigned_url("get_object", ...)` | (используется backend'ом для редиректа на playback) |
+| `ensure_bucket()` | да | `await client.head_bucket` → `await client.create_bucket` (idempotent) | startup helper |
 
 ### 26.4. Автоматическое определение Content-Type
 
@@ -2200,7 +2209,9 @@ if content_type:
 
 ### 26.6. Логи
 
-- `s3_storage_initialized` (bucket, endpoint).
+- `s3_storage_initialized` (bucket, endpoint) — после конструктора.
+- `s3_storage_connected` (bucket) — после успешного `await connect()`.
+- `s3_storage_closed` (bucket) — после `await close()`.
 - `s3_object_uploaded` (key).
 - `s3_object_downloaded` (key, local_path).
 - `s3_object_deleted` (key).
@@ -2209,7 +2220,7 @@ if content_type:
 ### 26.7. Соответствие CLAUDE.md
 
 - ✅ «MinIO (S3-compatible): `uploads/{job_id}.mp3` (temporary), `instrumentals/{job_id}.mp3` (permanent)» — соответствует.
-- ✅ «S3 storage via `karaoke_shared.storage.S3Storage` (boto3-based, works with MinIO/AWS/Yandex)» — соответствует.
+- ⚠️ «S3 storage via `karaoke_shared.storage.S3Storage` (boto3-based, works with MinIO/AWS/Yandex)» — **устарело**: реализация переехала на `aioboto3` (async-native, `await connect()`/`await close()` lifecycle); `boto3` остался только для синхронного `presigned_url`.
 - ✅ «Redirects audio playback to S3 presigned URLs» — соответствует (метод `presigned_url`).
 - 🆕 Не описан **двойной клиент** для presigned URL (для разделения internal/external endpoint).
 - 🆕 Не описан auto-`ContentType` через `mimetypes`.

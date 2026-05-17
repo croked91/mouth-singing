@@ -549,16 +549,37 @@ class GpuPipeline(BasePipeline):
                 Path(instrumental_mp3).unlink(missing_ok=True)
 
     async def _separate_with_fallback(self, mp3_path: str) -> tuple[str, str]:
-        """Try GPU separation, fall back to CPU on OOM."""
+        """Try GPU separation; on ANY RuntimeError retry once on GPU, then CPU.
+
+        Strategy (covers OOM, cuDNN/cuBLAS hiccups, device-side asserts,
+        transient driver glitches — all of which surface as RuntimeError):
+
+        1. First attempt on the configured (GPU) device.
+        2. On RuntimeError → cleanup (frees VRAM, drops model) → one retry
+           on the same GPU. Catches transient failures (other process
+           briefly held VRAM, driver hiccup) without paying the CPU cost.
+        3. If the retry also raises RuntimeError → cleanup → CPU fallback.
+        4. If CPU also raises → propagate (pipeline marks failed → DLQ).
+        """
         try:
             return await asyncio.to_thread(self.uvr.separate, mp3_path)
-        except RuntimeError as exc:
-            if "out of memory" in str(exc).lower() or "cuda" in str(exc).lower():
-                logger.warning("uvr_cuda_oom_fallback", error=str(exc))
+        except RuntimeError as first_exc:
+            logger.warning(
+                "uvr_gpu_failure_retrying_on_gpu",
+                error=str(first_exc),
+            )
+            await asyncio.to_thread(self.uvr.cleanup)
+            try:
+                return await asyncio.to_thread(self.uvr.separate, mp3_path)
+            except RuntimeError as retry_exc:
+                logger.warning(
+                    "uvr_gpu_retry_failed_falling_back_to_cpu",
+                    first_error=str(first_exc),
+                    retry_error=str(retry_exc),
+                )
                 await asyncio.to_thread(self.uvr.cleanup)
                 self.uvr = self.uvr.fallback_to_cpu()
                 return await asyncio.to_thread(self.uvr.separate, mp3_path)
-            raise
 
     async def _vad(self, vocals_path: str, job_id: str) -> str:
         """STEP 3: VAD — strip silence from the full vocals track.

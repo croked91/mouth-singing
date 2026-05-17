@@ -252,6 +252,10 @@ class TorchCTCAligner:
         if self._model is not None:
             del self._model
             self._model = None
+        if self._silero_model is not None:
+            del self._silero_model
+            self._silero_model = None
+            self._silero_get_ts = None
         self._dictionary = {}
         gc.collect()
         if torch.cuda.is_available():

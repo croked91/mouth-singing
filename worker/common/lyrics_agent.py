@@ -318,6 +318,23 @@ def _fetch_webpage(url: str, timeout: float) -> str:
             headers={"User-Agent": _BROWSER_UA},
         )
         response.raise_for_status()
+        content_type = response.headers.get("content-type", "").lower()
+        # BeautifulSoup will happily parse binary blobs (PDF, images, audio)
+        # and emit token-eating garbage into the LLM context. Accept only
+        # HTML/XHTML; treat anything else as an agent-visible error so the
+        # LLM picks a different URL.
+        if not (
+            "text/html" in content_type or "application/xhtml" in content_type
+        ):
+            logger.info(
+                "fetch_webpage_skipped_non_html",
+                url=url,
+                content_type=content_type,
+            )
+            return json.dumps(
+                {"error": f"Unsupported content-type: {content_type or 'unknown'}"},
+                ensure_ascii=False,
+            )
         soup = BeautifulSoup(response.text, "html.parser")
         for tag in soup(
             ["script", "style", "nav", "header", "footer", "aside", "iframe", "noscript"]
