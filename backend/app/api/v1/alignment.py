@@ -41,11 +41,26 @@ class AlignmentTrackSummary(BaseModel):
     review_vocal_key: str | None = None
     source: str
     status: str
+    alignment_review_status: str = "pending"
+    review_requested_at: str | None = None
+    review_completed_at: str | None = None
+
+
+class AlignmentReviewQueueItem(BaseModel):
+    id: str
+    artist: str
+    title: str
+    duration_sec: int | None = None
+    lyrics_source: str | None = None
+    alignment_review_status: str = "pending"
+    review_requested_at: str | None = None
+    source: str
 
 
 class AlignmentEditorPayload(BaseModel):
     track: AlignmentTrackSummary
     stream_url: str | None = None
+    stream_source: str = "instrumental"
     lyrics_text: str | None = None
     syllable_timings: list[SyllableTiming] = Field(default_factory=list)
     document: AlignmentDocument
@@ -186,6 +201,55 @@ def _apply_document_patch(
 
 def _proposal_by_id(report: AutoRepairReport) -> dict[str, AutoRepairProposal]:
     return {proposal.id: proposal for proposal in report.proposals}
+
+
+@router.get(
+    "/tracks/alignment-reviews",
+    response_model=list[AlignmentReviewQueueItem],
+    summary="List tracks available for human alignment review",
+)
+async def list_alignment_review_queue(
+    status: str = "pending",
+    limit: int = 50,
+    repo: PgRepository = Depends(get_repo),
+) -> list[AlignmentReviewQueueItem]:
+    """Return recent ready tracks for the admin manual alignment shortcut.
+
+    This path must stay before ``/tracks/{track_id}/alignment`` because
+    otherwise FastAPI treats ``alignment-reviews`` as a track id.
+    Older databases do not have dedicated review-status columns, so the queue
+    is derived from ready tracks that have lyrics/timings and can be opened in
+    the manual editor.
+    """
+    del status
+    rows = await repo.pool.fetch(
+        """
+        SELECT *
+        FROM tracks
+        WHERE status = 'ready'
+          AND (lyrics_text IS NOT NULL OR syllable_timings IS NOT NULL)
+        ORDER BY updated_at DESC
+        LIMIT $1
+        """,
+        max(1, min(limit, 100)),
+    )
+    return [
+        AlignmentReviewQueueItem(
+            id=row["id"],
+            artist=row["artist"],
+            title=row["title"],
+            duration_sec=row.get("duration_sec"),
+            lyrics_source=row.get("lyrics_source"),
+            alignment_review_status="pending",
+            review_requested_at=(
+                row["updated_at"].isoformat()
+                if hasattr(row.get("updated_at"), "isoformat")
+                else str(row.get("updated_at")) if row.get("updated_at") else None
+            ),
+            source=row["source"],
+        )
+        for row in rows
+    ]
 
 
 @router.get(
