@@ -1,7 +1,7 @@
 """Pydantic models for tracks.
 
 Schema reference:
-- tracks: id, artist, title, duration_sec, instrumental_key,
+- tracks: id, artist, title, duration_sec, instrumental_key, review_vocal_key,
   lyrics_text, lyrics_source, syllable_timings (JSONB), language, source,
   status, error_message, play_count, qdrant_synced, created_at, updated_at
 """
@@ -32,6 +32,7 @@ class Track(BaseModel):
     title: str
     duration_sec: int | None = None
     instrumental_key: str | None = None
+    review_vocal_key: str | None = None
     lyrics_text: str | None = None
     lyrics_source: str | None = None
     syllable_timings: list[SyllableTiming] | None = None
@@ -58,6 +59,7 @@ class TrackCreate(BaseModel):
     source: str
     duration_sec: int | None = None
     instrumental_key: str | None = None
+    review_vocal_key: str | None = None
     lyrics_text: str | None = None
     lyrics_source: str | None = None
     syllable_timings: list[SyllableTiming] | None = None
@@ -89,6 +91,7 @@ class TrackUpdate(BaseModel):
     title: str | None = None
     duration_sec: int | None = None
     instrumental_key: str | None = None
+    review_vocal_key: str | None = None
     lyrics_text: str | None = None
     lyrics_source: str | None = None
     syllable_timings: list[SyllableTiming] | None = None

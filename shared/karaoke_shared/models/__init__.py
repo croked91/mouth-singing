@@ -13,6 +13,17 @@ from karaoke_shared.models.alignment import (
     AlignmentSyllable,
     AlignmentWord,
 )
+from karaoke_shared.models.auto_repair import (
+    AlignmentDocumentPatch,
+    AutoRepairAlignmentRequest,
+    AutoRepairCluster,
+    AutoRepairJobResponse,
+    AutoRepairLineMapping,
+    AutoRepairProposal,
+    AutoRepairRange,
+    AutoRepairReport,
+    AutoRepairSummary,
+)
 from karaoke_shared.models.job import Job, JobCreate, JobUpdate
 from karaoke_shared.models.play_history import PlayHistoryCreate, PlayHistoryEntry
 from karaoke_shared.models.queue import QueueEntry, QueueEntryCreate
@@ -41,6 +52,15 @@ __all__ = [
     "AlignmentSection",
     "AlignmentSyllable",
     "AlignmentWord",
+    "AlignmentDocumentPatch",
+    "AutoRepairAlignmentRequest",
+    "AutoRepairCluster",
+    "AutoRepairJobResponse",
+    "AutoRepairLineMapping",
+    "AutoRepairProposal",
+    "AutoRepairRange",
+    "AutoRepairReport",
+    "AutoRepairSummary",
     "Job",
     "JobCreate",
     "JobUpdate",

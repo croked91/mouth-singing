@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS tracks (
     title TEXT NOT NULL,
     duration_sec INTEGER,
     instrumental_key TEXT,
+    review_vocal_key TEXT,
     lyrics_text TEXT,
     syllable_timings JSONB,
     language TEXT,
@@ -42,6 +43,9 @@ CREATE INDEX IF NOT EXISTS idx_tracks_popularity ON tracks(popularity_category) 
 -- (text may contain ASR errors, candidates for re-processing).
 ALTER TABLE tracks ADD COLUMN IF NOT EXISTS lyrics_source text;
 CREATE INDEX IF NOT EXISTS idx_tracks_lyrics_source ON tracks(lyrics_source);
+
+-- Lead/full vocal stem used by the alignment editor and automated repair jobs.
+ALTER TABLE tracks ADD COLUMN IF NOT EXISTS review_vocal_key text;
 
 -- Full-text search via tsvector
 ALTER TABLE tracks ADD COLUMN IF NOT EXISTS search_vector tsvector;

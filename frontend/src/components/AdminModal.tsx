@@ -8,6 +8,7 @@ import CheckIcon from '@mui/icons-material/Check';
 import PowerSettingsNewIcon from '@mui/icons-material/PowerSettingsNew';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import { api } from '../services/api';
+import type { AlignmentReviewQueueItem } from '../types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -103,17 +104,23 @@ export const AdminModal: React.FC<AdminModalProps> = ({ open, onClose, sessionId
   const [storedPin, setStoredPin] = useState<string>('');
   const [shaking, setShaking] = useState(false);
   const [isTerminating, setIsTerminating] = useState(false);
+  const [reviewQueue, setReviewQueue] = useState<AlignmentReviewQueueItem[]>([]);
+  const [isLoadingReviews, setIsLoadingReviews] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
 
   const wrongResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Reset state when modal closes/reopens
   useEffect(() => {
     if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setModalState('pin');
       setPin('');
       setStoredPin('');
       setShaking(false);
       setIsTerminating(false);
+      setReviewQueue([]);
+      setReviewError(null);
     }
     return () => {
       if (wrongResetTimerRef.current !== null) {
@@ -121,6 +128,29 @@ export const AdminModal: React.FC<AdminModalProps> = ({ open, onClose, sessionId
       }
     };
   }, [open]);
+
+  useEffect(() => {
+    if (modalState !== 'unlocked') return;
+
+    let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setIsLoadingReviews(true);
+    setReviewError(null);
+    api.getAlignmentReviewQueue(8)
+      .then((items) => {
+        if (!cancelled) setReviewQueue(items);
+      })
+      .catch((error: Error) => {
+        if (!cancelled) setReviewError(error.message);
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoadingReviews(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [modalState]);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
 
@@ -176,7 +206,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({ open, onClose, sessionId
     try {
       await api.terminateSession(sessionId, storedPin);
       navigate('/');
-    } catch (err) {
+    } catch {
       // 403 = wrong PIN — show State B then reset
       setIsTerminating(false);
       setModalState('wrong');
@@ -478,6 +508,72 @@ export const AdminModal: React.FC<AdminModalProps> = ({ open, onClose, sessionId
             </Typography>
 
             {/* Terminate session button */}
+            <Box
+              sx={{
+                borderRadius: '14px',
+                backgroundColor: 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                p: 1.5,
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                <Typography
+                  sx={{
+                    fontFamily: 'Inter, sans-serif',
+                    fontWeight: 700,
+                    fontSize: '13px',
+                    color: '#FFFFFF',
+                  }}
+                >
+                  На проверку
+                </Typography>
+                {isLoadingReviews && <CircularProgress size={16} />}
+              </Box>
+
+              {reviewError && (
+                <Typography sx={{ color: '#F87171', fontSize: 12 }}>
+                  {reviewError}
+                </Typography>
+              )}
+
+              {!reviewError && !isLoadingReviews && reviewQueue.length === 0 && (
+                <Typography sx={{ color: 'rgba(255,255,255,0.45)', fontSize: 12 }}>
+                  Нет треков в очереди.
+                </Typography>
+              )}
+
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, maxHeight: 220, overflowY: 'auto' }}>
+                {reviewQueue.map((item) => (
+                  <Box
+                    key={item.id}
+                    component="button"
+                    onClick={() => navigate(`/admin/tracks/${item.id}/alignment`)}
+                    sx={{
+                      width: '100%',
+                      textAlign: 'left',
+                      borderRadius: '10px',
+                      border: '1px solid rgba(255,255,255,0.08)',
+                      backgroundColor: 'rgba(0,0,0,0.18)',
+                      color: '#FFFFFF',
+                      p: 1,
+                      cursor: 'pointer',
+                      '&:hover': {
+                        backgroundColor: 'rgba(124,58,237,0.18)',
+                        borderColor: 'rgba(167,139,250,0.35)',
+                      },
+                    }}
+                  >
+                    <Typography noWrap sx={{ fontSize: 13, fontWeight: 700 }}>
+                      {item.artist} — {item.title}
+                    </Typography>
+                    <Typography noWrap sx={{ fontSize: 11, color: 'rgba(255,255,255,0.45)' }}>
+                      {item.lyrics_source ?? 'unknown'} · {item.review_requested_at ? new Date(item.review_requested_at).toLocaleString() : 'без даты'}
+                    </Typography>
+                  </Box>
+                ))}
+              </Box>
+            </Box>
+
             <Box
               component="button"
               onClick={handleTerminateClick}

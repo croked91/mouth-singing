@@ -12,7 +12,7 @@ import json
 
 import aio_pika
 import structlog
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from karaoke_shared.repositories.pg_repository import PgRepository
 from pydantic import BaseModel
@@ -199,6 +199,22 @@ async def job_status_stream(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.get(
+    "/jobs/{job_id}/result",
+    summary="Return a completed job result payload",
+)
+async def get_job_result(
+    job_id: str,
+    repo: PgRepository = Depends(get_repo),
+) -> dict:
+    job = await repo.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    if job.status != "completed":
+        raise HTTPException(status_code=409, detail="Job is not completed yet.")
+    return job.result or {}
 
 
 async def _db_poll_generator(repo: PgRepository, job_id: str):

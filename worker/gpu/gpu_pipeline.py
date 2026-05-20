@@ -89,6 +89,20 @@ class GpuPipeline(BasePipeline):
 
     async def process(self, job: Job) -> None:
         """Run the full GPU pipeline for a single job."""
+        task = (job.data or {}).get("task")
+        if task == "alignment_auto_repair":
+            from worker.common.alignment_auto_repair import AlignmentAutoRepairEngine
+
+            engine = AlignmentAutoRepairEngine(
+                job_service=self.job_service,
+                repo=self.repo,
+                storage=self.storage,
+                vad_processor=self.vad_processor,
+                ctc_aligner=self.ctc_aligner,
+            )
+            await engine.process(job)
+            return
+
         if not job.mp3_key:
             await self.job_service.mark_failed(job.id, f"Job {job.id} has no mp3_key")
             return
@@ -148,6 +162,15 @@ class GpuPipeline(BasePipeline):
                     await asyncio.to_thread(self.back_vocal_separator.cleanup)
 
             await self.job_service.mark_step(job.id, "separating", 100)
+
+            review_vocal_key = f"review-vocals/{job.id}.mp3"
+            review_vocal_upload_task = asyncio.create_task(
+                self._encode_and_upload_review_vocal(
+                    lead_vocals_path,
+                    review_vocal_key,
+                    job.id,
+                )
+            )
 
             # ==============================================================
             # STEPS 2+3: VAD + ASR (sequential, runs while upload proceeds)
@@ -258,8 +281,9 @@ class GpuPipeline(BasePipeline):
             # FINALIZATION: create track, publish to Rec Service
             # ==============================================================
 
-            # Wait for instrumental upload to finish before creating track.
+            # Wait for stem uploads to finish before creating track.
             await instrumental_upload_task
+            await review_vocal_upload_task
 
             # Gather all data from job_queue.data JSONB.
             updated_job = await self.repo.get_job(job.id)
@@ -271,6 +295,7 @@ class GpuPipeline(BasePipeline):
                     title=lyrics_result.title,
                     source="user_upload",
                     instrumental_key=job_data.get("instrumental_key", instrumental_key),
+                    review_vocal_key=job_data.get("review_vocal_key", review_vocal_key),
                     lyrics_text=lyrics_result.lyrics,
                     lyrics_source=lyrics_result.source_note,
                     syllable_timings=syllable_timings,
@@ -302,6 +327,9 @@ class GpuPipeline(BasePipeline):
                     "track_id": track_id,
                     "instrumental_key": job_data.get(
                         "instrumental_key", instrumental_key
+                    ),
+                    "review_vocal_key": job_data.get(
+                        "review_vocal_key", review_vocal_key
                     ),
                     "language": lyrics_result.language,
                 },
@@ -402,6 +430,36 @@ class GpuPipeline(BasePipeline):
             await self.storage.upload(instrumental_key, f.read())
         Path(instrumental_mp3).unlink(missing_ok=True)
         await self.repo.update_job_data(job_id, {"instrumental_key": instrumental_key})
+
+    async def _encode_and_upload_review_vocal(
+        self,
+        vocal_path: str,
+        review_vocal_key: str,
+        job_id: str,
+    ) -> None:
+        """Convert the review vocal stem to MP3 and upload it for editor jobs."""
+        review_vocal_mp3 = f"/tmp/{job_id}_review_vocal.mp3"
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg",
+            "-y",
+            "-i",
+            vocal_path,
+            "-codec:a",
+            "libmp3lame",
+            "-b:a",
+            "160k",
+            review_vocal_mp3,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await proc.wait()
+        if proc.returncode != 0:
+            raise RuntimeError("Failed to encode review vocal stem")
+
+        with open(review_vocal_mp3, "rb") as f:
+            await self.storage.upload(review_vocal_key, f.read())
+        Path(review_vocal_mp3).unlink(missing_ok=True)
+        await self.repo.update_job_data(job_id, {"review_vocal_key": review_vocal_key})
 
     async def _separate_with_fallback(self, mp3_path: str) -> tuple[str, str]:
         """Try GPU separation, fall back to CPU on OOM."""

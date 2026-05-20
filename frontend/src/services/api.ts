@@ -15,6 +15,10 @@ import type {
   HistoryItem,
   AlignmentEditorPayload,
   AlignmentRevision,
+  AlignmentReviewQueueItem,
+  RealignLyricsResponse,
+  RealignSyllablesFragmentRequest,
+  RealignSyllablesFragmentJobResponse,
   SaveAlignmentDraftRequest,
 } from '../types';
 
@@ -207,6 +211,14 @@ export const api = {
     return response.data;
   },
 
+  getAlignmentReviewQueue: async (limit?: number): Promise<AlignmentReviewQueueItem[]> => {
+    const response = await apiClient.get<AlignmentReviewQueueItem[]>(
+      '/tracks/alignment-reviews',
+      { params: { status: 'pending', limit: limit ?? 50 } },
+    );
+    return response.data;
+  },
+
   saveAlignmentDraft: async (
     trackId: string,
     payload: SaveAlignmentDraftRequest,
@@ -218,6 +230,32 @@ export const api = {
       { headers: { 'X-Admin-Secret': adminSecret } },
     );
     return response.data.revision;
+  },
+
+  realignLyrics: async (
+    trackId: string,
+    lyricsText: string,
+    adminSecret: string,
+  ): Promise<RealignLyricsResponse> => {
+    const response = await apiClient.post<RealignLyricsResponse>(
+      `/tracks/${trackId}/alignment/realign`,
+      { lyrics_text: lyricsText, created_by: 'admin' },
+      { headers: { 'X-Admin-Secret': adminSecret } },
+    );
+    return response.data;
+  },
+
+  realignSyllablesForFragment: async (
+    trackId: string,
+    payload: RealignSyllablesFragmentRequest,
+    adminSecret: string,
+  ): Promise<RealignSyllablesFragmentJobResponse> => {
+    const response = await apiClient.post<RealignSyllablesFragmentJobResponse>(
+      `/tracks/${trackId}/alignment/realign-syllables-fragment`,
+      payload,
+      { headers: { 'X-Admin-Secret': adminSecret } },
+    );
+    return response.data;
   },
 
   publishAlignment: async (

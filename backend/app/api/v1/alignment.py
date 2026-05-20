@@ -5,15 +5,25 @@ from __future__ import annotations
 import hmac
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from karaoke_shared.alignment import (
     document_to_syllable_timings,
     lyrics_text_from_document,
     syllable_timings_to_document,
 )
 from karaoke_shared.models.alignment import AlignmentDocument, AlignmentRevision
+from karaoke_shared.models.auto_repair import (
+    AlignmentDocumentPatch,
+    AutoRepairAlignmentRequest,
+    AutoRepairJobResponse,
+    AutoRepairProposal,
+    AutoRepairReport,
+)
+from karaoke_shared.models.job import JobCreate
 from karaoke_shared.models.track import SyllableTiming
+from karaoke_shared.models.track import TrackUpdate
 from karaoke_shared.repositories.pg_repository import PgRepository
+from karaoke_shared.storage import S3Storage
 from pydantic import BaseModel, Field
 
 from app.config import settings
@@ -28,6 +38,7 @@ class AlignmentTrackSummary(BaseModel):
     title: str
     duration_sec: int | None = None
     lyrics_source: str | None = None
+    review_vocal_key: str | None = None
     source: str
     status: str
 
@@ -62,6 +73,17 @@ class PublishAlignmentResponse(BaseModel):
 
 
 class RestoreAlignmentResponse(BaseModel):
+    revision: AlignmentRevision
+
+
+class ApplyAutoRepairRequest(BaseModel):
+    job_id: str
+    base_revision_id: str
+    proposal_ids: list[str]
+    created_by: str | None = None
+
+
+class ApplyAutoRepairResponse(BaseModel):
     revision: AlignmentRevision
 
 
@@ -103,6 +125,69 @@ async def _ensure_initial_revision(
     return await repo.create_alignment_revision(revision)
 
 
+def _extract_review_vocal_key(data: dict | None) -> str | None:
+    if not data:
+        return None
+    candidate = (
+        data.get("review_vocal_key")
+        or data.get("audio_key")
+    )
+    if candidate and str(candidate).startswith("review-vocals/"):
+        return str(candidate)
+    return None
+
+
+async def _resolve_review_vocal_key(
+    track_id: str,
+    repo: PgRepository,
+    storage: S3Storage,
+) -> str | None:
+    """Return the best stored vocal stem key for repair jobs."""
+    track = await repo.get_track(track_id)
+    if track is None:
+        return None
+    if track.review_vocal_key:
+        if await storage.exists(track.review_vocal_key):
+            return track.review_vocal_key
+
+    for job in await repo.list_completed_jobs_for_track(track_id):
+        candidate = _extract_review_vocal_key(job.result) or _extract_review_vocal_key(job.data)
+        if candidate and await storage.exists(candidate):
+            await repo.update_track(track_id, TrackUpdate(review_vocal_key=candidate))
+            return candidate
+    return None
+
+
+def _apply_document_patch(
+    document: AlignmentDocument,
+    patch: AlignmentDocumentPatch,
+) -> AlignmentDocument:
+    replace_lines = {line.id: line for line in patch.replace_lines}
+    replace_words = {word.id: word for word in patch.replace_words}
+    replace_syllables = {syl.id: syl for syl in patch.replace_syllables}
+    remove_word_ids = set(patch.remove_word_ids) | set(replace_words)
+    remove_syllable_ids = set(patch.remove_syllable_ids) | set(replace_syllables)
+
+    return AlignmentDocument(
+        sections=document.sections,
+        lines=[replace_lines.get(line.id, line) for line in document.lines],
+        words=[
+            word
+            for word in document.words
+            if word.id not in remove_word_ids
+        ] + list(replace_words.values()),
+        syllables=[
+            syl
+            for syl in document.syllables
+            if syl.id not in remove_syllable_ids
+        ] + list(replace_syllables.values()),
+    )
+
+
+def _proposal_by_id(report: AutoRepairReport) -> dict[str, AutoRepairProposal]:
+    return {proposal.id: proposal for proposal in report.proposals}
+
+
 @router.get(
     "/tracks/{track_id}/alignment",
     response_model=AlignmentEditorPayload,
@@ -139,6 +224,7 @@ async def get_track_alignment(
             title=track.title,
             duration_sec=track.duration_sec,
             lyrics_source=track.lyrics_source,
+            review_vocal_key=track.review_vocal_key,
             source=track.source,
             status=track.status,
         ),
@@ -155,6 +241,147 @@ async def get_track_alignment(
         active_revision=active_revision,
         revisions=revisions,
     )
+
+
+@router.post(
+    "/tracks/{track_id}/alignment/auto-repair",
+    response_model=AutoRepairJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Start an asynchronous automatic alignment repair job",
+)
+async def start_alignment_auto_repair(
+    track_id: str,
+    payload: AutoRepairAlignmentRequest,
+    request: Request,
+    x_admin_secret: str | None = Header(default=None),
+    repo: PgRepository = Depends(get_repo),
+) -> AutoRepairJobResponse:
+    _require_admin_secret(x_admin_secret)
+    track = await repo.get_track(track_id)
+    if track is None:
+        raise HTTPException(status_code=404, detail=f"Track '{track_id}' not found.")
+
+    revision = None
+    if payload.revision_id:
+        revision = await repo.get_alignment_revision(payload.revision_id)
+        if revision is None or revision.track_id != track_id:
+            raise HTTPException(status_code=404, detail="Alignment revision not found.")
+    else:
+        revision = await _ensure_initial_revision(track_id, repo)
+    if revision is None:
+        raise HTTPException(status_code=404, detail="Alignment revision not found.")
+
+    review_vocal_key = await _resolve_review_vocal_key(
+        track_id,
+        repo,
+        request.app.state.storage,
+    )
+    if not review_vocal_key:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Для автоисправления нет vocal stem. "
+                "Нужно переобработать трек или сохранить review-vocals объект."
+            ),
+        )
+
+    rmq = getattr(request.app.state, "rmq", None)
+    if rmq is None:
+        raise HTTPException(status_code=503, detail="Job queue is unavailable.")
+
+    job = await repo.create_job(
+        JobCreate(
+            track_id=track_id,
+            mp3_key=review_vocal_key,
+            priority=7,
+            max_attempts=1,
+            data={
+                "task": "alignment_auto_repair",
+                "track_id": track_id,
+                "revision_id": revision.id,
+                "audio_key": review_vocal_key,
+                **payload.model_dump(),
+            },
+        )
+    )
+    await rmq.publish(
+        "jobs",
+        "",
+        {"job_id": job.id, "mp3_key": review_vocal_key},
+        priority=job.priority,
+    )
+    return AutoRepairJobResponse(job_id=job.id)
+
+
+@router.post(
+    "/tracks/{track_id}/alignment/auto-repair/apply",
+    response_model=ApplyAutoRepairResponse,
+    summary="Apply selected auto-repair proposals as a new draft revision",
+)
+async def apply_alignment_auto_repair(
+    track_id: str,
+    payload: ApplyAutoRepairRequest,
+    x_admin_secret: str | None = Header(default=None),
+    repo: PgRepository = Depends(get_repo),
+) -> ApplyAutoRepairResponse:
+    _require_admin_secret(x_admin_secret)
+    track = await repo.get_track(track_id)
+    if track is None:
+        raise HTTPException(status_code=404, detail=f"Track '{track_id}' not found.")
+
+    base_revision = await repo.get_alignment_revision(payload.base_revision_id)
+    if base_revision is None or base_revision.track_id != track_id:
+        raise HTTPException(status_code=404, detail="Base alignment revision not found.")
+    if base_revision.document is None:
+        raise HTTPException(status_code=409, detail="Base revision has no document.")
+
+    job = await repo.get_job(payload.job_id)
+    if job is None or job.track_id != track_id or not job.result:
+        raise HTTPException(status_code=404, detail="Auto-repair job result not found.")
+
+    report = AutoRepairReport(**job.result)
+    if report.base_revision_id != payload.base_revision_id:
+        raise HTTPException(
+            status_code=409,
+            detail="Auto-repair report was produced for another base revision.",
+        )
+
+    proposals = _proposal_by_id(report)
+    missing = [proposal_id for proposal_id in payload.proposal_ids if proposal_id not in proposals]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"Unknown proposal ids: {missing}")
+
+    document = base_revision.document
+    applied: list[str] = []
+    for proposal_id in payload.proposal_ids:
+        proposal = proposals[proposal_id]
+        if proposal.decision == "blocked":
+            raise HTTPException(
+                status_code=409,
+                detail=f"Proposal '{proposal_id}' is blocked and cannot be applied.",
+            )
+        document = _apply_document_patch(document, proposal.document_patch)
+        applied.append(proposal_id)
+
+    revision = AlignmentRevision(
+        track_id=track_id,
+        revision_no=await repo.next_alignment_revision_no(track_id),
+        source="auto_repair",
+        lyrics_text=lyrics_text_from_document(document),
+        syllable_timings=document_to_syllable_timings(document),
+        document=document,
+        operations=[
+            {
+                "type": "APPLY_ALIGNMENT_AUTO_REPAIR",
+                "job_id": payload.job_id,
+                "proposal_ids": applied,
+            }
+        ],
+        diagnostics={"auto_repair_job_id": payload.job_id},
+        is_published=False,
+        created_by=payload.created_by,
+    )
+    return ApplyAutoRepairResponse(revision=await repo.create_alignment_revision(revision))
 
 
 @router.put(

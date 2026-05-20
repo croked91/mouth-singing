@@ -95,21 +95,21 @@ class PgRepository:
         await self.pool.execute(
             """
             INSERT INTO tracks (
-                id, artist, title, duration_sec, instrumental_key,
+                id, artist, title, duration_sec, instrumental_key, review_vocal_key,
                 lyrics_text, lyrics_source, syllable_timings, language, source,
                 status, error_message, play_count, qdrant_synced,
                 popularity_category, chart_count, chart_last_seen,
                 catalog_cluster_id, rec_cluster_id, created_at, updated_at
             ) VALUES (
-                $1, $2, $3, $4, $5,
-                $6, $7, $8, $9, $10,
-                $11, $12, $13, $14,
-                $15, $16, $17,
-                $18, $19, $20, $21
+                $1, $2, $3, $4, $5, $6,
+                $7, $8, $9, $10, $11,
+                $12, $13, $14, $15,
+                $16, $17, $18,
+                $19, $20, $21, $22
             )
             """,
             data.id, data.artist, data.title, data.duration_sec,
-            data.instrumental_key,
+            data.instrumental_key, data.review_vocal_key,
             data.lyrics_text, data.lyrics_source, syllable_timings_json,
             data.language, data.source,
             data.status, None, data.play_count, data.qdrant_synced,
@@ -138,6 +138,7 @@ class PgRepository:
 
         for field in (
             "artist", "title", "duration_sec", "instrumental_key",
+            "review_vocal_key",
             "lyrics_text", "lyrics_source", "language", "source",
             "status", "error_message",
             "play_count", "qdrant_synced", "popularity_category",
@@ -375,6 +376,7 @@ class PgRepository:
             title=row["title"],
             duration_sec=row.get("duration_sec"),
             instrumental_key=row.get("instrumental_key"),
+            review_vocal_key=row.get("review_vocal_key"),
             lyrics_text=row.get("lyrics_text"),
             lyrics_source=row.get("lyrics_source"),
             syllable_timings=syllable_timings,
@@ -1060,6 +1062,41 @@ class PgRepository:
         if row is None:
             return None
         return self._job_from_row(row)
+
+    async def get_latest_completed_job_for_track(self, track_id: str) -> Job | None:
+        """Return the newest completed job associated with a track."""
+        row = await self.pool.fetchrow(
+            """
+            SELECT * FROM job_queue
+            WHERE track_id = $1 AND status = $2
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """,
+            track_id,
+            JobStatus.COMPLETED,
+        )
+        if row is None:
+            return None
+        return self._job_from_row(row)
+
+    async def list_completed_jobs_for_track(
+        self,
+        track_id: str,
+        limit: int = 25,
+    ) -> list[Job]:
+        """Return recent completed jobs associated with a track."""
+        rows = await self.pool.fetch(
+            """
+            SELECT * FROM job_queue
+            WHERE track_id = $1 AND status = $2
+            ORDER BY updated_at DESC
+            LIMIT $3
+            """,
+            track_id,
+            JobStatus.COMPLETED,
+            limit,
+        )
+        return [self._job_from_row(row) for row in rows]
 
     async def poll_and_lock(self, worker_id: str) -> Job | None:
         """Atomically find the highest-priority pending job and lock it.
