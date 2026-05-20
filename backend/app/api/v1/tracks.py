@@ -45,6 +45,19 @@ class UploadResponse(BaseModel):
     status: str  # Always "pending" at upload time.
 
 
+class AlignmentReviewQueueItem(BaseModel):
+    """Track shown in the admin shortcut to the manual alignment editor."""
+
+    id: str
+    artist: str
+    title: str
+    duration_sec: int | None = None
+    lyrics_source: str | None = None
+    alignment_review_status: str = "pending"
+    review_requested_at: str | None = None
+    source: str
+
+
 # ---------------------------------------------------------------------------
 # Route handlers
 # ---------------------------------------------------------------------------
@@ -116,6 +129,48 @@ async def search_tracks(
         )
 
     return await service.search(q, limit=limit, offset=offset)
+
+
+@router.get(
+    "/alignment-reviews",
+    response_model=list[AlignmentReviewQueueItem],
+    summary="List tracks available for human alignment review",
+)
+async def list_alignment_review_queue(
+    status: str = "pending",
+    limit: int = 50,
+    repo: PgRepository = Depends(get_repo),
+) -> list[AlignmentReviewQueueItem]:
+    """Return recent ready tracks for the admin manual alignment shortcut."""
+    del status
+    rows = await repo.pool.fetch(
+        """
+        SELECT *
+        FROM tracks
+        WHERE status = 'ready'
+          AND (lyrics_text IS NOT NULL OR syllable_timings IS NOT NULL)
+        ORDER BY updated_at DESC
+        LIMIT $1
+        """,
+        max(1, min(limit, 100)),
+    )
+    return [
+        AlignmentReviewQueueItem(
+            id=row["id"],
+            artist=row["artist"],
+            title=row["title"],
+            duration_sec=row.get("duration_sec"),
+            lyrics_source=row.get("lyrics_source"),
+            alignment_review_status="pending",
+            review_requested_at=(
+                row["updated_at"].isoformat()
+                if hasattr(row.get("updated_at"), "isoformat")
+                else str(row.get("updated_at")) if row.get("updated_at") else None
+            ),
+            source=row["source"],
+        )
+        for row in rows
+    ]
 
 
 @router.get(

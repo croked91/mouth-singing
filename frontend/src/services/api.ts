@@ -14,6 +14,13 @@ import type {
   StartPlayingResponse,
   FinishPlayingResponse,
   HistoryItem,
+  AlignmentEditorPayload,
+  AlignmentRevision,
+  AlignmentReviewQueueItem,
+  RealignLyricsResponse,
+  RealignSyllablesFragmentRequest,
+  RealignSyllablesFragmentJobResponse,
+  SaveAlignmentDraftRequest,
 } from '../types';
 
 const apiClient = axios.create({
@@ -206,6 +213,86 @@ export const api = {
       `/sessions/${sessionId}/history`,
     );
     return response.data.items;
+  },
+
+  getTrackAlignment: async (trackId: string): Promise<AlignmentEditorPayload> => {
+    const response = await apiClient.get<AlignmentEditorPayload>(
+      `/tracks/${trackId}/alignment`,
+    );
+    return response.data;
+  },
+
+  getAlignmentReviewQueue: async (limit?: number): Promise<AlignmentReviewQueueItem[]> => {
+    const response = await apiClient.get<AlignmentReviewQueueItem[]>(
+      '/tracks/alignment-reviews',
+      { params: { status: 'pending', limit: limit ?? 50 } },
+    );
+    return response.data;
+  },
+
+  saveAlignmentDraft: async (
+    trackId: string,
+    payload: SaveAlignmentDraftRequest,
+    adminSecret: string,
+  ): Promise<AlignmentRevision> => {
+    const response = await apiClient.put<{ revision: AlignmentRevision }>(
+      `/tracks/${trackId}/alignment/draft`,
+      payload,
+      { headers: { 'X-Admin-Secret': adminSecret } },
+    );
+    return response.data.revision;
+  },
+
+  realignLyrics: async (
+    trackId: string,
+    lyricsText: string,
+    adminSecret: string,
+  ): Promise<RealignLyricsResponse> => {
+    const response = await apiClient.post<RealignLyricsResponse>(
+      `/tracks/${trackId}/alignment/realign`,
+      { lyrics_text: lyricsText, created_by: 'admin' },
+      { headers: { 'X-Admin-Secret': adminSecret } },
+    );
+    return response.data;
+  },
+
+  realignSyllablesForFragment: async (
+    trackId: string,
+    payload: RealignSyllablesFragmentRequest,
+    adminSecret: string,
+  ): Promise<RealignSyllablesFragmentJobResponse> => {
+    const response = await apiClient.post<RealignSyllablesFragmentJobResponse>(
+      `/tracks/${trackId}/alignment/realign-syllables-fragment`,
+      payload,
+      { headers: { 'X-Admin-Secret': adminSecret } },
+    );
+    return response.data;
+  },
+
+  publishAlignment: async (
+    trackId: string,
+    revisionId: string,
+    adminSecret: string,
+  ): Promise<AlignmentRevision> => {
+    const response = await apiClient.post<{ revision: AlignmentRevision }>(
+      `/tracks/${trackId}/alignment/publish`,
+      { revision_id: revisionId },
+      { headers: { 'X-Admin-Secret': adminSecret } },
+    );
+    return response.data.revision;
+  },
+
+  restoreAlignmentRevision: async (
+    trackId: string,
+    revisionId: string,
+    adminSecret: string,
+  ): Promise<AlignmentRevision> => {
+    const response = await apiClient.post<{ revision: AlignmentRevision }>(
+      `/tracks/${trackId}/alignment/revisions/${revisionId}/restore`,
+      {},
+      { headers: { 'X-Admin-Secret': adminSecret } },
+    );
+    return response.data.revision;
   },
 
   uploadTrack: async (file: File, artist?: string, title?: string): Promise<UploadResponse> => {

@@ -6,6 +6,7 @@ import { WelcomePage } from './pages/WelcomePage';
 import { QueuePage } from './pages/QueuePage';
 import { PlayerPage } from './pages/PlayerPage';
 import { AdminPage } from './pages/AdminPage';
+import { AlignmentEditorPage } from './pages/AlignmentEditorPage';
 
 const App: React.FC = () => {
   return (
@@ -17,6 +18,7 @@ const App: React.FC = () => {
           <Route path="/session/:id" element={<QueuePage />} />
           <Route path="/session/:id/play/:entryId" element={<PlayerPage />} />
           <Route path="/admin" element={<AdminPage />} />
+          <Route path="/admin/tracks/:trackId/alignment" element={<AlignmentEditorPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

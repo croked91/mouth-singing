@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS tracks (
     title TEXT NOT NULL,
     duration_sec INTEGER,
     instrumental_key TEXT,
+    review_vocal_key TEXT,
     lyrics_text TEXT,
     syllable_timings JSONB,
     language TEXT,
@@ -42,6 +43,9 @@ CREATE INDEX IF NOT EXISTS idx_tracks_popularity ON tracks(popularity_category) 
 -- (text may contain ASR errors, candidates for re-processing).
 ALTER TABLE tracks ADD COLUMN IF NOT EXISTS lyrics_source text;
 CREATE INDEX IF NOT EXISTS idx_tracks_lyrics_source ON tracks(lyrics_source);
+
+-- Lead/full vocal stem used by the alignment editor and automated repair jobs.
+ALTER TABLE tracks ADD COLUMN IF NOT EXISTS review_vocal_key text;
 
 -- Full-text search via tsvector
 ALTER TABLE tracks ADD COLUMN IF NOT EXISTS search_vector tsvector;
@@ -202,3 +206,28 @@ CREATE TABLE IF NOT EXISTS api_costs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_api_costs_service ON api_costs(service, created_at);
+
+-- === alignment revisions ===
+CREATE TABLE IF NOT EXISTS alignment_revisions (
+    id TEXT PRIMARY KEY NOT NULL,
+    track_id TEXT NOT NULL,
+    revision_no INTEGER NOT NULL,
+    source TEXT NOT NULL DEFAULT 'manual',
+    lyrics_text TEXT,
+    syllable_timings JSONB NOT NULL DEFAULT '[]'::jsonb,
+    document JSONB,
+    operations JSONB NOT NULL DEFAULT '[]'::jsonb,
+    diagnostics JSONB NOT NULL DEFAULT '{}'::jsonb,
+    is_published BOOLEAN NOT NULL DEFAULT FALSE,
+    created_by TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    published_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_alignment_revisions_track_id
+    ON alignment_revisions(track_id, revision_no DESC);
+CREATE INDEX IF NOT EXISTS idx_alignment_revisions_track_published
+    ON alignment_revisions(track_id) WHERE is_published = TRUE;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_alignment_revisions_track_revision_no
+    ON alignment_revisions(track_id, revision_no);
