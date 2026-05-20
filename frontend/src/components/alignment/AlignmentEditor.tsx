@@ -58,6 +58,9 @@ import type {
   AlignmentRevision,
   AlignmentSyllable,
   AlignmentWord,
+  AutoRepairMode,
+  AutoRepairProposal,
+  AutoRepairReport,
   JobStatusEvent,
   RealignSyllablesFragmentJobResponse,
   RealignSyllablesFragmentRequest,
@@ -78,6 +81,9 @@ interface AlignmentEditorProps {
   ) => Promise<AlignmentRevision>;
   onRealignLyrics: (lyricsText: string) => Promise<string>;
   onRealignSyllablesForFragment: (payload: RealignSyllablesFragmentRequest) => Promise<RealignSyllablesFragmentJobResponse>;
+  onStartAutoRepair: (revisionId: string, mode: AutoRepairMode) => Promise<string>;
+  onGetAutoRepairReport: (jobId: string) => Promise<AutoRepairReport>;
+  onApplyAutoRepair: (jobId: string, baseRevisionId: string, proposalIds: string[]) => Promise<AlignmentRevision>;
   onReload: () => Promise<void>;
   onPublish: (revisionId: string) => Promise<AlignmentRevision>;
   onRestoreRevision: (revisionId: string) => Promise<AlignmentRevision>;
@@ -791,6 +797,9 @@ export const AlignmentEditor: React.FC<AlignmentEditorProps> = ({
   onSaveDraft,
   onRealignLyrics,
   onRealignSyllablesForFragment,
+  onStartAutoRepair,
+  onGetAutoRepairReport,
+  onApplyAutoRepair,
   onReload,
   onPublish,
   onRestoreRevision,
@@ -820,6 +829,10 @@ export const AlignmentEditor: React.FC<AlignmentEditorProps> = ({
   const [fragmentAligning, setFragmentAligning] = useState(false);
   const [fragmentRealignProgress, setFragmentRealignProgress] = useState<string | null>(null);
   const [fragmentPreview, setFragmentPreview] = useState<FragmentRealignmentPreview | null>(null);
+  const [autoRepairRunning, setAutoRepairRunning] = useState(false);
+  const [autoRepairProgress, setAutoRepairProgress] = useState<string | null>(null);
+  const [autoRepairReport, setAutoRepairReport] = useState<AutoRepairReport | null>(null);
+  const [autoRepairApplying, setAutoRepairApplying] = useState<string | null>(null);
   const [loopingFragment, setLoopingFragment] = useState(false);
   const [waveformZoom, setWaveformZoom] = useState(128);
   const [waveformVolume, setWaveformVolume] = useState(0.85);
@@ -871,6 +884,10 @@ export const AlignmentEditor: React.FC<AlignmentEditorProps> = ({
     setSelectedLineRange(payload.document.lines[0] ? { startLineId: payload.document.lines[0].id, endLineId: payload.document.lines[0].id } : null);
     setSelectedAudioRange(null);
     setFragmentPreview(null);
+    setAutoRepairReport(null);
+    setAutoRepairProgress(null);
+    setAutoRepairRunning(false);
+    setAutoRepairApplying(null);
     setStatusText(null);
     setErrorText(null);
   }, [payload.active_revision, payload.document, payload.lyrics_text]);
@@ -1149,6 +1166,95 @@ export const AlignmentEditor: React.FC<AlignmentEditorProps> = ({
     }
   }, [adminSecret, document, onRealignSyllablesForFragment, onRequestAdminSecret, selectedAudioRange, selectedLineIds, selectedTextForAlignment, validateFragmentAlignment]);
 
+  const runAutoRepair = useCallback(async (mode: AutoRepairMode): Promise<void> => {
+    if (!adminSecret) {
+      await onRequestAdminSecret();
+      return;
+    }
+    setAutoRepairRunning(true);
+    setAutoRepairProgress('Сохраняю черновик...');
+    setAutoRepairReport(null);
+    setErrorText(null);
+    try {
+      const revision = state.dirty || !lastDraft || lastDraft.is_published
+        ? await saveDraft(true)
+        : lastDraft;
+      if (!revision) {
+        setAutoRepairRunning(false);
+        setAutoRepairProgress(null);
+        return;
+      }
+      setAutoRepairProgress('Ставлю задачу автоисправления в очередь...');
+      const jobId = await onStartAutoRepair(revision.id, mode);
+      const unsubscribe = subscribeToJobStatus(jobId, (event: JobStatusEvent) => {
+        if (event.status === 'completed') {
+          unsubscribe();
+          setAutoRepairProgress('Загружаю отчёт...');
+          onGetAutoRepairReport(jobId)
+            .then((report) => {
+              setAutoRepairReport(report);
+              setAutoRepairProgress(null);
+              setAutoRepairRunning(false);
+              setStatusText('Автоисправление завершено. Проверьте предложения перед применением.');
+            })
+            .catch((error: Error) => {
+              setAutoRepairProgress(null);
+              setAutoRepairRunning(false);
+              setErrorText(error.message);
+            });
+          return;
+        }
+        if (event.status === 'failed' || event.status === 'error') {
+          unsubscribe();
+          setAutoRepairProgress(null);
+          setAutoRepairRunning(false);
+          setErrorText(event.error ?? 'Автоисправление завершилось ошибкой.');
+          return;
+        }
+        setAutoRepairProgress(`${event.step ?? 'processing'}${typeof event.progress === 'number' ? ` ${event.progress}%` : ''}`);
+      }, () => {
+        setAutoRepairProgress('Соединение со статусом автоисправления прервано. Обновите редактор через несколько секунд.');
+        setAutoRepairRunning(false);
+      });
+    } catch (error) {
+      setAutoRepairProgress(null);
+      setAutoRepairRunning(false);
+      setErrorText(error instanceof Error ? error.message : 'Не удалось запустить автоисправление.');
+    }
+  }, [adminSecret, lastDraft, onGetAutoRepairReport, onRequestAdminSecret, onStartAutoRepair, saveDraft, state.dirty]);
+
+  const applyAutoRepairProposals = useCallback(async (proposalIds: string[]): Promise<void> => {
+    if (!autoRepairReport || proposalIds.length === 0) return;
+    if (!adminSecret) {
+      await onRequestAdminSecret();
+      return;
+    }
+    setAutoRepairApplying(proposalIds.length === 1 ? proposalIds[0] : 'batch');
+    setErrorText(null);
+    try {
+      const revision = await onApplyAutoRepair(
+        autoRepairReport.job_id,
+        autoRepairReport.base_revision_id,
+        proposalIds,
+      );
+      if (revision.document) {
+        dispatch({ type: 'reset', document: revision.document, diagnostics: revision.diagnostics });
+      }
+      setLastDraft(revision);
+      setStatusText(
+        proposalIds.length === 1
+          ? 'Предложение автоисправления применено.'
+          : `Применено предложений автоисправления: ${proposalIds.length}.`,
+      );
+      setAutoRepairReport(null);
+      window.localStorage.removeItem(recoveryKey(payload));
+    } catch (error) {
+      setErrorText(error instanceof Error ? error.message : 'Не удалось применить автоисправление.');
+    } finally {
+      setAutoRepairApplying(null);
+    }
+  }, [adminSecret, autoRepairReport, onApplyAutoRepair, onRequestAdminSecret, payload]);
+
   const publish = async (force = false): Promise<void> => {
     if (!adminSecret) {
       await onRequestAdminSecret();
@@ -1321,6 +1427,7 @@ export const AlignmentEditor: React.FC<AlignmentEditorProps> = ({
           {statusText && <Alert severity="success" sx={{ mb: 2 }}>{statusText}</Alert>}
           {realignProgress && <Alert severity="info" sx={{ mb: 2 }}>Повторное выравнивание: {realignProgress}</Alert>}
           {fragmentRealignProgress && <Alert severity="info" sx={{ mb: 2 }}>Выравнивание фрагмента: {fragmentRealignProgress}</Alert>}
+          {autoRepairProgress && <Alert severity="info" sx={{ mb: 2 }}>Автоисправление: {autoRepairProgress}</Alert>}
         </Box>
         {errorText && <Alert severity="error" sx={{ mb: 2 }}>{errorText}</Alert>}
 
@@ -1400,32 +1507,43 @@ export const AlignmentEditor: React.FC<AlignmentEditorProps> = ({
             }}
           />
 
-          <FragmentRealignmentPanel
-            selectedLines={selectedLines}
-            document={document}
-            audioRange={selectedAudioRange}
-            duration={duration}
-            currentTime={currentTime}
-            aligning={fragmentAligning}
-            onTakeFromLines={() => takeAudioFromSelectedLines(1)}
-            onSetStartNow={() => updateAudioRange((range) => ({ start: currentTime, end: Math.max(currentTime + 0.3, range?.end ?? currentTime + 5) }))}
-            onSetEndNow={() => updateAudioRange((range) => ({ start: Math.min(range?.start ?? Math.max(0, currentTime - 5), currentTime - 0.3), end: currentTime }))}
-            onExpand={() => selectedAudioRange && updateAudioRange({ start: clamp(selectedAudioRange.start - 1, 0, duration), end: clamp(selectedAudioRange.end + 1, 0, duration) })}
-            onShrinkToLines={() => takeAudioFromSelectedLines(0)}
-            onReset={() => {
-              updateAudioRange(null);
-              setLoopingFragment(false);
-            }}
-            onPlay={() => selectedAudioRange && void playRange(selectedAudioRange.start, selectedAudioRange.end)}
-            onLoop={() => {
-              if (!selectedAudioRange) return;
-              setLoopingFragment((value) => !value);
-              seek(selectedAudioRange.start);
-              void waveSurferRef.current?.play();
-            }}
-            looping={loopingFragment}
-            onRun={() => void runFragmentAlignment()}
-          />
+          <Stack spacing={2}>
+            <AutoRepairPanel
+              report={autoRepairReport}
+              running={autoRepairRunning}
+              applying={autoRepairApplying}
+              onRun={() => void runAutoRepair('propose')}
+              onRunSafe={() => void runAutoRepair('auto_apply_safe')}
+              onClear={() => setAutoRepairReport(null)}
+              onApply={(proposalIds) => void applyAutoRepairProposals(proposalIds)}
+            />
+            <FragmentRealignmentPanel
+              selectedLines={selectedLines}
+              document={document}
+              audioRange={selectedAudioRange}
+              duration={duration}
+              currentTime={currentTime}
+              aligning={fragmentAligning}
+              onTakeFromLines={() => takeAudioFromSelectedLines(1)}
+              onSetStartNow={() => updateAudioRange((range) => ({ start: currentTime, end: Math.max(currentTime + 0.3, range?.end ?? currentTime + 5) }))}
+              onSetEndNow={() => updateAudioRange((range) => ({ start: Math.min(range?.start ?? Math.max(0, currentTime - 5), currentTime - 0.3), end: currentTime }))}
+              onExpand={() => selectedAudioRange && updateAudioRange({ start: clamp(selectedAudioRange.start - 1, 0, duration), end: clamp(selectedAudioRange.end + 1, 0, duration) })}
+              onShrinkToLines={() => takeAudioFromSelectedLines(0)}
+              onReset={() => {
+                updateAudioRange(null);
+                setLoopingFragment(false);
+              }}
+              onPlay={() => selectedAudioRange && void playRange(selectedAudioRange.start, selectedAudioRange.end)}
+              onLoop={() => {
+                if (!selectedAudioRange) return;
+                setLoopingFragment((value) => !value);
+                seek(selectedAudioRange.start);
+                void waveSurferRef.current?.play();
+              }}
+              looping={loopingFragment}
+              onRun={() => void runFragmentAlignment()}
+            />
+          </Stack>
 
           <Stack spacing={2}>
             <InspectorPanel
@@ -2076,6 +2194,143 @@ function CompactSyllablePreview({
           }}
         />
       </Box>
+    </Box>
+  );
+}
+
+function AutoRepairPanel({ report, running, applying, onRun, onRunSafe, onClear, onApply }: {
+  report: AutoRepairReport | null;
+  running: boolean;
+  applying: string | null;
+  onRun: () => void;
+  onRunSafe: () => void;
+  onClear: () => void;
+  onApply: (proposalIds: string[]) => void;
+}) {
+  const actionable = report?.proposals.filter((proposal) => proposal.decision !== 'blocked') ?? [];
+  const confident = actionable.filter((proposal) => proposal.decision === 'auto_apply');
+  return (
+    <Paper sx={{ p: 2, borderRadius: 3, background: 'rgba(12,16,28,0.92)', color: 'white', border: '1px solid rgba(255,255,255,0.08)' }}>
+      <Stack spacing={2}>
+        <Box>
+          <Typography variant="h6" fontWeight={800}>Автоисправление проблемных участков</Typography>
+          <Typography variant="body2" color="rgba(255,255,255,0.68)" sx={{ mt: 0.5 }}>
+            Система сама найдёт проблемные строки, переберёт аудио-диапазоны и предложит новые слоговые тайминги.
+          </Typography>
+        </Box>
+
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25}>
+          <Button fullWidth variant="contained" disabled={running} onClick={onRun}>
+            {running ? 'Ищу исправления...' : 'Найти исправления'}
+          </Button>
+          <Button fullWidth variant="outlined" disabled={running} onClick={onRunSafe}>
+            Автоисправить уверенные
+          </Button>
+        </Stack>
+
+        {!report && (
+          <Typography variant="body2" color="rgba(255,255,255,0.48)">
+            Это не заменяет ручную проверку: результат появится как список кандидатов, которые можно применить выборочно.
+          </Typography>
+        )}
+
+        {report && (
+          <Stack spacing={1.25}>
+            <Stack direction="row" spacing={1} flexWrap="wrap">
+              <Chip size="small" label={`Кластеров: ${report.summary.clusters}`} />
+              <Chip size="small" color="success" label={`Уверенных: ${report.summary.auto_apply}`} />
+              <Chip size="small" color="warning" label={`Проверить: ${report.summary.needs_review}`} />
+              <Chip size="small" label={`Отклонено: ${report.summary.rejected}`} />
+              <Chip size="small" color="error" label={`Blocked: ${report.summary.blocked}`} />
+            </Stack>
+
+            {report.warnings.length > 0 && (
+              <Alert severity="warning">{report.warnings.join(' ')}</Alert>
+            )}
+
+            {confident.length > 1 && (
+              <Button
+                variant="outlined"
+                disabled={Boolean(applying)}
+                onClick={() => onApply(confident.map((proposal) => proposal.id))}
+              >
+                {applying === 'batch' ? 'Применяю...' : `Применить уверенные (${confident.length})`}
+              </Button>
+            )}
+
+            <Stack spacing={1} sx={{ maxHeight: 360, overflowY: 'auto', pr: 0.5 }}>
+              {report.proposals.length === 0 && (
+                <Typography variant="body2" color="rgba(255,255,255,0.55)">
+                  Кандидатов не найдено.
+                </Typography>
+              )}
+              {report.proposals.map((proposal) => (
+                <AutoRepairProposalRow
+                  key={proposal.id}
+                  proposal={proposal}
+                  applying={applying === proposal.id}
+                  onApply={() => onApply([proposal.id])}
+                />
+              ))}
+            </Stack>
+
+            <Button size="small" onClick={onClear}>Скрыть отчёт</Button>
+          </Stack>
+        )}
+      </Stack>
+    </Paper>
+  );
+}
+
+function AutoRepairProposalRow({ proposal, applying, onApply }: {
+  proposal: AutoRepairProposal;
+  applying: boolean;
+  onApply: () => void;
+}) {
+  const decisionColor: 'success' | 'warning' | 'error' | 'default' = proposal.decision === 'auto_apply'
+    ? 'success'
+    : proposal.decision === 'needs_review'
+      ? 'warning'
+      : proposal.decision === 'blocked'
+        ? 'error'
+        : 'default';
+  return (
+    <Box sx={{ p: 1.25, borderRadius: 2, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+      <Stack spacing={0.75}>
+        <Stack direction="row" justifyContent="space-between" gap={1} alignItems="flex-start">
+          <Box sx={{ minWidth: 0 }}>
+            <Stack direction="row" spacing={0.75} flexWrap="wrap" alignItems="center">
+              <Chip size="small" color={decisionColor} label={proposal.decision} />
+              <Chip size="small" label={`${Math.round(proposal.score * 100)}%`} />
+              <Typography variant="caption" color="rgba(255,255,255,0.55)">
+                строк: {proposal.line_ids.length}
+              </Typography>
+            </Stack>
+            <Typography sx={{ mt: 0.75, fontSize: 13, color: 'rgba(255,255,255,0.86)', overflowWrap: 'anywhere' }}>
+              {proposal.text.split('\n').slice(0, 2).join(' / ')}
+            </Typography>
+            <Typography variant="caption" color="rgba(255,255,255,0.5)" sx={{ display: 'block', mt: 0.5, fontVariantNumeric: 'tabular-nums' }}>
+              {formatTime(proposal.old_audio_range.start)}–{formatTime(proposal.old_audio_range.end)}
+              {' → '}
+              {formatTime(proposal.new_audio_range.start)}–{formatTime(proposal.new_audio_range.end)}
+            </Typography>
+          </Box>
+          <Button
+            size="small"
+            variant="outlined"
+            disabled={proposal.decision === 'blocked' || applying}
+            onClick={onApply}
+            sx={{ whiteSpace: 'nowrap' }}
+          >
+            {applying ? 'Применяю...' : 'Применить'}
+          </Button>
+        </Stack>
+        {(proposal.warnings.length > 0 || proposal.reasons.length > 0) && (
+          <Typography variant="caption" color="rgba(255,255,255,0.52)">
+            {[...proposal.reasons, ...proposal.warnings].slice(0, 3).join(' · ')}
+          </Typography>
+        )}
+      </Stack>
     </Box>
   );
 }

@@ -20,6 +20,9 @@ import type {
   RealignSyllablesFragmentRequest,
   RealignSyllablesFragmentJobResponse,
   SaveAlignmentDraftRequest,
+  AutoRepairAlignmentRequest,
+  AutoRepairJobResponse,
+  ApplyAutoRepairRequest,
 } from '../types';
 
 const apiClient = axios.create({
@@ -256,6 +259,37 @@ export const api = {
       { headers: { 'X-Admin-Secret': adminSecret } },
     );
     return response.data;
+  },
+
+  startAlignmentAutoRepair: async (
+    trackId: string,
+    payload: AutoRepairAlignmentRequest,
+    adminSecret: string,
+  ): Promise<AutoRepairJobResponse> => {
+    const response = await apiClient.post<AutoRepairJobResponse>(
+      `/tracks/${trackId}/alignment/auto-repair`,
+      payload,
+      { headers: { 'X-Admin-Secret': adminSecret } },
+    );
+    return response.data;
+  },
+
+  getJobResult: async <T>(jobId: string): Promise<T> => {
+    const response = await apiClient.get<T>(`/jobs/${jobId}/result`);
+    return response.data;
+  },
+
+  applyAlignmentAutoRepair: async (
+    trackId: string,
+    payload: ApplyAutoRepairRequest,
+    adminSecret: string,
+  ): Promise<AlignmentRevision> => {
+    const response = await apiClient.post<{ revision: AlignmentRevision }>(
+      `/tracks/${trackId}/alignment/auto-repair/apply`,
+      payload,
+      { headers: { 'X-Admin-Secret': adminSecret } },
+    );
+    return response.data.revision;
   },
 
   publishAlignment: async (

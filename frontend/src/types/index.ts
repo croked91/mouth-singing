@@ -294,3 +294,97 @@ export interface RealignSyllablesFragmentResponse {
   }[] | null;
   warnings: string[];
 }
+
+export type AutoRepairMode = 'analyze_only' | 'propose' | 'auto_apply_safe';
+export type AutoRepairDecision = 'auto_apply' | 'needs_review' | 'rejected' | 'blocked';
+
+export interface AutoRepairAlignmentRequest {
+  revision_id?: string | null;
+  mode: AutoRepairMode;
+  max_cluster_lines?: number;
+  max_audio_seconds?: number;
+  max_ctc_candidates?: number;
+  auto_apply_threshold?: number;
+  review_threshold?: number;
+}
+
+export interface AutoRepairJobResponse {
+  job_id: string;
+}
+
+export interface AutoRepairRange {
+  start: number;
+  end: number;
+}
+
+export interface AutoRepairLineMapping {
+  line_id: string;
+  syllable_start_index: number;
+  syllable_end_index: number;
+}
+
+export interface AlignmentDocumentPatch {
+  replace_lines: AlignmentLine[];
+  replace_words: AlignmentWord[];
+  replace_syllables: AlignmentSyllable[];
+  remove_word_ids: string[];
+  remove_syllable_ids: string[];
+}
+
+export interface AutoRepairCluster {
+  id: string;
+  line_ids: string[];
+  start_line_index: number;
+  end_line_index: number;
+  old_audio_range: AutoRepairRange;
+  flags: string[];
+  root_cause_hints: string[];
+}
+
+export interface AutoRepairProposal {
+  id: string;
+  cluster_id: string;
+  decision: AutoRepairDecision;
+  root_cause_hints: string[];
+  score: number;
+  confidence: number;
+  margin: number;
+  line_ids: string[];
+  text: string;
+  old_audio_range: AutoRepairRange;
+  new_audio_range: AutoRepairRange;
+  timing_origin: 'relative_to_fragment';
+  syllable_timings: SyllableTiming[];
+  line_mapping?: AutoRepairLineMapping[] | null;
+  document_patch: AlignmentDocumentPatch;
+  reasons: string[];
+  warnings: string[];
+}
+
+export interface AutoRepairSummary {
+  clusters: number;
+  auto_apply: number;
+  needs_review: number;
+  rejected: number;
+  blocked: number;
+}
+
+export interface AutoRepairReport {
+  job_id: string;
+  track_id: string;
+  base_revision_id: string;
+  source_audio_key: string;
+  status: 'ok' | 'partial' | 'failed';
+  created_revision_id?: string | null;
+  summary: AutoRepairSummary;
+  clusters: AutoRepairCluster[];
+  proposals: AutoRepairProposal[];
+  warnings: string[];
+}
+
+export interface ApplyAutoRepairRequest {
+  job_id: string;
+  base_revision_id: string;
+  proposal_ids: string[];
+  created_by?: string | null;
+}

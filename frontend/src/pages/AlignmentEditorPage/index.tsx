@@ -7,6 +7,8 @@ import type {
   AlignmentDocument,
   AlignmentEditorPayload,
   AlignmentRevision,
+  AutoRepairMode,
+  AutoRepairReport,
   RealignSyllablesFragmentJobResponse,
   RealignSyllablesFragmentRequest,
 } from '../../types';
@@ -87,6 +89,36 @@ export const AlignmentEditorPage: React.FC = () => {
     return api.realignSyllablesForFragment(trackId, request, adminSecret);
   };
 
+  const startAutoRepair = async (
+    revisionId: string,
+    mode: AutoRepairMode,
+  ): Promise<string> => {
+    if (!trackId) throw new Error('Track id is missing');
+    const response = await api.startAlignmentAutoRepair(
+      trackId,
+      { revision_id: revisionId, mode },
+      adminSecret,
+    );
+    return response.job_id;
+  };
+
+  const getAutoRepairReport = async (jobId: string): Promise<AutoRepairReport> => {
+    return api.getJobResult<AutoRepairReport>(jobId);
+  };
+
+  const applyAutoRepair = async (
+    jobId: string,
+    baseRevisionId: string,
+    proposalIds: string[],
+  ): Promise<AlignmentRevision> => {
+    if (!trackId) throw new Error('Track id is missing');
+    return api.applyAlignmentAutoRepair(
+      trackId,
+      { job_id: jobId, base_revision_id: baseRevisionId, proposal_ids: proposalIds, created_by: 'admin' },
+      adminSecret,
+    );
+  };
+
   const reloadPayload = async (): Promise<void> => {
     if (!trackId) throw new Error('Track id is missing');
     const data = await api.getTrackAlignment(trackId);
@@ -141,6 +173,9 @@ export const AlignmentEditorPage: React.FC = () => {
         onSaveDraft={saveDraft}
         onRealignLyrics={realignLyrics}
         onRealignSyllablesForFragment={realignSyllablesForFragment}
+        onStartAutoRepair={startAutoRepair}
+        onGetAutoRepairReport={getAutoRepairReport}
+        onApplyAutoRepair={applyAutoRepair}
         onReload={reloadPayload}
         onPublish={publish}
         onRestoreRevision={restoreRevision}
