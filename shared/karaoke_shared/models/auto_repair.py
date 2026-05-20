@@ -73,6 +73,11 @@ class AutoRepairProposal(BaseModel):
     syllable_timings: list[SyllableTiming] = Field(default_factory=list)
     line_mapping: list[AutoRepairLineMapping] | None = None
     document_patch: AlignmentDocumentPatch
+    locator_method: str | None = None
+    matched_text: str | None = None
+    locator_confidence: float | None = None
+    phoneme_score: float | None = None
+    text_score: float | None = None
     reasons: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 

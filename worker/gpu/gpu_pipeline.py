@@ -99,6 +99,10 @@ class GpuPipeline(BasePipeline):
                 storage=self.storage,
                 vad_processor=self.vad_processor,
                 ctc_aligner=self.ctc_aligner,
+                whisper_model_size=getattr(self.settings, "whisper_model_size", "tiny"),
+                whisper_device=getattr(self.settings, "whisper_device", "cuda"),
+                whisper_compute_type=getattr(self.settings, "whisper_compute_type", "float16"),
+                model_cache_dir=getattr(self.settings, "model_cache_dir", None),
             )
             await engine.process(job)
             return

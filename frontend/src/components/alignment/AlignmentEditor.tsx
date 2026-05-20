@@ -2307,6 +2307,12 @@ function AutoRepairProposalRow({ proposal, applying, onApply }: {
             <Stack direction="row" spacing={0.75} flexWrap="wrap" alignItems="center">
               <Chip size="small" color={decisionColor} label={proposal.decision} />
               <Chip size="small" label={`${Math.round(proposal.score * 100)}%`} />
+              {proposal.locator_method && (
+                <Chip size="small" label={proposal.locator_method} />
+              )}
+              {proposal.locator_confidence != null && (
+                <Chip size="small" label={`locator ${Math.round(proposal.locator_confidence * 100)}%`} />
+              )}
               <Typography variant="caption" color="rgba(255,255,255,0.55)">
                 строк: {proposal.line_ids.length}
               </Typography>
@@ -2314,11 +2320,23 @@ function AutoRepairProposalRow({ proposal, applying, onApply }: {
             <Typography sx={{ mt: 0.75, fontSize: 13, color: 'rgba(255,255,255,0.86)', overflowWrap: 'anywhere' }}>
               {proposal.text.split('\n').slice(0, 2).join(' / ')}
             </Typography>
+            {proposal.matched_text && (
+              <Typography variant="caption" color="rgba(255,255,255,0.62)" sx={{ display: 'block', mt: 0.35, overflowWrap: 'anywhere' }}>
+                ASR: {proposal.matched_text}
+              </Typography>
+            )}
             <Typography variant="caption" color="rgba(255,255,255,0.5)" sx={{ display: 'block', mt: 0.5, fontVariantNumeric: 'tabular-nums' }}>
               {formatTime(proposal.old_audio_range.start)}–{formatTime(proposal.old_audio_range.end)}
               {' → '}
               {formatTime(proposal.new_audio_range.start)}–{formatTime(proposal.new_audio_range.end)}
             </Typography>
+            {(proposal.phoneme_score != null || proposal.text_score != null) && (
+              <Typography variant="caption" color="rgba(255,255,255,0.44)" sx={{ display: 'block', mt: 0.35 }}>
+                phoneme {Math.round((proposal.phoneme_score ?? 0) * 100)}%
+                {' · '}
+                text {Math.round((proposal.text_score ?? 0) * 100)}%
+              </Typography>
+            )}
           </Box>
           <Button
             size="small"

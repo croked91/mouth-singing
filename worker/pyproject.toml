@@ -34,6 +34,7 @@ dependencies = [
     "snowballstemmer==2.2.0",
     "jellyfish==1.1.0",
     "rapidfuzz==3.10.1",
+    "phonemizer>=3.3,<4",
 ]
 
 [project.optional-dependencies]
@@ -45,8 +46,8 @@ gpu = [
     "faster-whisper==1.0.3",
     "ctranslate2==4.4.0",
     # Local lyric embedder
-    "sentence-transformers>=2.2,<3",
-    "transformers<5",
+    "sentence-transformers==2.7.0",
+    "transformers==4.41.2",
 ]
 # api mode has no extra deps beyond the base list:
 # httpx covers all HTTP calls; OpenAI embedder uses httpx too.

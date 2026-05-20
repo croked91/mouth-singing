@@ -358,6 +358,11 @@ export interface AutoRepairProposal {
   syllable_timings: SyllableTiming[];
   line_mapping?: AutoRepairLineMapping[] | null;
   document_patch: AlignmentDocumentPatch;
+  locator_method?: string | null;
+  matched_text?: string | null;
+  locator_confidence?: number | null;
+  phoneme_score?: number | null;
+  text_score?: number | null;
   reasons: string[];
   warnings: string[];
 }

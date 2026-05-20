@@ -83,7 +83,7 @@ class WhisperTranscriber:
         self._model = WhisperForConditionalGeneration.from_pretrained(
             model_id,
             cache_dir=self._model_cache_dir,
-            dtype=self._torch_dtype,
+            torch_dtype=self._torch_dtype,
         ).to(self._device)
 
         logger.info(

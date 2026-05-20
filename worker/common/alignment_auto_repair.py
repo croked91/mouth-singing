@@ -47,6 +47,11 @@ class _Candidate:
     end: float
     cheap_score: float
     reasons: tuple[str, ...]
+    locator_method: str | None = None
+    matched_text: str | None = None
+    locator_confidence: float | None = None
+    phoneme_score: float | None = None
+    text_score: float | None = None
 
 
 @dataclass(frozen=True)
@@ -71,6 +76,10 @@ class AlignmentAutoRepairEngine:
         storage: S3Storage,
         vad_processor,
         ctc_aligner,
+        whisper_model_size: str = "tiny",
+        whisper_device: str = "cuda",
+        whisper_compute_type: str = "float16",
+        model_cache_dir: str | None = None,
     ) -> None:
         self.job_service = job_service
         self.repo = repo
@@ -78,6 +87,10 @@ class AlignmentAutoRepairEngine:
         self.vad_processor = vad_processor
         self.ctc_aligner = ctc_aligner
         self.syllabifier = Syllabifier()
+        self.whisper_model_size = whisper_model_size
+        self.whisper_device = whisper_device
+        self.whisper_compute_type = whisper_compute_type
+        self.model_cache_dir = model_cache_dir
 
     async def process(self, job: Job) -> None:
         data = job.data or {}
@@ -109,6 +122,12 @@ class AlignmentAutoRepairEngine:
 
                 await self.job_service.mark_step(job.id, "auto_repair_analyzing", 15)
                 vad_segments = await self._safe_vad(audio_path)
+                phrase_locator, asr_words = await self._load_phrase_locator(
+                    track_id=track_id,
+                    audio_key=audio_key,
+                    audio_path=audio_path,
+                    language=language,
+                )
                 clusters = self._build_line_repair_units(revision.document, duration)
 
                 proposals: list[AutoRepairProposal] = []
@@ -116,7 +135,7 @@ class AlignmentAutoRepairEngine:
                     progress = 20 + int((index / max(1, len(clusters))) * 65)
                     await self.job_service.mark_step(
                         job.id,
-                            f"auto_repair_line_{index + 1}_of_{len(clusters)}",
+                        f"auto_repair_line_{index + 1}_of_{len(clusters)}",
                         progress,
                     )
                     proposals.extend(
@@ -126,6 +145,8 @@ class AlignmentAutoRepairEngine:
                             cluster=cluster,
                             audio_path=audio_path,
                             vad_segments=vad_segments,
+                            phrase_locator=phrase_locator,
+                            asr_words=asr_words,
                             duration=duration,
                             language=language,
                             config=data,
@@ -160,6 +181,33 @@ class AlignmentAutoRepairEngine:
         except Exception as exc:  # noqa: BLE001
             logger.exception("alignment_auto_repair_failed", job_id=job.id)
             await self.job_service.mark_permanently_failed(job.id, str(exc))
+
+    async def _load_phrase_locator(
+        self,
+        track_id: str,
+        audio_key: str,
+        audio_path: str,
+        language: str,
+    ):
+        from worker.common.phrase_locator import PhraseLocator
+
+        locator = PhraseLocator(
+            storage=self.storage,
+            track_id=track_id,
+            audio_key=audio_key,
+            model_size=self.whisper_model_size,
+            device=self.whisper_device,
+            compute_type=self.whisper_compute_type,
+            model_cache_dir=self.model_cache_dir,
+        )
+        try:
+            words = await locator.get_word_stream(audio_path, language)
+            locator.cleanup()
+            return locator, words
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("phrase_locator_word_stream_failed", error=str(exc))
+            locator.cleanup()
+            return locator, []
 
     async def _safe_vad(self, audio_path: str) -> list[tuple[float, float]]:
         try:
@@ -222,6 +270,8 @@ class AlignmentAutoRepairEngine:
         cluster: AutoRepairCluster,
         audio_path: str,
         vad_segments: list[tuple[float, float]],
+        phrase_locator,
+        asr_words: list,
         duration: float,
         language: str,
         config: dict,
@@ -239,6 +289,8 @@ class AlignmentAutoRepairEngine:
             cluster,
             selected_lines,
             vad_segments,
+            phrase_locator,
+            asr_words,
             duration,
             language,
             config,
@@ -302,6 +354,11 @@ class AlignmentAutoRepairEngine:
             document_patch=best.patch,
             reasons=best.reasons,
             warnings=best.warnings,
+            locator_method=best.candidate.locator_method,
+            matched_text=best.candidate.matched_text,
+            locator_confidence=best.candidate.locator_confidence,
+            phoneme_score=best.candidate.phoneme_score,
+            text_score=best.candidate.text_score,
         )
         return [proposal]
 
@@ -391,6 +448,8 @@ class AlignmentAutoRepairEngine:
         cluster: AutoRepairCluster,
         selected_lines: list[AlignmentLine],
         vad_segments: list[tuple[float, float]],
+        phrase_locator,
+        asr_words: list,
         duration: float,
         language: str,
         config: dict,
@@ -401,6 +460,36 @@ class AlignmentAutoRepairEngine:
         search_radius = float(config.get("line_search_radius_sec", 12.0))
         grid_step = float(config.get("line_search_step_sec", 0.25))
         raw: list[_Candidate] = []
+        text = "\n".join(line.text for line in selected_lines if line.text.strip())
+
+        if phrase_locator and asr_words and text.strip():
+            locator_candidates = phrase_locator.locate(
+                query_text=text,
+                words=asr_words,
+                language=language,
+                old_start=old_start,
+                old_end=old_end,
+                track_duration=duration,
+                limit=int(config.get("phrase_locator_candidates", 8)),
+                threshold=float(config.get("phrase_locator_threshold", 0.55)),
+            )
+            for candidate in locator_candidates:
+                raw.append(
+                    _Candidate(
+                        start=max(0.0, candidate.start - 0.2),
+                        end=min(duration, candidate.end + 0.2),
+                        cheap_score=1.0 + candidate.confidence,
+                        reasons=(
+                            f"{candidate.method}: {candidate.matched_text}",
+                            f"locator confidence: {candidate.confidence:.2f}",
+                        ),
+                        locator_method=candidate.method,
+                        matched_text=candidate.matched_text,
+                        locator_confidence=candidate.confidence,
+                        phoneme_score=candidate.phoneme_score,
+                        text_score=candidate.text_score,
+                    )
+                )
 
         for pad in (0.5, 1.0, 2.0, 4.0):
             raw.append(self._candidate(old_start - pad, old_end + pad, duration, "current range padded"))
@@ -502,7 +591,17 @@ class AlignmentAutoRepairEngine:
                 + self._duration_plausibility(rate) * 0.35
                 + self._vad_overlap_score(candidate, nearby_vad) * 0.25
             )
-            candidate = _Candidate(candidate.start, candidate.end, cheap_score, candidate.reasons)
+            candidate = _Candidate(
+                candidate.start,
+                candidate.end,
+                cheap_score,
+                candidate.reasons,
+                candidate.locator_method,
+                candidate.matched_text,
+                candidate.locator_confidence,
+                candidate.phoneme_score,
+                candidate.text_score,
+            )
             prev = dedup.get(key)
             if prev is None or candidate.cheap_score > prev.cheap_score:
                 dedup[key] = candidate
