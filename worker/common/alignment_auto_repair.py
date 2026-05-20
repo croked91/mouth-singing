@@ -109,14 +109,14 @@ class AlignmentAutoRepairEngine:
 
                 await self.job_service.mark_step(job.id, "auto_repair_analyzing", 15)
                 vad_segments = await self._safe_vad(audio_path)
-                clusters = self._build_clusters(revision.document, duration)
+                clusters = self._build_line_repair_units(revision.document, duration)
 
                 proposals: list[AutoRepairProposal] = []
                 for index, cluster in enumerate(clusters):
                     progress = 20 + int((index / max(1, len(clusters))) * 65)
                     await self.job_service.mark_step(
                         job.id,
-                        f"auto_repair_cluster_{index + 1}_of_{len(clusters)}",
+                            f"auto_repair_line_{index + 1}_of_{len(clusters)}",
                         progress,
                     )
                     proposals.extend(
@@ -169,29 +169,28 @@ class AlignmentAutoRepairEngine:
             logger.warning("auto_repair_vad_failed", error=str(exc))
             return []
 
-    def _build_clusters(
+    def _build_line_repair_units(
         self,
         document: AlignmentDocument,
         duration: float,
     ) -> list[AutoRepairCluster]:
+        """Return one repair unit per problematic line.
+
+        Earlier versions merged adjacent problematic lines into one CTC job.
+        That is fast, but it can produce a good timing for the first line while
+        smearing the next line into the same candidate.  Auto-repair should be
+        conservative and independently applicable, so each problematic line is
+        searched/scored on its own.
+        """
         line_flags = [
             self._line_flags(document, line, index)
             for index, line in enumerate(document.lines)
         ]
         bad_indices = [index for index, flags in enumerate(line_flags) if flags]
-        if not bad_indices:
-            return []
-
-        clusters: list[AutoRepairCluster] = []
-        start = prev = bad_indices[0]
-        for index in bad_indices[1:]:
-            if index == prev + 1:
-                prev = index
-                continue
-            clusters.append(self._make_cluster(document, line_flags, start, prev, duration))
-            start = prev = index
-        clusters.append(self._make_cluster(document, line_flags, start, prev, duration))
-        return clusters
+        return [
+            self._make_cluster(document, line_flags, index, index, duration)
+            for index in bad_indices
+        ]
 
     def _make_cluster(
         self,
@@ -245,7 +244,7 @@ class AlignmentAutoRepairEngine:
             config,
         )
         scored: list[_ScoredCandidate] = []
-        for candidate in candidates[: int(config.get("max_ctc_candidates", 24))]:
+        for candidate in candidates[: int(config.get("max_ctc_candidates", 72))]:
             try:
                 scored_candidate = await self._run_candidate(
                     job_id,
@@ -399,6 +398,8 @@ class AlignmentAutoRepairEngine:
         old_start = cluster.old_audio_range.start
         old_end = cluster.old_audio_range.end
         max_audio_seconds = float(config.get("max_audio_seconds", 60.0))
+        search_radius = float(config.get("line_search_radius_sec", 12.0))
+        grid_step = float(config.get("line_search_step_sec", 0.25))
         raw: list[_Candidate] = []
 
         for pad in (0.5, 1.0, 2.0, 4.0):
@@ -416,8 +417,23 @@ class AlignmentAutoRepairEngine:
                     )
                 )
 
-        search_start = max(0.0, old_start - 8.0)
-        search_end = min(duration, old_end + 8.0)
+        expected_syllables = sum(
+            len(self.syllabifier.split_text_to_syllables(line.text, language)[0])
+            for line in selected_lines
+        )
+        old_duration = max(0.3, old_end - old_start)
+        plausible_durations = {
+            old_duration * factor
+            for factor in (0.55, 0.7, 0.85, 1.0, 1.2, 1.45, 1.75)
+        }
+        plausible_durations.update(
+            expected_syllables / rate
+            for rate in (2.2, 3.0, 4.0, 5.2, 6.5, 7.8)
+            if expected_syllables > 0
+        )
+
+        search_start = max(0.0, old_start - search_radius)
+        search_end = min(duration, old_end + search_radius)
         nearby_vad = [
             (start, end)
             for start, end in vad_segments
@@ -425,6 +441,25 @@ class AlignmentAutoRepairEngine:
         ]
         for start, end in nearby_vad:
             raw.append(self._candidate(start - 0.2, end + 0.2, duration, "VAD phrase boundary"))
+            for candidate_duration in plausible_durations:
+                if candidate_duration <= 0:
+                    continue
+                raw.append(
+                    self._candidate(
+                        start - 0.1,
+                        start - 0.1 + candidate_duration,
+                        duration,
+                        "VAD anchored line window",
+                    )
+                )
+                raw.append(
+                    self._candidate(
+                        end + 0.1 - candidate_duration,
+                        end + 0.1,
+                        duration,
+                        "VAD anchored line window",
+                    )
+                )
         if nearby_vad:
             raw.append(
                 self._candidate(
@@ -435,10 +470,21 @@ class AlignmentAutoRepairEngine:
                 )
             )
 
-        expected_syllables = sum(
-            len(self.syllabifier.split_text_to_syllables(line.text, language)[0])
-            for line in selected_lines
-        )
+        for candidate_duration in sorted(plausible_durations):
+            if candidate_duration < 0.3 or candidate_duration > max_audio_seconds:
+                continue
+            start = search_start
+            last_start = max(search_start, search_end - candidate_duration)
+            while start <= last_start + 0.001:
+                raw.append(
+                    self._candidate(
+                        start,
+                        start + candidate_duration,
+                        duration,
+                        "line grid search",
+                    )
+                )
+                start += max(0.05, grid_step)
 
         dedup: dict[tuple[int, int], _Candidate] = {}
         for candidate in raw:
@@ -451,13 +497,30 @@ class AlignmentAutoRepairEngine:
             if rate < 0.8 or rate > 12.0:
                 continue
             key = (round(candidate.start * 10), round(candidate.end * 10))
-            cheap_score = candidate.cheap_score + self._duration_plausibility(rate) * 0.4
+            cheap_score = (
+                candidate.cheap_score
+                + self._duration_plausibility(rate) * 0.35
+                + self._vad_overlap_score(candidate, nearby_vad) * 0.25
+            )
             candidate = _Candidate(candidate.start, candidate.end, cheap_score, candidate.reasons)
             prev = dedup.get(key)
             if prev is None or candidate.cheap_score > prev.cheap_score:
                 dedup[key] = candidate
 
         return sorted(dedup.values(), key=lambda item: item.cheap_score, reverse=True)
+
+    @staticmethod
+    def _vad_overlap_score(
+        candidate: _Candidate,
+        vad_segments: list[tuple[float, float]],
+    ) -> float:
+        if not vad_segments:
+            return 0.0
+        duration = max(0.001, candidate.end - candidate.start)
+        overlap = 0.0
+        for start, end in vad_segments:
+            overlap += max(0.0, min(candidate.end, end) - max(candidate.start, start))
+        return max(0.0, min(1.0, overlap / duration))
 
     @staticmethod
     def _candidate(start: float, end: float, duration: float, reason: str) -> _Candidate:

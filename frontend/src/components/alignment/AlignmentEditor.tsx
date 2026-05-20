@@ -2242,7 +2242,7 @@ function AutoRepairPanel({ report, running, applying, onRun, onRunSafe, onClear,
         {report && (
           <Stack spacing={1.25}>
             <Stack direction="row" spacing={1} flexWrap="wrap">
-              <Chip size="small" label={`Кластеров: ${report.summary.clusters}`} />
+              <Chip size="small" label={`Строк: ${report.summary.clusters}`} />
               <Chip size="small" color="success" label={`Уверенных: ${report.summary.auto_apply}`} />
               <Chip size="small" color="warning" label={`Проверить: ${report.summary.needs_review}`} />
               <Chip size="small" label={`Отклонено: ${report.summary.rejected}`} />

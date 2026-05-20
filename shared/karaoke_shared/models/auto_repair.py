@@ -19,7 +19,7 @@ class AutoRepairAlignmentRequest(BaseModel):
     mode: AutoRepairMode = "propose"
     max_cluster_lines: int = Field(default=8, ge=1, le=24)
     max_audio_seconds: float = Field(default=60.0, ge=1.0, le=180.0)
-    max_ctc_candidates: int = Field(default=24, ge=1, le=96)
+    max_ctc_candidates: int = Field(default=72, ge=1, le=160)
     auto_apply_threshold: float = Field(default=0.90, ge=0.0, le=1.0)
     review_threshold: float = Field(default=0.72, ge=0.0, le=1.0)
 
