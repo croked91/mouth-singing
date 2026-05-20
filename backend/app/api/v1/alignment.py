@@ -22,6 +22,7 @@ from karaoke_shared.models.auto_repair import (
 from karaoke_shared.models.job import JobCreate
 from karaoke_shared.models.track import SyllableTiming
 from karaoke_shared.models.track import TrackUpdate
+from karaoke_shared.messaging import RabbitMQClient
 from karaoke_shared.repositories.pg_repository import PgRepository
 from karaoke_shared.storage import S3Storage
 from pydantic import BaseModel, Field
@@ -203,6 +204,23 @@ def _proposal_by_id(report: AutoRepairReport) -> dict[str, AutoRepairProposal]:
     return {proposal.id: proposal for proposal in report.proposals}
 
 
+async def _get_rmq_or_reconnect(request: Request) -> RabbitMQClient | None:
+    """Return RabbitMQ client, reconnecting if backend started before broker."""
+    rmq = getattr(request.app.state, "rmq", None)
+    if rmq is not None:
+        return rmq
+
+    rmq = RabbitMQClient(settings.rabbitmq_url)
+    try:
+        await rmq.connect()
+        await rmq.declare_topology()
+    except Exception:
+        await rmq.close()
+        return None
+    request.app.state.rmq = rmq
+    return rmq
+
+
 @router.get(
     "/tracks/alignment-reviews",
     response_model=list[AlignmentReviewQueueItem],
@@ -349,7 +367,7 @@ async def start_alignment_auto_repair(
             ),
         )
 
-    rmq = getattr(request.app.state, "rmq", None)
+    rmq = await _get_rmq_or_reconnect(request)
     if rmq is None:
         raise HTTPException(status_code=503, detail="Job queue is unavailable.")
 

@@ -54,7 +54,7 @@ apiClient.interceptors.response.use(
     } else if (status === 404) {
       message = serverDetail ?? 'Не найдено';
     } else if (status >= 500) {
-      message = 'Что-то пошло не так, попробуйте позже';
+      message = serverDetail ?? 'Что-то пошло не так, попробуйте позже';
     } else {
       message = serverDetail ?? error.message ?? 'Произошла ошибка';
     }
