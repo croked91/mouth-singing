@@ -228,6 +228,7 @@ export interface AlignmentTrackSummary {
   title: string;
   duration_sec: number | null;
   lyrics_source: string | null;
+  review_vocal_key?: string | null;
   source: string;
   status: string;
   alignment_review_status: string;

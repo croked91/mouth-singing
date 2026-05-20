@@ -28,7 +28,7 @@ from karaoke_shared.storage import S3Storage
 from pydantic import BaseModel, Field
 
 from app.config import settings
-from app.dependencies import get_repo
+from app.dependencies import get_repo, get_storage
 
 router = APIRouter()
 
@@ -278,6 +278,7 @@ async def list_alignment_review_queue(
 async def get_track_alignment(
     track_id: str,
     repo: PgRepository = Depends(get_repo),
+    storage: S3Storage = Depends(get_storage),
 ) -> AlignmentEditorPayload:
     track = await repo.get_track(track_id)
     if track is None:
@@ -298,6 +299,8 @@ async def get_track_alignment(
         if active_revision and active_revision.document
         else syllable_timings_to_document(timings)
     )
+    review_vocal_key = await _resolve_review_vocal_key(track_id, repo, storage)
+    stream_source = "vocals" if review_vocal_key else "instrumental"
 
     return AlignmentEditorPayload(
         track=AlignmentTrackSummary(
@@ -306,15 +309,18 @@ async def get_track_alignment(
             title=track.title,
             duration_sec=track.duration_sec,
             lyrics_source=track.lyrics_source,
-            review_vocal_key=track.review_vocal_key,
+            review_vocal_key=review_vocal_key,
             source=track.source,
             status=track.status,
         ),
         stream_url=(
-            f"/api/v1/tracks/{track.id}/stream"
+            f"/api/v1/tracks/{track.id}/review-vocals/stream"
+            if review_vocal_key
+            else f"/api/v1/tracks/{track.id}/stream"
             if track.instrumental_key
             else None
         ),
+        stream_source=stream_source,
         lyrics_text=(
             active_revision.lyrics_text if active_revision else track.lyrics_text
         ),

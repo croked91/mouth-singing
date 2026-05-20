@@ -1388,6 +1388,11 @@ export const AlignmentEditor: React.FC<AlignmentEditorProps> = ({
               </Box>
               <Chip color={criticalIssues.length ? 'warning' : 'default'} label={`${criticalIssues.length + warningIssues.length} проблем`} />
               <Chip color="success" label={`${reviewedCount} из ${document.lines.length} проверено`} />
+              <Chip
+                color={payload.stream_source === 'vocals' ? 'success' : 'warning'}
+                variant="outlined"
+                label={payload.stream_source === 'vocals' ? 'audio: vocal stem' : 'audio: instrumental'}
+              />
             </Stack>
             <Stack direction="row" spacing={1} alignItems="center" sx={{ flexWrap: 'wrap' }}>
               <Chip

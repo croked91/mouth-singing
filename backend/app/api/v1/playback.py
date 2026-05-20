@@ -66,6 +66,49 @@ async def stream_track(
 
 
 @router.get(
+    "/tracks/{track_id}/review-vocals/stream",
+    summary="Stream a track's review vocal stem via S3 presigned URL",
+)
+async def stream_track_review_vocals(
+    track_id: str,
+    repo: PgRepository = Depends(get_repo),
+    storage: S3Storage = Depends(get_storage),
+):
+    """Redirect to the stored vocal stem used by alignment review/repair."""
+    track = await repo.get_track(track_id)
+    if track is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Track '{track_id}' not found.",
+        )
+
+    if not track.review_vocal_key:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Track '{track_id}' has no review vocal stem.",
+        )
+
+    if not await storage.exists(track.review_vocal_key):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Track '{track_id}' review vocal stem is missing from storage.",
+        )
+
+    presigned_url = storage.presigned_url(track.review_vocal_key)
+
+    logger.debug(
+        "review_vocals_stream_redirect",
+        track_id=track_id,
+        key=track.review_vocal_key,
+    )
+
+    return RedirectResponse(
+        url=presigned_url,
+        status_code=status.HTTP_302_FOUND,
+    )
+
+
+@router.get(
     "/media/artists/{filename}",
     summary="Serve an artist image",
 )
