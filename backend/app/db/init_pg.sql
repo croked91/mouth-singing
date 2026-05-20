@@ -202,3 +202,28 @@ CREATE TABLE IF NOT EXISTS api_costs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_api_costs_service ON api_costs(service, created_at);
+
+-- === alignment revisions ===
+CREATE TABLE IF NOT EXISTS alignment_revisions (
+    id TEXT PRIMARY KEY NOT NULL,
+    track_id TEXT NOT NULL,
+    revision_no INTEGER NOT NULL,
+    source TEXT NOT NULL DEFAULT 'manual',
+    lyrics_text TEXT,
+    syllable_timings JSONB NOT NULL DEFAULT '[]'::jsonb,
+    document JSONB,
+    operations JSONB NOT NULL DEFAULT '[]'::jsonb,
+    diagnostics JSONB NOT NULL DEFAULT '{}'::jsonb,
+    is_published BOOLEAN NOT NULL DEFAULT FALSE,
+    created_by TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    published_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_alignment_revisions_track_id
+    ON alignment_revisions(track_id, revision_no DESC);
+CREATE INDEX IF NOT EXISTS idx_alignment_revisions_track_published
+    ON alignment_revisions(track_id) WHERE is_published = TRUE;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_alignment_revisions_track_revision_no
+    ON alignment_revisions(track_id, revision_no);

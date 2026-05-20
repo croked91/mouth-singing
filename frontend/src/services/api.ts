@@ -14,6 +14,9 @@ import type {
   StartPlayingResponse,
   FinishPlayingResponse,
   HistoryItem,
+  AlignmentEditorPayload,
+  AlignmentRevision,
+  SaveAlignmentDraftRequest,
 } from '../types';
 
 const apiClient = axios.create({
@@ -206,6 +209,67 @@ export const api = {
       `/sessions/${sessionId}/history`,
     );
     return response.data.items;
+  },
+
+  getTrackAlignment: async (trackId: string): Promise<AlignmentEditorPayload> => {
+    const response = await apiClient.get<AlignmentEditorPayload>(
+      `/tracks/${trackId}/alignment`,
+    );
+    return response.data;
+  },
+
+  saveAlignmentDraft: async (
+    trackId: string,
+    payload: SaveAlignmentDraftRequest,
+    adminSecret: string,
+  ): Promise<AlignmentRevision> => {
+    const response = await apiClient.put<{ revision: AlignmentRevision }>(
+      `/tracks/${trackId}/alignment/draft`,
+      payload,
+      { headers: { 'X-Admin-Secret': adminSecret } },
+    );
+    return response.data.revision;
+  },
+
+  publishAlignment: async (
+    trackId: string,
+    revisionId: string,
+    adminSecret: string,
+  ): Promise<AlignmentRevision> => {
+    const response = await apiClient.post<{ revision: AlignmentRevision }>(
+      `/tracks/${trackId}/alignment/publish`,
+      { revision_id: revisionId },
+      { headers: { 'X-Admin-Secret': adminSecret } },
+    );
+    return response.data.revision;
+  },
+
+
+
+  autoRealignTrack: async (
+    trackId: string,
+    adminSecret: string,
+    createdBy?: string,
+  ): Promise<AlignmentRevision> => {
+    const response = await apiClient.post<{ revision: AlignmentRevision }>(
+      `/tracks/${trackId}/alignment/auto-realign`,
+      { created_by: createdBy ?? null },
+      { headers: { 'X-Admin-Secret': adminSecret } },
+    );
+    return response.data.revision;
+  },
+
+  restoreAlignmentRevision: async (
+    trackId: string,
+    revisionId: string,
+    adminSecret: string,
+  ): Promise<AlignmentRevision> => {
+    const response = await apiClient.post<{ revision: AlignmentRevision }>(
+      `/tracks/${trackId}/alignment/revisions/${revisionId}/restore`,
+      {},
+      { headers: { 'X-Admin-Secret': adminSecret } },
+    );
+    return response.data.revision;
   },
 
   uploadTrack: async (file: File, artist?: string, title?: string): Promise<UploadResponse> => {
