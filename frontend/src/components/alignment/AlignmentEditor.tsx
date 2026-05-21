@@ -61,6 +61,7 @@ import type {
   AutoRepairMode,
   AutoRepairProposal,
   AutoRepairReport,
+  AutoRepairSummary,
   JobStatusEvent,
   RealignSyllablesFragmentJobResponse,
   RealignSyllablesFragmentRequest,
@@ -198,6 +199,16 @@ function normalizeAudioRange(range: SelectedAudioRange, duration: number, minDur
   return {
     start,
     end: clamp(start + minDuration, 0, duration),
+  };
+}
+
+function summarizeAutoRepairProposals(proposals: AutoRepairProposal[]): AutoRepairSummary {
+  return {
+    clusters: new Set(proposals.map((proposal) => proposal.cluster_id)).size,
+    auto_apply: proposals.filter((proposal) => proposal.decision === 'auto_apply').length,
+    needs_review: proposals.filter((proposal) => proposal.decision === 'needs_review').length,
+    rejected: proposals.filter((proposal) => proposal.decision === 'rejected').length,
+    blocked: proposals.filter((proposal) => proposal.decision === 'blocked').length,
   };
 }
 
@@ -833,6 +844,7 @@ export const AlignmentEditor: React.FC<AlignmentEditorProps> = ({
   const [autoRepairProgress, setAutoRepairProgress] = useState<string | null>(null);
   const [autoRepairReport, setAutoRepairReport] = useState<AutoRepairReport | null>(null);
   const [autoRepairApplying, setAutoRepairApplying] = useState<string | null>(null);
+  const [appliedAutoRepairProposalIds, setAppliedAutoRepairProposalIds] = useState<string[]>([]);
   const [loopingFragment, setLoopingFragment] = useState(false);
   const [waveformZoom, setWaveformZoom] = useState(128);
   const [waveformVolume, setWaveformVolume] = useState(0.85);
@@ -888,6 +900,7 @@ export const AlignmentEditor: React.FC<AlignmentEditorProps> = ({
     setAutoRepairProgress(null);
     setAutoRepairRunning(false);
     setAutoRepairApplying(null);
+    setAppliedAutoRepairProposalIds([]);
     setStatusText(null);
     setErrorText(null);
   }, [payload.active_revision, payload.document, payload.lyrics_text]);
@@ -1172,6 +1185,7 @@ export const AlignmentEditor: React.FC<AlignmentEditorProps> = ({
     setAutoRepairRunning(true);
     setAutoRepairProgress('Сохраняю черновик...');
     setAutoRepairReport(null);
+    setAppliedAutoRepairProposalIds([]);
     setErrorText(null);
     try {
       const revision = state.dirty || !lastDraft || lastDraft.is_published
@@ -1191,6 +1205,7 @@ export const AlignmentEditor: React.FC<AlignmentEditorProps> = ({
           onGetAutoRepairReport(jobId)
             .then((report) => {
               setAutoRepairReport(report);
+              setAppliedAutoRepairProposalIds([]);
               setAutoRepairProgress(null);
               setAutoRepairRunning(false);
               setStatusText('Автоисправление завершено. Проверьте предложения перед применением.');
@@ -1225,31 +1240,44 @@ export const AlignmentEditor: React.FC<AlignmentEditorProps> = ({
     if (!autoRepairReport || proposalIds.length === 0) return;
     const hasAdminAccess = await ensureAdminAccess();
     if (!hasAdminAccess) return;
-    setAutoRepairApplying(proposalIds.length === 1 ? proposalIds[0] : 'batch');
+    const pendingProposalIds = new Set(autoRepairReport.proposals.map((proposal) => proposal.id));
+    const newProposalIds = proposalIds.filter((proposalId) => pendingProposalIds.has(proposalId));
+    if (newProposalIds.length === 0) return;
+    const cumulativeProposalIds = Array.from(new Set([...appliedAutoRepairProposalIds, ...newProposalIds]));
+    setAutoRepairApplying(newProposalIds.length === 1 ? newProposalIds[0] : 'batch');
     setErrorText(null);
     try {
       const revision = await onApplyAutoRepair(
         autoRepairReport.job_id,
         autoRepairReport.base_revision_id,
-        proposalIds,
+        cumulativeProposalIds,
       );
       if (revision.document) {
         dispatch({ type: 'reset', document: revision.document, diagnostics: revision.diagnostics });
       }
       setLastDraft(revision);
       setStatusText(
-        proposalIds.length === 1
+        newProposalIds.length === 1
           ? 'Предложение автоисправления применено.'
-          : `Применено предложений автоисправления: ${proposalIds.length}.`,
+          : `Применено предложений автоисправления: ${newProposalIds.length}.`,
       );
-      setAutoRepairReport(null);
+      setAppliedAutoRepairProposalIds(cumulativeProposalIds);
+      setAutoRepairReport((currentReport) => {
+        if (!currentReport || currentReport.job_id !== autoRepairReport.job_id) return currentReport;
+        const remainingProposals = currentReport.proposals.filter((proposal) => !newProposalIds.includes(proposal.id));
+        return {
+          ...currentReport,
+          proposals: remainingProposals,
+          summary: summarizeAutoRepairProposals(remainingProposals),
+        };
+      });
       window.localStorage.removeItem(recoveryKey(payload));
     } catch (error) {
       setErrorText(error instanceof Error ? error.message : 'Не удалось применить автоисправление.');
     } finally {
       setAutoRepairApplying(null);
     }
-  }, [autoRepairReport, ensureAdminAccess, onApplyAutoRepair, payload]);
+  }, [appliedAutoRepairProposalIds, autoRepairReport, ensureAdminAccess, onApplyAutoRepair, payload]);
 
   const publish = async (force = false): Promise<void> => {
     const hasAdminAccess = await ensureAdminAccess();
@@ -1509,9 +1537,13 @@ export const AlignmentEditor: React.FC<AlignmentEditorProps> = ({
               report={autoRepairReport}
               running={autoRepairRunning}
               applying={autoRepairApplying}
+              appliedCount={appliedAutoRepairProposalIds.length}
               onRun={() => void runAutoRepair('propose')}
               onRunSafe={() => void runAutoRepair('auto_apply_safe')}
-              onClear={() => setAutoRepairReport(null)}
+              onClear={() => {
+                setAutoRepairReport(null);
+                setAppliedAutoRepairProposalIds([]);
+              }}
               onApply={(proposalIds) => void applyAutoRepairProposals(proposalIds)}
             />
             <FragmentRealignmentPanel
@@ -2195,10 +2227,11 @@ function CompactSyllablePreview({
   );
 }
 
-function AutoRepairPanel({ report, running, applying, onRun, onRunSafe, onClear, onApply }: {
+function AutoRepairPanel({ report, running, applying, appliedCount, onRun, onRunSafe, onClear, onApply }: {
   report: AutoRepairReport | null;
   running: boolean;
   applying: string | null;
+  appliedCount: number;
   onRun: () => void;
   onRunSafe: () => void;
   onClear: () => void;
@@ -2239,6 +2272,9 @@ function AutoRepairPanel({ report, running, applying, onRun, onRunSafe, onClear,
               <Chip size="small" color="warning" label={`Проверить: ${report.summary.needs_review}`} />
               <Chip size="small" label={`Отклонено: ${report.summary.rejected}`} />
               <Chip size="small" color="error" label={`Blocked: ${report.summary.blocked}`} />
+              {appliedCount > 0 && (
+                <Chip size="small" color="success" label={`Применено: ${appliedCount}`} />
+              )}
             </Stack>
 
             {report.warnings.length > 0 && (
@@ -2258,7 +2294,7 @@ function AutoRepairPanel({ report, running, applying, onRun, onRunSafe, onClear,
             <Stack spacing={1} sx={{ maxHeight: 360, overflowY: 'auto', pr: 0.5 }}>
               {report.proposals.length === 0 && (
                 <Typography variant="body2" color="rgba(255,255,255,0.55)">
-                  Кандидатов не найдено.
+                  {appliedCount > 0 ? 'Все показанные предложения применены.' : 'Кандидатов не найдено.'}
                 </Typography>
               )}
               {report.proposals.map((proposal) => (
