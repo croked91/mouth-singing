@@ -2,6 +2,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, TextField } from '@mui/material';
 import { api } from '../../services/api';
+import {
+  clearStoredAdminSecret,
+  getStoredAdminSecret,
+  setStoredAdminSecret,
+} from '../../services/adminSecretStore';
 import { AlignmentEditor } from '../../components/alignment/AlignmentEditor';
 import type {
   AlignmentDocument,
@@ -13,12 +18,10 @@ import type {
   RealignSyllablesFragmentRequest,
 } from '../../types';
 
-const ALIGNMENT_ADMIN_SECRET_STORAGE_KEY = 'alignmentAdminSecret';
-
 export const AlignmentEditorPage: React.FC = () => {
   const { trackId } = useParams();
   const [payload, setPayload] = useState<AlignmentEditorPayload | null>(null);
-  const [adminSecret, setAdminSecret] = useState(() => window.sessionStorage.getItem(ALIGNMENT_ADMIN_SECRET_STORAGE_KEY) ?? '');
+  const [adminSecret, setAdminSecret] = useState(() => getStoredAdminSecret());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [adminDialogOpen, setAdminDialogOpen] = useState(false);
@@ -40,12 +43,28 @@ export const AlignmentEditorPage: React.FC = () => {
 
   useEffect(() => {
     adminSecretRef.current = adminSecret;
-    if (adminSecret) window.sessionStorage.setItem(ALIGNMENT_ADMIN_SECRET_STORAGE_KEY, adminSecret);
-    else window.sessionStorage.removeItem(ALIGNMENT_ADMIN_SECRET_STORAGE_KEY);
+    if (adminSecret) setStoredAdminSecret(adminSecret);
+    else clearStoredAdminSecret();
   }, [adminSecret]);
 
+  useEffect(() => {
+    const syncAdminSecret = (): void => {
+      const stored = getStoredAdminSecret();
+      if (stored !== adminSecretRef.current) {
+        adminSecretRef.current = stored;
+        setAdminSecret(stored);
+      }
+    };
+    window.addEventListener('focus', syncAdminSecret);
+    window.addEventListener('storage', syncAdminSecret);
+    return () => {
+      window.removeEventListener('focus', syncAdminSecret);
+      window.removeEventListener('storage', syncAdminSecret);
+    };
+  }, []);
+
   const requestAdminSecret = (): Promise<boolean> => {
-    const currentSecret = adminSecretRef.current || window.sessionStorage.getItem(ALIGNMENT_ADMIN_SECRET_STORAGE_KEY) || '';
+    const currentSecret = adminSecretRef.current || getStoredAdminSecret();
     if (currentSecret) {
       if (currentSecret !== adminSecretRef.current) {
         adminSecretRef.current = currentSecret;
@@ -71,12 +90,12 @@ export const AlignmentEditorPage: React.FC = () => {
     const nextSecret = adminDraft.trim();
     if (!nextSecret) return;
     adminSecretRef.current = nextSecret;
-    window.sessionStorage.setItem(ALIGNMENT_ADMIN_SECRET_STORAGE_KEY, nextSecret);
+    setStoredAdminSecret(nextSecret);
     setAdminSecret(nextSecret);
     closeAdminDialog(true);
   };
 
-  const getAdminSecret = (): string => adminSecretRef.current || window.sessionStorage.getItem(ALIGNMENT_ADMIN_SECRET_STORAGE_KEY) || '';
+  const getAdminSecret = (): string => adminSecretRef.current || getStoredAdminSecret();
 
   const saveDraft = async (
     document: AlignmentDocument,

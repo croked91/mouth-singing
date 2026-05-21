@@ -8,6 +8,7 @@ import CheckIcon from '@mui/icons-material/Check';
 import PowerSettingsNewIcon from '@mui/icons-material/PowerSettingsNew';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import { api } from '../services/api';
+import { clearStoredAdminSecret, setStoredAdminSecret } from '../services/adminSecretStore';
 import type { AlignmentReviewQueueItem } from '../types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -24,7 +25,6 @@ type ModalState = 'pin' | 'wrong' | 'unlocked' | 'confirm';
 
 const PIN_LENGTH = 4;
 const WRONG_PIN_RESET_MS = 1500;
-const ALIGNMENT_ADMIN_SECRET_STORAGE_KEY = 'alignmentAdminSecret';
 
 // Numpad layout: null = empty cell placeholder (not used), 'backspace' and 'confirm' are special
 type NumpadKey = string | 'backspace' | 'confirm';
@@ -172,7 +172,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({ open, onClose, sessionId
   const handleConfirmPin = useCallback((): void => {
     if (pin.length < PIN_LENGTH) return;
     // Store PIN and move to unlocked state (validation deferred to terminate call)
-    window.sessionStorage.setItem(ALIGNMENT_ADMIN_SECRET_STORAGE_KEY, pin);
+    setStoredAdminSecret(pin);
     setStoredPin(pin);
     setModalState('unlocked');
     setPin('');
@@ -207,7 +207,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({ open, onClose, sessionId
     setIsTerminating(true);
     try {
       await api.terminateSession(sessionId, storedPin);
-      window.sessionStorage.removeItem(ALIGNMENT_ADMIN_SECRET_STORAGE_KEY);
+      clearStoredAdminSecret();
       navigate('/');
     } catch {
       // 403 = wrong PIN — show State B then reset
