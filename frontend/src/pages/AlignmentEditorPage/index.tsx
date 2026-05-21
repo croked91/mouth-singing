@@ -95,6 +95,17 @@ export const AlignmentEditorPage: React.FC = () => {
     closeAdminDialog(true);
   };
 
+  useEffect(() => {
+    if (!adminDialogOpen || !adminResolverRef.current) return;
+    const currentSecret = adminSecretRef.current || getStoredAdminSecret();
+    if (!currentSecret) return;
+    if (currentSecret !== adminSecretRef.current) {
+      adminSecretRef.current = currentSecret;
+      setAdminSecret(currentSecret);
+    }
+    closeAdminDialog(true);
+  }, [adminDialogOpen, adminSecret]);
+
   const getAdminSecret = (): string => adminSecretRef.current || getStoredAdminSecret();
 
   const saveDraft = async (
