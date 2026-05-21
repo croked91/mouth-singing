@@ -16,6 +16,7 @@ separate Rec Service, triggered via a RabbitMQ message at finalization.
 from __future__ import annotations
 
 import asyncio
+import tempfile
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -105,6 +106,9 @@ class GpuPipeline(BasePipeline):
                 model_cache_dir=getattr(self.settings, "model_cache_dir", None),
             )
             await engine.process(job)
+            return
+        if task == "alignment_fragment_realign":
+            await self._process_alignment_fragment_realign(job)
             return
 
         if not job.mp3_key:
@@ -484,6 +488,120 @@ class GpuPipeline(BasePipeline):
                 )
                 return await asyncio.to_thread(self.uvr.separate, mp3_path)
             raise
+
+    async def _process_alignment_fragment_realign(self, job: Job) -> None:
+        data = job.data or {}
+        track_id = str(data.get("track_id") or job.track_id or "")
+        audio_key = str(data.get("audio_key") or job.mp3_key or "")
+        text = str(data.get("text") or "")
+        try:
+            audio_start = float(data.get("audio_start"))
+            audio_end = float(data.get("audio_end"))
+        except (TypeError, ValueError):
+            await self.job_service.mark_permanently_failed(
+                job.id,
+                "Fragment realignment job is missing valid audio_start/audio_end.",
+            )
+            return
+
+        if not track_id or not audio_key or not text.strip():
+            await self.job_service.mark_permanently_failed(
+                job.id,
+                "Fragment realignment job is missing track_id, audio_key, or text.",
+            )
+            return
+        if audio_end <= audio_start:
+            await self.job_service.mark_permanently_failed(
+                job.id,
+                "Fragment realignment audio_end must be after audio_start.",
+            )
+            return
+
+        try:
+            await self.job_service.mark_step(job.id, "fragment_loading_audio", 10)
+            track = await self.repo.get_track(track_id)
+            language = (track.language if track else None) or "en"
+
+            with tempfile.TemporaryDirectory(prefix=f"fragment_realign_{job.id}_") as tmp:
+                audio_path = str(Path(tmp) / "review_vocal")
+                fragment_path = str(Path(tmp) / "fragment.wav")
+                await self.storage.download_to_file(audio_key, audio_path)
+
+                await self.job_service.mark_step(job.id, "fragment_slicing_audio", 25)
+                await self._slice_audio(audio_path, fragment_path, audio_start, audio_end)
+
+                await self.job_service.mark_step(job.id, "fragment_aligning_syllables", 55)
+                timings, stats = await asyncio.to_thread(
+                    self.ctc_aligner.align,
+                    fragment_path,
+                    text,
+                    language,
+                )
+
+            fallback_ratio = (
+                stats.proportional_fallback / max(1, stats.total_words)
+                if getattr(stats, "total_words", 0)
+                else 0.0
+            )
+            response_status = "partial" if fallback_ratio > 0.35 else "ok"
+            warnings: list[str] = []
+            if stats.proportional_fallback:
+                warnings.append(
+                    f"CTC fallback: {stats.proportional_fallback}/{max(1, stats.total_words)}"
+                )
+
+            await self.job_service.mark_step(job.id, "fragment_completed", 95)
+            await self.job_service.mark_completed(
+                job.id,
+                {
+                    "track_id": track_id,
+                    "timing_origin": "relative_to_fragment",
+                    "audio_start": round(audio_start, 3),
+                    "audio_end": round(audio_end, 3),
+                    "status": response_status,
+                    "confidence": round(max(0.0, 1.0 - fallback_ratio), 3),
+                    "syllable_timings": [
+                        timing.model_dump() if hasattr(timing, "model_dump") else {
+                            "syllable": timing.syllable,
+                            "start": timing.start,
+                            "end": timing.end,
+                        }
+                        for timing in timings
+                    ],
+                    "warnings": warnings,
+                },
+            )
+        except Exception as exc:
+            logger.exception("alignment_fragment_realign_failed", job_id=job.id)
+            await self.job_service.mark_permanently_failed(job.id, str(exc))
+
+    async def _slice_audio(
+        self,
+        source_path: str,
+        target_path: str,
+        start: float,
+        end: float,
+    ) -> None:
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg",
+            "-y",
+            "-ss",
+            f"{start:.3f}",
+            "-to",
+            f"{end:.3f}",
+            "-i",
+            source_path,
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            target_path,
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        await proc.wait()
+        if proc.returncode != 0:
+            raise RuntimeError("Failed to slice audio fragment")
 
     async def _vad_and_transcribe(
         self,

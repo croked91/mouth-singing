@@ -69,6 +69,7 @@ import type {
   SyllableTiming,
 } from '../../types';
 import { subscribeToJobStatus } from '../../services/sseService';
+import { api } from '../../services/api';
 
 interface AlignmentEditorProps {
   payload: AlignmentEditorPayload;
@@ -1147,17 +1148,25 @@ export const AlignmentEditor: React.FC<AlignmentEditorProps> = ({
       const unsubscribe = subscribeToJobStatus(job_id, (event: JobStatusEvent) => {
         if (event.status === 'completed') {
           unsubscribe();
-          setFragmentAligning(false);
-          setFragmentRealignProgress(null);
-          if (!isFragmentRealignmentResponse(event.result)) {
-            setErrorText('Сервер вернул неполный результат выравнивания.');
-            return;
-          }
-          if (event.result.status === 'failed') {
-            setErrorText('Не удалось выровнять слоги. Попробуйте расширить аудио-отрезок или проверить выбранный текст.');
-            return;
-          }
-          setFragmentPreview(buildFragmentPreview(document, selectedLineIds, event.result));
+          void api.getJobResult<RealignSyllablesFragmentResponse>(job_id)
+            .then((result) => {
+              setFragmentAligning(false);
+              setFragmentRealignProgress(null);
+              if (!isFragmentRealignmentResponse(result)) {
+                setErrorText('Сервер вернул неполный результат выравнивания.');
+                return;
+              }
+              if (result.status === 'failed') {
+                setErrorText('Не удалось выровнять слоги. Попробуйте расширить аудио-отрезок или проверить выбранный текст.');
+                return;
+              }
+              setFragmentPreview(buildFragmentPreview(document, selectedLineIds, result));
+            })
+            .catch((error: Error) => {
+              setFragmentAligning(false);
+              setFragmentRealignProgress(null);
+              setErrorText(error.message || 'Не удалось получить результат выравнивания.');
+            });
           return;
         }
         if (event.status === 'error' || event.status === 'failed') {

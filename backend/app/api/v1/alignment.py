@@ -103,6 +103,18 @@ class ApplyAutoRepairResponse(BaseModel):
     revision: AlignmentRevision
 
 
+class RealignSyllablesFragmentRequest(BaseModel):
+    audio_start: float
+    audio_end: float
+    line_ids: list[str] = Field(default_factory=list)
+    text: str
+    preserve_line_breaks: bool = True
+
+
+class RealignSyllablesFragmentJobResponse(BaseModel):
+    job_id: str
+
+
 def _require_admin_secret(x_admin_secret: str | None) -> None:
     if not hmac.compare_digest(x_admin_secret or "", settings.admin_secret):
         raise HTTPException(
@@ -399,6 +411,80 @@ async def start_alignment_auto_repair(
         priority=job.priority,
     )
     return AutoRepairJobResponse(job_id=job.id)
+
+
+@router.post(
+    "/tracks/{track_id}/alignment/realign-syllables-fragment",
+    response_model=RealignSyllablesFragmentJobResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Start asynchronous syllable realignment for a manually selected fragment",
+)
+async def realign_syllables_fragment(
+    track_id: str,
+    payload: RealignSyllablesFragmentRequest,
+    request: Request,
+    x_admin_secret: str | None = Header(default=None),
+    repo: PgRepository = Depends(get_repo),
+) -> RealignSyllablesFragmentJobResponse:
+    _require_admin_secret(x_admin_secret)
+    track = await repo.get_track(track_id)
+    if track is None:
+        raise HTTPException(status_code=404, detail=f"Track '{track_id}' not found.")
+
+    duration = float(track.duration_sec or 0)
+    if payload.audio_start < 0:
+        raise HTTPException(status_code=422, detail="audio_start must be >= 0.")
+    if payload.audio_end <= payload.audio_start:
+        raise HTTPException(status_code=422, detail="audio_end must be after audio_start.")
+    if payload.audio_end - payload.audio_start < 0.3:
+        raise HTTPException(status_code=422, detail="Audio fragment is too short.")
+    if payload.audio_end - payload.audio_start > 60:
+        raise HTTPException(status_code=422, detail="Audio fragment must be at most 60 seconds.")
+    if duration and payload.audio_end > duration + 0.5:
+        raise HTTPException(status_code=422, detail="audio_end is outside the track duration.")
+    if not payload.text.strip():
+        raise HTTPException(status_code=422, detail="Text is empty.")
+
+    review_vocal_key = await _resolve_review_vocal_key(
+        track_id,
+        repo,
+        request.app.state.storage,
+    )
+    if not review_vocal_key:
+        raise HTTPException(
+            status_code=409,
+            detail="Для выравнивания нет vocal stem. Нужно переобработать трек.",
+        )
+
+    rmq = await _get_rmq_or_reconnect(request)
+    if rmq is None:
+        raise HTTPException(status_code=503, detail="Job queue is unavailable.")
+
+    job = await repo.create_job(
+        JobCreate(
+            track_id=track_id,
+            mp3_key=review_vocal_key,
+            priority=8,
+            max_attempts=1,
+            data={
+                "task": "alignment_fragment_realign",
+                "track_id": track_id,
+                "audio_key": review_vocal_key,
+                "audio_start": payload.audio_start,
+                "audio_end": payload.audio_end,
+                "line_ids": payload.line_ids,
+                "text": payload.text,
+                "preserve_line_breaks": payload.preserve_line_breaks,
+            },
+        )
+    )
+    await rmq.publish(
+        "jobs",
+        "",
+        {"job_id": job.id, "mp3_key": review_vocal_key},
+        priority=job.priority,
+    )
+    return RealignSyllablesFragmentJobResponse(job_id=job.id)
 
 
 @router.post(
