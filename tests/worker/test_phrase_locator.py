@@ -91,3 +91,37 @@ def test_locate_supports_russian_normalization_without_exact_old_position(monkey
 
     assert candidates
     assert candidates[0].matched_text == "это будет не сложно"
+
+
+def test_locate_can_return_multiple_repeated_occurrences(monkeypatch) -> None:
+    locator = _locator()
+
+    def fake_phonemize(self, text: str, language: str) -> str:
+        return self._normalize_text(text, language).replace("take", "check")
+
+    monkeypatch.setattr(PhraseLocator, "_phonemize_text", fake_phonemize)
+    words = [
+        AsrWord("Take", 18.6, 18.9),
+        AsrWord("me", 18.9, 19.1),
+        AsrWord("out", 19.1, 19.5),
+        AsrWord("Take", 22.1, 22.4),
+        AsrWord("me", 22.4, 22.6),
+        AsrWord("out", 22.6, 23.0),
+    ]
+
+    candidates = locator.locate(
+        query_text="Check me out",
+        words=words,
+        language="en",
+        old_start=8.0,
+        old_end=9.0,
+        track_duration=60.0,
+        threshold=0.5,
+        limit=4,
+        keep_overlapping=True,
+    )
+
+    assert len(candidates) >= 2
+    starts = [candidate.start for candidate in candidates]
+    assert 18.6 in starts
+    assert 22.1 in starts

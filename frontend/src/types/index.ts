@@ -305,8 +305,12 @@ export interface AutoRepairAlignmentRequest {
   max_cluster_lines?: number;
   max_audio_seconds?: number;
   max_ctc_candidates?: number;
+  max_locator_candidates_per_line?: number;
+  max_ctc_candidates_per_line?: number;
   auto_apply_threshold?: number;
   review_threshold?: number;
+  enable_sequence_planner?: boolean;
+  enable_split_phrase_locator?: boolean;
 }
 
 export interface AutoRepairJobResponse {
@@ -363,6 +367,9 @@ export interface AutoRepairProposal {
   locator_confidence?: number | null;
   phoneme_score?: number | null;
   text_score?: number | null;
+  planner_score?: number | null;
+  evidence_level?: 'asr' | 'split_asr' | 'vad' | 'grid' | 'current' | null;
+  sequence_group_id?: string | null;
   reasons: string[];
   warnings: string[];
 }

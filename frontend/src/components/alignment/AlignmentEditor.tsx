@@ -2347,6 +2347,9 @@ function AutoRepairProposalRow({ proposal, applying, onApply }: {
               {proposal.locator_method && (
                 <Chip size="small" label={proposal.locator_method} />
               )}
+              {proposal.evidence_level && (
+                <Chip size="small" label={`evidence: ${proposal.evidence_level}`} />
+              )}
               {proposal.locator_confidence != null && (
                 <Chip size="small" label={`locator ${Math.round(proposal.locator_confidence * 100)}%`} />
               )}
@@ -2372,6 +2375,12 @@ function AutoRepairProposalRow({ proposal, applying, onApply }: {
                 phoneme {Math.round((proposal.phoneme_score ?? 0) * 100)}%
                 {' · '}
                 text {Math.round((proposal.text_score ?? 0) * 100)}%
+                {proposal.planner_score != null && (
+                  <>
+                    {' · '}
+                    planner {Math.round(proposal.planner_score * 100)}%
+                  </>
+                )}
               </Typography>
             )}
           </Box>

@@ -20,8 +20,12 @@ class AutoRepairAlignmentRequest(BaseModel):
     max_cluster_lines: int = Field(default=8, ge=1, le=24)
     max_audio_seconds: float = Field(default=60.0, ge=1.0, le=180.0)
     max_ctc_candidates: int = Field(default=72, ge=1, le=160)
+    max_locator_candidates_per_line: int = Field(default=20, ge=1, le=80)
+    max_ctc_candidates_per_line: int = Field(default=24, ge=1, le=80)
     auto_apply_threshold: float = Field(default=0.90, ge=0.0, le=1.0)
     review_threshold: float = Field(default=0.72, ge=0.0, le=1.0)
+    enable_sequence_planner: bool = True
+    enable_split_phrase_locator: bool = True
 
 
 class AutoRepairJobResponse(BaseModel):
@@ -78,6 +82,9 @@ class AutoRepairProposal(BaseModel):
     locator_confidence: float | None = None
     phoneme_score: float | None = None
     text_score: float | None = None
+    planner_score: float | None = None
+    evidence_level: Literal["asr", "split_asr", "vad", "grid", "current"] | None = None
+    sequence_group_id: str | None = None
     reasons: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 

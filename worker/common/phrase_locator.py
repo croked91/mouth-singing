@@ -112,6 +112,7 @@ class PhraseLocator:
         track_duration: float,
         limit: int = 8,
         threshold: float = 0.55,
+        keep_overlapping: bool = False,
     ) -> list[PhraseLocatorCandidate]:
         query_tokens = self._tokenize(query_text, language)
         if not query_tokens or not words:
@@ -178,6 +179,8 @@ class PhraseLocator:
                 )
 
         candidates.sort(key=lambda item: item.confidence, reverse=True)
+        if keep_overlapping:
+            return candidates[:limit]
         return self._dedupe_overlaps(candidates, limit)
 
     def cleanup(self) -> None:

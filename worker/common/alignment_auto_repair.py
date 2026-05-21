@@ -47,6 +47,7 @@ class _Candidate:
     end: float
     cheap_score: float
     reasons: tuple[str, ...]
+    evidence_level: str = "current"
     locator_method: str | None = None
     matched_text: str | None = None
     locator_confidence: float | None = None
@@ -64,6 +65,14 @@ class _ScoredCandidate:
     mapping: list[AutoRepairLineMapping]
     warnings: list[str]
     reasons: list[str]
+
+
+@dataclass(frozen=True)
+class _ClusterCandidateSet:
+    cluster: AutoRepairCluster
+    selected_lines: list[AlignmentLine]
+    text: str
+    candidates: list[_ScoredCandidate]
 
 
 class AlignmentAutoRepairEngine:
@@ -129,8 +138,17 @@ class AlignmentAutoRepairEngine:
                     language=language,
                 )
                 clusters = self._build_line_repair_units(revision.document, duration)
+                clusters = self._add_phrase_locator_repair_units(
+                    document=revision.document,
+                    duration=duration,
+                    clusters=clusters,
+                    phrase_locator=phrase_locator,
+                    asr_words=asr_words,
+                    language=language,
+                    config=data,
+                )
 
-                proposals: list[AutoRepairProposal] = []
+                candidate_sets: list[_ClusterCandidateSet] = []
                 for index, cluster in enumerate(clusters):
                     progress = 20 + int((index / max(1, len(clusters))) * 65)
                     await self.job_service.mark_step(
@@ -138,8 +156,7 @@ class AlignmentAutoRepairEngine:
                         f"auto_repair_line_{index + 1}_of_{len(clusters)}",
                         progress,
                     )
-                    proposals.extend(
-                        await self._repair_cluster(
+                    candidate_set = await self._score_cluster_candidates(
                             job_id=job.id,
                             document=revision.document,
                             cluster=cluster,
@@ -151,7 +168,15 @@ class AlignmentAutoRepairEngine:
                             language=language,
                             config=data,
                         )
-                    )
+                    candidate_sets.append(candidate_set)
+
+                if data.get("enable_sequence_planner", True):
+                    proposals = self._plan_sequence(candidate_sets, data)
+                else:
+                    proposals = [
+                        self._proposal_from_best_candidate(candidate_set, data)
+                        for candidate_set in candidate_sets
+                    ]
 
             report = AutoRepairReport(
                 job_id=job.id,
@@ -263,7 +288,51 @@ class AlignmentAutoRepairEngine:
             root_cause_hints=hints,
         )
 
-    async def _repair_cluster(
+    def _add_phrase_locator_repair_units(
+        self,
+        document: AlignmentDocument,
+        duration: float,
+        clusters: list[AutoRepairCluster],
+        phrase_locator,
+        asr_words: list,
+        language: str,
+        config: dict,
+    ) -> list[AutoRepairCluster]:
+        if not phrase_locator or not asr_words:
+            return clusters
+        existing_indices = {cluster.start_line_index for cluster in clusters}
+        line_flags = [
+            self._line_flags(document, line, index)
+            for index, line in enumerate(document.lines)
+        ]
+        result = list(clusters)
+        threshold = float(config.get("phrase_locator_suspicion_threshold", 0.62))
+        for index, line in enumerate(document.lines):
+            if index in existing_indices or not line.text.strip():
+                continue
+            candidates = phrase_locator.locate(
+                query_text=line.text,
+                words=asr_words,
+                language=language,
+                old_start=line.start,
+                old_end=line.end,
+                track_duration=duration,
+                limit=3,
+                threshold=threshold,
+            )
+            if not candidates:
+                continue
+            best = candidates[0]
+            current_center = (line.start + line.end) / 2.0
+            located_center = (best.start + best.end) / 2.0
+            old_duration = max(0.3, line.end - line.start)
+            if abs(located_center - current_center) < max(3.0, old_duration * 2.0):
+                continue
+            line_flags[index] = sorted(set(line_flags[index]) | {"asr_evidence_far_from_current_timing"})
+            result.append(self._make_cluster(document, line_flags, index, index, duration))
+        return sorted(result, key=lambda item: item.start_line_index)
+
+    async def _score_cluster_candidates(
         self,
         job_id: str,
         document: AlignmentDocument,
@@ -275,15 +344,15 @@ class AlignmentAutoRepairEngine:
         duration: float,
         language: str,
         config: dict,
-    ) -> list[AutoRepairProposal]:
+    ) -> _ClusterCandidateSet:
         selected_lines = [
             line for line in document.lines if line.id in set(cluster.line_ids)
         ]
         if not selected_lines:
-            return []
+            return _ClusterCandidateSet(cluster=cluster, selected_lines=[], text="", candidates=[])
         text = "\n".join(line.text for line in selected_lines if line.text.strip())
         if not text.strip():
-            return []
+            return _ClusterCandidateSet(cluster=cluster, selected_lines=selected_lines, text="", candidates=[])
 
         candidates = self._generate_candidates(
             cluster,
@@ -296,7 +365,8 @@ class AlignmentAutoRepairEngine:
             config,
         )
         scored: list[_ScoredCandidate] = []
-        for candidate in candidates[: int(config.get("max_ctc_candidates", 72))]:
+        ctc_limit = int(config.get("max_ctc_candidates_per_line", config.get("max_ctc_candidates", 72)))
+        for candidate in candidates[:ctc_limit]:
             try:
                 scored_candidate = await self._run_candidate(
                     job_id,
@@ -318,21 +388,40 @@ class AlignmentAutoRepairEngine:
                     error=str(exc),
                 )
 
-        if not scored:
-            return [
-                self._blocked_proposal(cluster, selected_lines, text, "Все варианты выравнивания завершились ошибкой.")
-            ]
-
         scored.sort(key=lambda item: item.score, reverse=True)
+        return _ClusterCandidateSet(
+            cluster=cluster,
+            selected_lines=selected_lines,
+            text=text,
+            candidates=scored,
+        )
+
+    def _proposal_from_best_candidate(
+        self,
+        candidate_set: _ClusterCandidateSet,
+        config: dict,
+        planner_score: float | None = None,
+        sequence_group_id: str | None = None,
+    ) -> AutoRepairProposal:
+        cluster = candidate_set.cluster
+        selected_lines = candidate_set.selected_lines
+        text = candidate_set.text
+        scored = candidate_set.candidates
+        if not selected_lines or not text.strip():
+            return self._blocked_proposal(cluster, selected_lines, text, "Строка не содержит текста для автоисправления.")
+        if not scored:
+            return self._blocked_proposal(cluster, selected_lines, text, "Все варианты выравнивания завершились ошибкой.")
+
         best = scored[0]
         second_score = scored[1].score if len(scored) > 1 else 0.0
         margin = max(0.0, best.score - second_score)
         auto_threshold = float(config.get("auto_apply_threshold", 0.90))
         review_threshold = float(config.get("review_threshold", 0.72))
         critical_warnings = any("critical" in warning for warning in best.warnings)
-        if best.score >= auto_threshold and margin >= 0.10 and not critical_warnings:
+        decision_score = min(best.score, planner_score) if planner_score is not None else best.score
+        if decision_score >= auto_threshold and margin >= 0.10 and not critical_warnings:
             decision = "auto_apply"
-        elif best.score >= review_threshold:
+        elif decision_score >= review_threshold:
             decision = "needs_review"
         else:
             decision = "rejected"
@@ -342,7 +431,7 @@ class AlignmentAutoRepairEngine:
             cluster_id=cluster.id,
             decision=decision,
             root_cause_hints=cluster.root_cause_hints,
-            score=round(best.score, 4),
+            score=round(decision_score, 4),
             confidence=round(best.confidence, 4),
             margin=round(margin, 4),
             line_ids=cluster.line_ids,
@@ -359,8 +448,158 @@ class AlignmentAutoRepairEngine:
             locator_confidence=best.candidate.locator_confidence,
             phoneme_score=best.candidate.phoneme_score,
             text_score=best.candidate.text_score,
+            planner_score=planner_score,
+            evidence_level=best.candidate.evidence_level,  # type: ignore[arg-type]
+            sequence_group_id=sequence_group_id,
         )
-        return [proposal]
+        return proposal
+
+    def _plan_sequence(
+        self,
+        candidate_sets: list[_ClusterCandidateSet],
+        config: dict,
+    ) -> list[AutoRepairProposal]:
+        if not candidate_sets:
+            return []
+
+        ordered = sorted(candidate_sets, key=lambda item: item.cluster.start_line_index)
+        beam_width = int(config.get("sequence_planner_beam_width", 24))
+        per_line_limit = int(config.get("sequence_planner_candidates_per_line", 10))
+        beam: list[tuple[float, float, float | None, list[tuple[float, float, str]], list[tuple[_ClusterCandidateSet, _ScoredCandidate | None, float]]]] = [
+            (0.0, 0.0, None, [], [])
+        ]
+
+        for candidate_set in ordered:
+            next_beam: list[tuple[float, float, float | None, list[tuple[float, float, str]], list[tuple[_ClusterCandidateSet, _ScoredCandidate | None, float]]]] = []
+            text_key = self._normalize_for_sequence(candidate_set.text)
+            candidates = candidate_set.candidates[:per_line_limit]
+            for total_score, previous_end, previous_delta, used_ranges, selected in beam:
+                # Keep a blocked option so one bad line does not force the planner
+                # to pick a weak VAD/current candidate.
+                block_penalty = -0.70 if candidates else -0.08
+                if candidates:
+                    # When repeated text has equivalent candidates, prefer keeping
+                    # the earlier line and blocking the later duplicate.
+                    block_penalty -= max(0.0, 100.0 - candidate_set.cluster.start_line_index) * 0.002
+                next_beam.append(
+                    (
+                        total_score + block_penalty,
+                        previous_end,
+                        previous_delta,
+                        used_ranges,
+                        selected + [(candidate_set, None, 0.0)],
+                    )
+                )
+                for scored in candidates:
+                    candidate = scored.candidate
+                    overlap_blocked = False
+                    overlap_penalty = 0.0
+                    for used_start, used_end, used_text_key in used_ranges:
+                        overlap = self._range_overlap_ratio(
+                            candidate.start,
+                            candidate.end,
+                            used_start,
+                            used_end,
+                        )
+                        if overlap > 0.25:
+                            overlap_blocked = True
+                            break
+                        if text_key and text_key == used_text_key and overlap > 0.05:
+                            overlap_penalty += 0.35
+                    if overlap_blocked:
+                        continue
+
+                    order_penalty = 0.0
+                    if previous_end and candidate.start < previous_end - 0.05:
+                        order_penalty = min(0.65, (previous_end - candidate.start) / 6.0)
+
+                    candidate_delta = candidate.start - candidate_set.cluster.old_audio_range.start
+                    offset_penalty = self._sequence_offset_penalty(previous_delta, candidate_delta)
+                    evidence_bonus = {
+                        "split_asr": 0.10,
+                        "asr": 0.07,
+                        "vad": -0.10,
+                        "grid": -0.16,
+                        "current": -0.18,
+                    }.get(candidate.evidence_level, -0.10)
+                    planner_score = max(
+                        0.0,
+                        min(
+                            1.0,
+                            scored.score
+                            + evidence_bonus
+                            - overlap_penalty
+                            - order_penalty
+                            - offset_penalty,
+                        ),
+                    )
+                    if planner_score < 0.40:
+                        continue
+                    next_beam.append(
+                        (
+                            total_score + planner_score,
+                            max(previous_end, candidate.end),
+                            candidate_delta,
+                            used_ranges + [(candidate.start, candidate.end, text_key)],
+                            selected + [(candidate_set, scored, planner_score)],
+                        )
+                    )
+            next_beam.sort(key=lambda item: item[0], reverse=True)
+            beam = next_beam[:beam_width] or beam
+
+        best = max(beam, key=lambda item: item[0])
+        proposals: list[AutoRepairProposal] = []
+        for candidate_set, selected_candidate, planner_score in best[4]:
+            if selected_candidate is None:
+                proposals.append(
+                    self._blocked_proposal(
+                        candidate_set.cluster,
+                        candidate_set.selected_lines,
+                        candidate_set.text,
+                        "Sequence planner не нашёл надёжный непересекающийся вариант.",
+                    )
+                )
+                continue
+            reordered_candidates = [
+                selected_candidate,
+                *[candidate for candidate in candidate_set.candidates if candidate is not selected_candidate],
+            ]
+            proposal = self._proposal_from_best_candidate(
+                _ClusterCandidateSet(
+                    cluster=candidate_set.cluster,
+                    selected_lines=candidate_set.selected_lines,
+                    text=candidate_set.text,
+                    candidates=reordered_candidates,
+                ),
+                config,
+                planner_score=round(planner_score, 4),
+                sequence_group_id="auto_repair_sequence",
+            )
+            proposals.append(proposal)
+        return proposals
+
+    @staticmethod
+    def _range_overlap_ratio(a_start: float, a_end: float, b_start: float, b_end: float) -> float:
+        overlap = max(0.0, min(a_end, b_end) - max(a_start, b_start))
+        shortest = max(0.001, min(a_end - a_start, b_end - b_start))
+        return overlap / shortest
+
+    @staticmethod
+    def _normalize_for_sequence(text: str) -> str:
+        import re
+
+        return re.sub(r"\s+", " ", re.sub(r"[^0-9a-zа-яё]+", " ", text.lower())).strip()
+
+    @staticmethod
+    def _sequence_offset_penalty(previous_delta: float | None, candidate_delta: float) -> float:
+        if previous_delta is None:
+            return 0.0
+        jump = abs(candidate_delta - previous_delta)
+        if jump <= 4.0:
+            return 0.0
+        if jump <= 8.0:
+            return (jump - 4.0) * 0.04
+        return min(0.95, 0.20 + (jump - 8.0) * 0.075)
 
     async def _run_candidate(
         self,
@@ -470,7 +709,7 @@ class AlignmentAutoRepairEngine:
                 old_start=old_start,
                 old_end=old_end,
                 track_duration=duration,
-                limit=int(config.get("phrase_locator_candidates", 8)),
+                limit=int(config.get("max_locator_candidates_per_line", config.get("phrase_locator_candidates", 8))),
                 threshold=float(config.get("phrase_locator_threshold", 0.55)),
             )
             for candidate in locator_candidates:
@@ -483,11 +722,25 @@ class AlignmentAutoRepairEngine:
                             f"{candidate.method}: {candidate.matched_text}",
                             f"locator confidence: {candidate.confidence:.2f}",
                         ),
+                        evidence_level="asr",
                         locator_method=candidate.method,
                         matched_text=candidate.matched_text,
                         locator_confidence=candidate.confidence,
                         phoneme_score=candidate.phoneme_score,
                         text_score=candidate.text_score,
+                    )
+                )
+            if config.get("enable_split_phrase_locator", True):
+                raw.extend(
+                    self._split_phrase_candidates(
+                        phrase_locator,
+                        asr_words,
+                        text,
+                        old_start,
+                        old_end,
+                        duration,
+                        language,
+                        config,
                     )
                 )
 
@@ -592,21 +845,99 @@ class AlignmentAutoRepairEngine:
                 + self._vad_overlap_score(candidate, nearby_vad) * 0.25
             )
             candidate = _Candidate(
-                candidate.start,
-                candidate.end,
-                cheap_score,
-                candidate.reasons,
-                candidate.locator_method,
-                candidate.matched_text,
-                candidate.locator_confidence,
-                candidate.phoneme_score,
-                candidate.text_score,
+                start=candidate.start,
+                end=candidate.end,
+                cheap_score=cheap_score,
+                reasons=candidate.reasons,
+                evidence_level=candidate.evidence_level,
+                locator_method=candidate.locator_method,
+                matched_text=candidate.matched_text,
+                locator_confidence=candidate.locator_confidence,
+                phoneme_score=candidate.phoneme_score,
+                text_score=candidate.text_score,
             )
             prev = dedup.get(key)
             if prev is None or candidate.cheap_score > prev.cheap_score:
                 dedup[key] = candidate
 
         return sorted(dedup.values(), key=lambda item: item.cheap_score, reverse=True)
+
+    def _split_phrase_candidates(
+        self,
+        phrase_locator,
+        asr_words: list,
+        text: str,
+        old_start: float,
+        old_end: float,
+        duration: float,
+        language: str,
+        config: dict,
+    ) -> list[_Candidate]:
+        parts = self._split_query_parts(text)
+        if len(parts) < 2:
+            return []
+        limit = max(4, int(config.get("max_locator_candidates_per_line", 20)) // 2)
+        threshold = max(0.50, float(config.get("phrase_locator_threshold", 0.55)) - 0.05)
+        first_candidates = phrase_locator.locate(
+            query_text=parts[0],
+            words=asr_words,
+            language=language,
+            old_start=old_start,
+            old_end=old_end,
+            track_duration=duration,
+            limit=limit,
+            threshold=threshold,
+        )
+        last_candidates = phrase_locator.locate(
+            query_text=parts[-1],
+            words=asr_words,
+            language=language,
+            old_start=old_start,
+            old_end=old_end,
+            track_duration=duration,
+            limit=limit,
+            threshold=threshold,
+        )
+        result: list[_Candidate] = []
+        max_audio_seconds = float(config.get("max_audio_seconds", 60.0))
+        for first in first_candidates:
+            for last in last_candidates:
+                if last.end <= first.start:
+                    continue
+                start = max(0.0, first.start - 0.25)
+                end = min(duration, last.end + 0.25)
+                if end - start > max_audio_seconds:
+                    continue
+                confidence = min(first.confidence, last.confidence)
+                result.append(
+                    _Candidate(
+                        start=start,
+                        end=end,
+                        cheap_score=1.15 + confidence,
+                        reasons=(
+                            f"split_asr: {first.matched_text} ... {last.matched_text}",
+                            f"split locator confidence: {confidence:.2f}",
+                        ),
+                        evidence_level="split_asr",
+                        locator_method="split_asr_phonetic",
+                        matched_text=f"{first.matched_text} ... {last.matched_text}",
+                        locator_confidence=round(confidence, 4),
+                        phoneme_score=round((first.phoneme_score + last.phoneme_score) / 2.0, 4),
+                        text_score=round((first.text_score + last.text_score) / 2.0, 4),
+                    )
+                )
+        return result
+
+    @staticmethod
+    def _split_query_parts(text: str) -> list[str]:
+        import re
+
+        normalized = " ".join(text.split())
+        raw_parts = re.split(r"\.{2,}|[;:—–-]", normalized)
+        parts = [part.strip() for part in raw_parts if len(part.strip().split()) >= 2]
+        if len(parts) >= 2:
+            return [parts[0], parts[-1]]
+        return []
 
     @staticmethod
     def _vad_overlap_score(
@@ -625,7 +956,19 @@ class AlignmentAutoRepairEngine:
     def _candidate(start: float, end: float, duration: float, reason: str) -> _Candidate:
         start = max(0.0, min(duration, start))
         end = max(0.0, min(duration, end))
-        return _Candidate(start=start, end=end, cheap_score=0.5, reasons=(reason,))
+        if reason.startswith("VAD") or reason == "merged VAD region":
+            evidence_level = "vad"
+        elif "grid" in reason:
+            evidence_level = "grid"
+        else:
+            evidence_level = "current"
+        return _Candidate(
+            start=start,
+            end=end,
+            cheap_score=0.5,
+            reasons=(reason,),
+            evidence_level=evidence_level,
+        )
 
     def _build_patch(
         self,
@@ -833,6 +1176,22 @@ class AlignmentAutoRepairEngine:
         )
         score = max(0.0, min(1.0, score))
         confidence = max(0.0, min(1.0, score * (1.0 - fallback_ratio * 0.5)))
+        if fallback_ratio >= 0.999:
+            warnings.append("full_ctc_fallback")
+            if candidate.evidence_level in {"vad", "grid", "current"}:
+                score = min(score, 0.35)
+                confidence = min(confidence, 0.20)
+            else:
+                score = min(score, 0.78)
+                confidence = min(confidence, 0.35)
+        elif fallback_ratio >= 0.67:
+            warnings.append("high_ctc_fallback")
+            score = min(score, 0.72 if candidate.evidence_level in {"asr", "split_asr"} else 0.50)
+            confidence = min(confidence, 0.45)
+        if candidate.evidence_level in {"vad", "grid", "current"}:
+            warnings.append(f"weak_evidence:{candidate.evidence_level}")
+            score = min(score, 0.60)
+            confidence = min(confidence, 0.40)
         reasons.extend(
             [
                 f"CTC fallback: {stats.proportional_fallback}/{max(1, stats.total_words)}",
@@ -879,6 +1238,8 @@ class AlignmentAutoRepairEngine:
             hints.append("manual_edit_artifact")
         if "line_too_dense" in flags:
             hints.append("monotonic_path_or_wrong_fragment")
+        if "asr_evidence_far_from_current_timing" in flags:
+            hints.append("asr_locator_disagrees_with_current_timing")
         if "too_long_syllable" in flags or "too_short_syllable" in flags:
             hints.append("acoustic_boundary_drift")
         if len(lines) > 3 and flags:
