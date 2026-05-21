@@ -24,6 +24,7 @@ type ModalState = 'pin' | 'wrong' | 'unlocked' | 'confirm';
 
 const PIN_LENGTH = 4;
 const WRONG_PIN_RESET_MS = 1500;
+const ALIGNMENT_ADMIN_SECRET_STORAGE_KEY = 'alignmentAdminSecret';
 
 // Numpad layout: null = empty cell placeholder (not used), 'backspace' and 'confirm' are special
 type NumpadKey = string | 'backspace' | 'confirm';
@@ -171,6 +172,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({ open, onClose, sessionId
   const handleConfirmPin = useCallback((): void => {
     if (pin.length < PIN_LENGTH) return;
     // Store PIN and move to unlocked state (validation deferred to terminate call)
+    window.sessionStorage.setItem(ALIGNMENT_ADMIN_SECRET_STORAGE_KEY, pin);
     setStoredPin(pin);
     setModalState('unlocked');
     setPin('');
@@ -205,6 +207,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({ open, onClose, sessionId
     setIsTerminating(true);
     try {
       await api.terminateSession(sessionId, storedPin);
+      window.sessionStorage.removeItem(ALIGNMENT_ADMIN_SECRET_STORAGE_KEY);
       navigate('/');
     } catch {
       // 403 = wrong PIN — show State B then reset

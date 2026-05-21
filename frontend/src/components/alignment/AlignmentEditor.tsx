@@ -916,14 +916,16 @@ export const AlignmentEditor: React.FC<AlignmentEditorProps> = ({
     return () => window.clearTimeout(timeout);
   }, [document, payload, state.dirty, state.reviewState]);
 
+  const ensureAdminAccess = useCallback(async (silent = false): Promise<boolean> => {
+    if (adminSecret) return true;
+    if (silent) return false;
+    setErrorText(null);
+    return onRequestAdminSecret();
+  }, [adminSecret, onRequestAdminSecret]);
+
   const saveDraft = useCallback(async (silent = false): Promise<AlignmentRevision | null> => {
-    if (!adminSecret) {
-      if (!silent) {
-        setErrorText(null);
-        await onRequestAdminSecret();
-      }
-      return null;
-    }
+    const hasAdminAccess = await ensureAdminAccess(silent);
+    if (!hasAdminAccess) return null;
     try {
       const revision = await onSaveDraft(document, state.operations, diagnostics);
       setLastDraft(revision);
@@ -936,7 +938,7 @@ export const AlignmentEditor: React.FC<AlignmentEditorProps> = ({
       setErrorText(error instanceof Error ? error.message : 'Не удалось сохранить draft');
       return null;
     }
-  }, [adminSecret, diagnostics, document, onRequestAdminSecret, onSaveDraft, payload, state.operations]);
+  }, [diagnostics, document, ensureAdminAccess, onSaveDraft, payload, state.operations]);
 
   useEffect(() => {
     if (!state.dirty || !adminSecret) return undefined;
@@ -1109,10 +1111,8 @@ export const AlignmentEditor: React.FC<AlignmentEditorProps> = ({
   }, [payload.stream_url, selectedAudioRange, selectedLines.length, selectedTextForAlignment]);
 
   const runFragmentAlignment = useCallback(async (): Promise<void> => {
-    if (!adminSecret) {
-      await onRequestAdminSecret();
-      return;
-    }
+    const hasAdminAccess = await ensureAdminAccess();
+    if (!hasAdminAccess) return;
     const validation = validateFragmentAlignment();
     if (validation) {
       setErrorText(validation);
@@ -1164,13 +1164,11 @@ export const AlignmentEditor: React.FC<AlignmentEditorProps> = ({
       setErrorText(error instanceof Error ? error.message : 'Не удалось выровнять слоги.');
       setFragmentAligning(false);
     }
-  }, [adminSecret, document, onRealignSyllablesForFragment, onRequestAdminSecret, selectedAudioRange, selectedLineIds, selectedTextForAlignment, validateFragmentAlignment]);
+  }, [document, ensureAdminAccess, onRealignSyllablesForFragment, selectedAudioRange, selectedLineIds, selectedTextForAlignment, validateFragmentAlignment]);
 
   const runAutoRepair = useCallback(async (mode: AutoRepairMode): Promise<void> => {
-    if (!adminSecret) {
-      await onRequestAdminSecret();
-      return;
-    }
+    const hasAdminAccess = await ensureAdminAccess();
+    if (!hasAdminAccess) return;
     setAutoRepairRunning(true);
     setAutoRepairProgress('Сохраняю черновик...');
     setAutoRepairReport(null);
@@ -1221,14 +1219,12 @@ export const AlignmentEditor: React.FC<AlignmentEditorProps> = ({
       setAutoRepairRunning(false);
       setErrorText(error instanceof Error ? error.message : 'Не удалось запустить автоисправление.');
     }
-  }, [adminSecret, lastDraft, onGetAutoRepairReport, onRequestAdminSecret, onStartAutoRepair, saveDraft, state.dirty]);
+  }, [ensureAdminAccess, lastDraft, onGetAutoRepairReport, onStartAutoRepair, saveDraft, state.dirty]);
 
   const applyAutoRepairProposals = useCallback(async (proposalIds: string[]): Promise<void> => {
     if (!autoRepairReport || proposalIds.length === 0) return;
-    if (!adminSecret) {
-      await onRequestAdminSecret();
-      return;
-    }
+    const hasAdminAccess = await ensureAdminAccess();
+    if (!hasAdminAccess) return;
     setAutoRepairApplying(proposalIds.length === 1 ? proposalIds[0] : 'batch');
     setErrorText(null);
     try {
@@ -1253,13 +1249,11 @@ export const AlignmentEditor: React.FC<AlignmentEditorProps> = ({
     } finally {
       setAutoRepairApplying(null);
     }
-  }, [adminSecret, autoRepairReport, onApplyAutoRepair, onRequestAdminSecret, payload]);
+  }, [autoRepairReport, ensureAdminAccess, onApplyAutoRepair, payload]);
 
   const publish = async (force = false): Promise<void> => {
-    if (!adminSecret) {
-      await onRequestAdminSecret();
-      return;
-    }
+    const hasAdminAccess = await ensureAdminAccess();
+    if (!hasAdminAccess) return;
     if (!force && (criticalIssues.length > 0 || warningIssues.length > 0 || Object.values(state.reviewState).some((status) => status !== 'reviewed'))) {
       setPreflightOpen(true);
       return;
@@ -1277,10 +1271,8 @@ export const AlignmentEditor: React.FC<AlignmentEditorProps> = ({
   };
 
   const startRealign = async (): Promise<void> => {
-    if (!adminSecret) {
-      await onRequestAdminSecret();
-      return;
-    }
+    const hasAdminAccess = await ensureAdminAccess();
+    if (!hasAdminAccess) return;
     const lyrics = replacementLyrics.trim();
     if (!lyrics) {
       setErrorText('Вставьте новый текст песни.');

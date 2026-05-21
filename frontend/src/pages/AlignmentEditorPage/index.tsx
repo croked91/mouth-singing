@@ -13,15 +13,18 @@ import type {
   RealignSyllablesFragmentRequest,
 } from '../../types';
 
+const ALIGNMENT_ADMIN_SECRET_STORAGE_KEY = 'alignmentAdminSecret';
+
 export const AlignmentEditorPage: React.FC = () => {
   const { trackId } = useParams();
   const [payload, setPayload] = useState<AlignmentEditorPayload | null>(null);
-  const [adminSecret, setAdminSecret] = useState(() => window.sessionStorage.getItem('alignmentAdminSecret') ?? '');
+  const [adminSecret, setAdminSecret] = useState(() => window.sessionStorage.getItem(ALIGNMENT_ADMIN_SECRET_STORAGE_KEY) ?? '');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [adminDialogOpen, setAdminDialogOpen] = useState(false);
   const [adminDraft, setAdminDraft] = useState('');
   const adminResolverRef = useRef<((value: boolean) => void) | null>(null);
+  const adminSecretRef = useRef(adminSecret);
 
   useEffect(() => {
     if (!trackId) return;
@@ -36,12 +39,20 @@ export const AlignmentEditorPage: React.FC = () => {
   }, [trackId]);
 
   useEffect(() => {
-    if (adminSecret) window.sessionStorage.setItem('alignmentAdminSecret', adminSecret);
-    else window.sessionStorage.removeItem('alignmentAdminSecret');
+    adminSecretRef.current = adminSecret;
+    if (adminSecret) window.sessionStorage.setItem(ALIGNMENT_ADMIN_SECRET_STORAGE_KEY, adminSecret);
+    else window.sessionStorage.removeItem(ALIGNMENT_ADMIN_SECRET_STORAGE_KEY);
   }, [adminSecret]);
 
   const requestAdminSecret = (): Promise<boolean> => {
-    if (adminSecret) return Promise.resolve(true);
+    const currentSecret = adminSecretRef.current || window.sessionStorage.getItem(ALIGNMENT_ADMIN_SECRET_STORAGE_KEY) || '';
+    if (currentSecret) {
+      if (currentSecret !== adminSecretRef.current) {
+        adminSecretRef.current = currentSecret;
+        setAdminSecret(currentSecret);
+      }
+      return Promise.resolve(true);
+    }
     setAdminDraft('');
     setAdminDialogOpen(true);
     return new Promise<boolean>((resolve) => {
@@ -59,9 +70,13 @@ export const AlignmentEditorPage: React.FC = () => {
   const confirmAdminDialog = (): void => {
     const nextSecret = adminDraft.trim();
     if (!nextSecret) return;
+    adminSecretRef.current = nextSecret;
+    window.sessionStorage.setItem(ALIGNMENT_ADMIN_SECRET_STORAGE_KEY, nextSecret);
     setAdminSecret(nextSecret);
     closeAdminDialog(true);
   };
+
+  const getAdminSecret = (): string => adminSecretRef.current || window.sessionStorage.getItem(ALIGNMENT_ADMIN_SECRET_STORAGE_KEY) || '';
 
   const saveDraft = async (
     document: AlignmentDocument,
@@ -72,13 +87,13 @@ export const AlignmentEditorPage: React.FC = () => {
     return api.saveAlignmentDraft(
       trackId,
       { document, operations, diagnostics, created_by: 'admin' },
-      adminSecret,
+      getAdminSecret(),
     );
   };
 
   const realignLyrics = async (lyricsText: string): Promise<string> => {
     if (!trackId) throw new Error('Track id is missing');
-    const response = await api.realignLyrics(trackId, lyricsText, adminSecret);
+    const response = await api.realignLyrics(trackId, lyricsText, getAdminSecret());
     return response.job_id;
   };
 
@@ -86,7 +101,7 @@ export const AlignmentEditorPage: React.FC = () => {
     request: RealignSyllablesFragmentRequest,
   ): Promise<RealignSyllablesFragmentJobResponse> => {
     if (!trackId) throw new Error('Track id is missing');
-    return api.realignSyllablesForFragment(trackId, request, adminSecret);
+    return api.realignSyllablesForFragment(trackId, request, getAdminSecret());
   };
 
   const startAutoRepair = async (
@@ -97,7 +112,7 @@ export const AlignmentEditorPage: React.FC = () => {
     const response = await api.startAlignmentAutoRepair(
       trackId,
       { revision_id: revisionId, mode },
-      adminSecret,
+      getAdminSecret(),
     );
     return response.job_id;
   };
@@ -115,7 +130,7 @@ export const AlignmentEditorPage: React.FC = () => {
     return api.applyAlignmentAutoRepair(
       trackId,
       { job_id: jobId, base_revision_id: baseRevisionId, proposal_ids: proposalIds, created_by: 'admin' },
-      adminSecret,
+      getAdminSecret(),
     );
   };
 
@@ -128,12 +143,12 @@ export const AlignmentEditorPage: React.FC = () => {
 
   const publish = async (revisionId: string): Promise<AlignmentRevision> => {
     if (!trackId) throw new Error('Track id is missing');
-    return api.publishAlignment(trackId, revisionId, adminSecret);
+    return api.publishAlignment(trackId, revisionId, getAdminSecret());
   };
 
   const restoreRevision = async (revisionId: string): Promise<AlignmentRevision> => {
     if (!trackId) throw new Error('Track id is missing');
-    return api.restoreAlignmentRevision(trackId, revisionId, adminSecret);
+    return api.restoreAlignmentRevision(trackId, revisionId, getAdminSecret());
   };
 
   if (!trackId) {
@@ -167,7 +182,7 @@ export const AlignmentEditorPage: React.FC = () => {
         adminSecret={adminSecret}
         onRequestAdminSecret={requestAdminSecret}
         onOpenAdminSecretDialog={() => {
-          setAdminDraft(adminSecret);
+          setAdminDraft(getAdminSecret());
           setAdminDialogOpen(true);
         }}
         onSaveDraft={saveDraft}
