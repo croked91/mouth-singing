@@ -12,6 +12,7 @@ from karaoke_shared.models.track import SyllableTiming
 
 AutoRepairMode = Literal["analyze_only", "propose", "auto_apply_safe"]
 AutoRepairDecision = Literal["auto_apply", "needs_review", "rejected", "blocked"]
+AutoRepairAlignmentScope = Literal["auto", "problem_lines", "all_lines"]
 
 
 class AutoRepairAlignmentRequest(BaseModel):
@@ -26,6 +27,11 @@ class AutoRepairAlignmentRequest(BaseModel):
     review_threshold: float = Field(default=0.72, ge=0.0, le=1.0)
     enable_sequence_planner: bool = True
     enable_split_phrase_locator: bool = True
+    alignment_scope: AutoRepairAlignmentScope = "auto"
+    global_suspect_problem_ratio: float = Field(default=0.20, ge=0.0, le=1.0)
+    global_suspect_consecutive_problem_lines: int = Field(default=5, ge=1, le=100)
+    global_suspect_min_lines: int = Field(default=12, ge=1, le=500)
+    respect_reviewed_lines: bool = True
 
 
 class AutoRepairJobResponse(BaseModel):
@@ -85,6 +91,11 @@ class AutoRepairProposal(BaseModel):
     planner_score: float | None = None
     evidence_level: Literal["asr", "split_asr", "vad", "grid", "current"] | None = None
     sequence_group_id: str | None = None
+    ctc_fallback_ratio: float | None = None
+    query_coverage: float | None = None
+    match_coverage: float | None = None
+    neighbor_support_score: float | None = None
+    verification_level: Literal["strong", "medium", "weak"] | None = None
     reasons: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 
@@ -103,6 +114,9 @@ class AutoRepairReport(BaseModel):
     base_revision_id: str
     source_audio_key: str
     status: Literal["ok", "partial", "failed"] = "ok"
+    alignment_scope: AutoRepairAlignmentScope = "auto"
+    global_suspect: bool = False
+    global_suspect_problem_ratio: float | None = None
     created_revision_id: str | None = None
     summary: AutoRepairSummary
     clusters: list[AutoRepairCluster] = Field(default_factory=list)

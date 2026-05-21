@@ -2289,6 +2289,14 @@ function AutoRepairPanel({ report, running, applying, appliedCount, onRun, onRun
             {report.warnings.length > 0 && (
               <Alert severity="warning">{report.warnings.join(' ')}</Alert>
             )}
+            {report.global_suspect && (
+              <Alert severity="warning">
+                Разметка трека глобально подозрительна, проверяются все строки.
+                {report.global_suspect_problem_ratio != null
+                  ? ` Проблемных строк: ${Math.round(report.global_suspect_problem_ratio * 100)}%.`
+                  : ''}
+              </Alert>
+            )}
 
             {confident.length > 1 && (
               <Button
@@ -2336,6 +2344,14 @@ function AutoRepairProposalRow({ proposal, applying, onApply }: {
       : proposal.decision === 'blocked'
         ? 'error'
         : 'default';
+  const canApply = proposal.decision === 'auto_apply' || proposal.decision === 'needs_review';
+  const actionLabel = proposal.decision === 'rejected'
+    ? 'Слабое предположение'
+    : proposal.decision === 'blocked'
+      ? 'Нет надёжного места'
+      : applying
+        ? 'Применяю...'
+        : 'Применить';
   return (
     <Box sx={{ p: 1.25, borderRadius: 2, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
       <Stack spacing={0.75}>
@@ -2344,6 +2360,9 @@ function AutoRepairProposalRow({ proposal, applying, onApply }: {
             <Stack direction="row" spacing={0.75} flexWrap="wrap" alignItems="center">
               <Chip size="small" color={decisionColor} label={proposal.decision} />
               <Chip size="small" label={`${Math.round(proposal.score * 100)}%`} />
+              {proposal.verification_level && (
+                <Chip size="small" label={`verification: ${proposal.verification_level}`} />
+              )}
               {proposal.locator_method && (
                 <Chip size="small" label={proposal.locator_method} />
               )}
@@ -2381,17 +2400,35 @@ function AutoRepairProposalRow({ proposal, applying, onApply }: {
                     planner {Math.round(proposal.planner_score * 100)}%
                   </>
                 )}
+                {proposal.ctc_fallback_ratio != null && (
+                  <>
+                    {' · '}
+                    fallback {Math.round(proposal.ctc_fallback_ratio * 100)}%
+                  </>
+                )}
+                {proposal.query_coverage != null && (
+                  <>
+                    {' · '}
+                    coverage {Math.round(proposal.query_coverage * 100)}%
+                  </>
+                )}
+                {proposal.neighbor_support_score != null && (
+                  <>
+                    {' · '}
+                    neighbor {Math.round(proposal.neighbor_support_score * 100)}%
+                  </>
+                )}
               </Typography>
             )}
           </Box>
           <Button
             size="small"
             variant="outlined"
-            disabled={proposal.decision === 'blocked' || applying}
+            disabled={!canApply || applying}
             onClick={onApply}
             sx={{ whiteSpace: 'nowrap' }}
           >
-            {applying ? 'Применяю...' : 'Применить'}
+            {actionLabel}
           </Button>
         </Stack>
         {(proposal.warnings.length > 0 || proposal.reasons.length > 0) && (

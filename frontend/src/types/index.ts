@@ -298,6 +298,7 @@ export interface RealignSyllablesFragmentResponse {
 
 export type AutoRepairMode = 'analyze_only' | 'propose' | 'auto_apply_safe';
 export type AutoRepairDecision = 'auto_apply' | 'needs_review' | 'rejected' | 'blocked';
+export type AutoRepairAlignmentScope = 'auto' | 'problem_lines' | 'all_lines';
 
 export interface AutoRepairAlignmentRequest {
   revision_id?: string | null;
@@ -311,6 +312,11 @@ export interface AutoRepairAlignmentRequest {
   review_threshold?: number;
   enable_sequence_planner?: boolean;
   enable_split_phrase_locator?: boolean;
+  alignment_scope?: AutoRepairAlignmentScope;
+  global_suspect_problem_ratio?: number;
+  global_suspect_consecutive_problem_lines?: number;
+  global_suspect_min_lines?: number;
+  respect_reviewed_lines?: boolean;
 }
 
 export interface AutoRepairJobResponse {
@@ -370,6 +376,11 @@ export interface AutoRepairProposal {
   planner_score?: number | null;
   evidence_level?: 'asr' | 'split_asr' | 'vad' | 'grid' | 'current' | null;
   sequence_group_id?: string | null;
+  ctc_fallback_ratio?: number | null;
+  query_coverage?: number | null;
+  match_coverage?: number | null;
+  neighbor_support_score?: number | null;
+  verification_level?: 'strong' | 'medium' | 'weak' | null;
   reasons: string[];
   warnings: string[];
 }
@@ -388,6 +399,9 @@ export interface AutoRepairReport {
   base_revision_id: string;
   source_audio_key: string;
   status: 'ok' | 'partial' | 'failed';
+  alignment_scope: AutoRepairAlignmentScope;
+  global_suspect: boolean;
+  global_suspect_problem_ratio?: number | null;
   created_revision_id?: string | null;
   summary: AutoRepairSummary;
   clusters: AutoRepairCluster[];

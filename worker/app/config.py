@@ -130,6 +130,9 @@ class WorkerSettings(BaseSettings):
     whisper_model_size: str = "tiny"
     whisper_device: str = "cuda"
     whisper_compute_type: str = "float16"
+    auto_repair_whisper_model_size: str = "large-v3"
+    auto_repair_whisper_device: str | None = None
+    auto_repair_whisper_compute_type: str | None = None
 
     model_config = {"env_prefix": ""}
 

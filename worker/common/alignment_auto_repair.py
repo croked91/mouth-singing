@@ -7,8 +7,9 @@ stores/apply reports.
 from __future__ import annotations
 
 import asyncio
+import re
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from uuid import NAMESPACE_URL, uuid5
 
@@ -65,6 +66,11 @@ class _ScoredCandidate:
     mapping: list[AutoRepairLineMapping]
     warnings: list[str]
     reasons: list[str]
+    ctc_fallback_ratio: float
+    query_coverage: float
+    match_coverage: float
+    neighbor_support_score: float = 0.0
+    verification_level: str = "weak"
 
 
 @dataclass(frozen=True)
@@ -137,7 +143,11 @@ class AlignmentAutoRepairEngine:
                     audio_path=audio_path,
                     language=language,
                 )
-                clusters = self._build_line_repair_units(revision.document, duration)
+                clusters, global_suspect, problem_ratio = self._build_line_repair_units(
+                    revision.document,
+                    duration,
+                    data,
+                )
                 clusters = self._add_phrase_locator_repair_units(
                     document=revision.document,
                     duration=duration,
@@ -183,11 +193,14 @@ class AlignmentAutoRepairEngine:
                 track_id=track_id,
                 base_revision_id=revision.id,
                 source_audio_key=audio_key,
+                alignment_scope=data.get("alignment_scope", "auto"),
+                global_suspect=global_suspect,
+                global_suspect_problem_ratio=problem_ratio,
                 status="ok" if proposals or not clusters else "partial",
                 summary=self._summary(clusters, proposals),
                 clusters=clusters,
                 proposals=proposals,
-                warnings=[] if clusters else ["Проблемные участки не найдены."],
+                warnings=self._report_warnings(clusters, global_suspect),
             )
 
             created_revision_id = None
@@ -246,7 +259,8 @@ class AlignmentAutoRepairEngine:
         self,
         document: AlignmentDocument,
         duration: float,
-    ) -> list[AutoRepairCluster]:
+        config: dict,
+    ) -> tuple[list[AutoRepairCluster], bool, float]:
         """Return one repair unit per problematic line.
 
         Earlier versions merged adjacent problematic lines into one CTC job.
@@ -259,11 +273,78 @@ class AlignmentAutoRepairEngine:
             self._line_flags(document, line, index)
             for index, line in enumerate(document.lines)
         ]
-        bad_indices = [index for index, flags in enumerate(line_flags) if flags]
-        return [
-            self._make_cluster(document, line_flags, index, index, duration)
-            for index in bad_indices
+        non_empty_indices = [
+            index for index, line in enumerate(document.lines)
+            if line.text.strip()
         ]
+        bad_indices = [
+            index for index in non_empty_indices
+            if line_flags[index]
+        ]
+        problem_ratio = len(bad_indices) / max(1, len(non_empty_indices))
+        max_consecutive = self._max_consecutive_indices(bad_indices)
+        scope = str(config.get("alignment_scope", "auto"))
+        global_suspect = (
+            scope == "all_lines"
+            or (
+                scope == "auto"
+                and len(non_empty_indices) >= int(config.get("global_suspect_min_lines", 12))
+                and (
+                    problem_ratio >= float(config.get("global_suspect_problem_ratio", 0.20))
+                    or max_consecutive >= int(config.get("global_suspect_consecutive_problem_lines", 5))
+                )
+            )
+        )
+        if scope == "all_lines" or global_suspect:
+            respect_reviewed = bool(config.get("respect_reviewed_lines", True))
+            target_indices = [
+                index for index in non_empty_indices
+                if not (respect_reviewed and self._line_is_reviewed(document.lines[index]))
+            ]
+            for index in target_indices:
+                if not line_flags[index]:
+                    line_flags[index] = ["global_suspect_line"]
+            indices = target_indices
+        else:
+            indices = bad_indices
+
+        clusters = [
+            self._make_cluster(document, line_flags, index, index, duration)
+            for index in indices
+        ]
+        return clusters, global_suspect, round(problem_ratio, 4)
+
+    @staticmethod
+    def _max_consecutive_indices(indices: list[int]) -> int:
+        if not indices:
+            return 0
+        longest = 1
+        current = 1
+        previous = indices[0]
+        for index in indices[1:]:
+            if index == previous + 1:
+                current += 1
+                longest = max(longest, current)
+            else:
+                current = 1
+            previous = index
+        return longest
+
+    @staticmethod
+    def _line_is_reviewed(line: AlignmentLine) -> bool:
+        reviewed_flags = {"reviewed", "verified", "manually_reviewed", "manual_verified"}
+        return bool(reviewed_flags.intersection(set(line.flags)))
+
+    @staticmethod
+    def _report_warnings(clusters: list[AutoRepairCluster], global_suspect: bool) -> list[str]:
+        warnings: list[str] = []
+        if not clusters:
+            warnings.append(
+                "Разметка трека глобально подозрительна, но подходящие строки не найдены."
+                if global_suspect
+                else "Проблемные участки не найдены."
+            )
+        return warnings
 
     def _make_cluster(
         self,
@@ -425,6 +506,12 @@ class AlignmentAutoRepairEngine:
             decision = "needs_review"
         else:
             decision = "rejected"
+        if (
+            best.ctc_fallback_ratio >= 0.999
+            and best.query_coverage < 0.75
+            and best.neighbor_support_score < 0.50
+        ):
+            decision = "rejected"
 
         proposal = AutoRepairProposal(
             id=f"proposal_{cluster.id}_{self._range_key(best.candidate.start, best.candidate.end)}",
@@ -451,6 +538,11 @@ class AlignmentAutoRepairEngine:
             planner_score=planner_score,
             evidence_level=best.candidate.evidence_level,  # type: ignore[arg-type]
             sequence_group_id=sequence_group_id,
+            ctc_fallback_ratio=best.ctc_fallback_ratio,
+            query_coverage=best.query_coverage,
+            match_coverage=best.match_coverage,
+            neighbor_support_score=best.neighbor_support_score,
+            verification_level=best.verification_level,  # type: ignore[arg-type]
         )
         return proposal
 
@@ -548,8 +640,9 @@ class AlignmentAutoRepairEngine:
             beam = next_beam[:beam_width] or beam
 
         best = max(beam, key=lambda item: item[0])
+        selected_path = self._with_neighbor_support(best[4])
         proposals: list[AutoRepairProposal] = []
-        for candidate_set, selected_candidate, planner_score in best[4]:
+        for candidate_set, selected_candidate, planner_score in selected_path:
             if selected_candidate is None:
                 proposals.append(
                     self._blocked_proposal(
@@ -578,6 +671,44 @@ class AlignmentAutoRepairEngine:
             proposals.append(proposal)
         return proposals
 
+    def _with_neighbor_support(
+        self,
+        selected_path: list[tuple[_ClusterCandidateSet, _ScoredCandidate | None, float]],
+    ) -> list[tuple[_ClusterCandidateSet, _ScoredCandidate | None, float]]:
+        result: list[tuple[_ClusterCandidateSet, _ScoredCandidate | None, float]] = []
+        for index, (candidate_set, selected_candidate, planner_score) in enumerate(selected_path):
+            if selected_candidate is None:
+                result.append((candidate_set, selected_candidate, planner_score))
+                continue
+            support = 0.0
+            current_delta = selected_candidate.candidate.start - candidate_set.cluster.old_audio_range.start
+            for neighbor_index in (index - 1, index + 1):
+                if neighbor_index < 0 or neighbor_index >= len(selected_path):
+                    continue
+                neighbor_set, neighbor_candidate, _neighbor_score = selected_path[neighbor_index]
+                if neighbor_candidate is None:
+                    continue
+                neighbor_delta = neighbor_candidate.candidate.start - neighbor_set.cluster.old_audio_range.start
+                gap = abs(neighbor_candidate.candidate.start - selected_candidate.candidate.start)
+                if abs(neighbor_delta - current_delta) <= 4.0 and gap <= 18.0:
+                    support += 0.5
+            support = min(1.0, support)
+            verification_level = selected_candidate.verification_level
+            if support >= 0.5 and verification_level == "weak":
+                verification_level = "medium"
+            result.append(
+                (
+                    candidate_set,
+                    replace(
+                        selected_candidate,
+                        neighbor_support_score=round(support, 4),
+                        verification_level=verification_level,
+                    ),
+                    planner_score,
+                )
+            )
+        return result
+
     @staticmethod
     def _range_overlap_ratio(a_start: float, a_end: float, b_start: float, b_end: float) -> float:
         overlap = max(0.0, min(a_end, b_end) - max(a_start, b_start))
@@ -586,9 +717,21 @@ class AlignmentAutoRepairEngine:
 
     @staticmethod
     def _normalize_for_sequence(text: str) -> str:
-        import re
-
         return re.sub(r"\s+", " ", re.sub(r"[^0-9a-zа-яё]+", " ", text.lower())).strip()
+
+    @classmethod
+    def _text_coverage(cls, query_text: str, matched_text: str) -> tuple[float, float]:
+        query_tokens = cls._normalize_for_sequence(query_text).split()
+        match_tokens = cls._normalize_for_sequence(matched_text).split()
+        if not query_tokens or not match_tokens:
+            return 0.0, 0.0
+        remaining = list(match_tokens)
+        overlap = 0
+        for token in query_tokens:
+            if token in remaining:
+                remaining.remove(token)
+                overlap += 1
+        return overlap / len(query_tokens), overlap / len(match_tokens)
 
     @staticmethod
     def _sequence_offset_penalty(previous_delta: float | None, candidate_delta: float) -> float:
@@ -636,7 +779,16 @@ class AlignmentAutoRepairEngine:
             language,
             proposal_seed=f"{job_id}:{candidate.start:.3f}:{candidate.end:.3f}",
         )
-        score, confidence, reasons, score_warnings = self._score_candidate(
+        (
+            score,
+            confidence,
+            reasons,
+            score_warnings,
+            ctc_fallback_ratio,
+            query_coverage,
+            match_coverage,
+            verification_level,
+        ) = self._score_candidate(
             selected_lines,
             absolute_timings,
             stats,
@@ -652,6 +804,10 @@ class AlignmentAutoRepairEngine:
             mapping=mapping,
             warnings=patch_warnings + score_warnings,
             reasons=list(candidate.reasons) + reasons,
+            ctc_fallback_ratio=ctc_fallback_ratio,
+            query_coverage=query_coverage,
+            match_coverage=match_coverage,
+            verification_level=verification_level,
         )
 
     async def _slice_audio(
@@ -1133,11 +1289,13 @@ class AlignmentAutoRepairEngine:
         stats,
         candidate: _Candidate,
         patch_warnings: list[str],
-    ) -> tuple[float, float, list[str], list[str]]:
+    ) -> tuple[float, float, list[str], list[str], float, float, float, str]:
         warnings: list[str] = []
         reasons: list[str] = []
+        query_text = " ".join(line.text for line in selected_lines)
+        query_coverage, match_coverage = self._text_coverage(query_text, candidate.matched_text or "")
         if not timings:
-            return 0.0, 0.0, reasons, ["critical:no_timings"]
+            return 0.0, 0.0, reasons, ["critical:no_timings"], 1.0, query_coverage, match_coverage, "weak"
 
         duration = candidate.end - candidate.start
         syllable_rate = len(timings) / max(0.1, duration)
@@ -1184,6 +1342,8 @@ class AlignmentAutoRepairEngine:
             else:
                 score = min(score, 0.78)
                 confidence = min(confidence, 0.35)
+            if candidate.evidence_level in {"asr", "split_asr"} and query_coverage < 0.75:
+                warnings.append("low_asr_query_coverage")
         elif fallback_ratio >= 0.67:
             warnings.append("high_ctc_fallback")
             score = min(score, 0.72 if candidate.evidence_level in {"asr", "split_asr"} else 0.50)
@@ -1198,7 +1358,22 @@ class AlignmentAutoRepairEngine:
                 f"Слогов в секунду: {syllable_rate:.2f}",
             ]
         )
-        return score, confidence, reasons, warnings
+        if fallback_ratio < 0.35 and query_coverage >= 0.70:
+            verification_level = "strong"
+        elif candidate.evidence_level in {"asr", "split_asr"} and query_coverage >= 0.50:
+            verification_level = "medium"
+        else:
+            verification_level = "weak"
+        return (
+            round(score, 4),
+            round(confidence, 4),
+            reasons,
+            warnings,
+            round(fallback_ratio, 4),
+            round(query_coverage, 4),
+            round(match_coverage, 4),
+            verification_level,
+        )
 
     @staticmethod
     def _duration_plausibility(syllable_rate: float) -> float:
@@ -1240,6 +1415,8 @@ class AlignmentAutoRepairEngine:
             hints.append("monotonic_path_or_wrong_fragment")
         if "asr_evidence_far_from_current_timing" in flags:
             hints.append("asr_locator_disagrees_with_current_timing")
+        if "global_suspect_line" in flags:
+            hints.append("whole_document_suspect")
         if "too_long_syllable" in flags or "too_short_syllable" in flags:
             hints.append("acoustic_boundary_drift")
         if len(lines) > 3 and flags:
